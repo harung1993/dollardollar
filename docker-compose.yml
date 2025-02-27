@@ -6,7 +6,7 @@ services:
     ports:
       - "5001:5001"
     env_file:
-      - .env.production
+      - .env
     environment:
       - SQLALCHEMY_DATABASE_URI=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/dollardollar
       - DEVELOPMENT_MODE=False
@@ -24,9 +24,8 @@ services:
       - app-network
     volumes:
       - ./logs:/app/logs
-    command: >
-      bash -c "flask db upgrade &&
-              gunicorn --bind 0.0.0.0:5001 --workers=3 --timeout=120 app:app"
+      - ./init_db.py:/app/init_db.py
+    command: gunicorn --bind 0.0.0.0:5001 --workers=3 --timeout=120 app:app
 
   db:
     image: postgres:13
@@ -45,8 +44,10 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - "5432:5432"
+    # The database port is not exposed to the host, only within the network
+    # If you need to access it directly for development, uncomment the following:
+    # ports:
+    #   - "5432:5432"
 
 volumes:
   postgres_data:
