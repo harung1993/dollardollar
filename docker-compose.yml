@@ -10,7 +10,7 @@ services:
     environment:
       - SQLALCHEMY_DATABASE_URI=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/dollardollar
       - DEVELOPMENT_MODE=False
-      - DISABLE_SIGNUPS=True
+      - DISABLE_SIGNUPS=Flase
     depends_on:
       db:
         condition: service_healthy
