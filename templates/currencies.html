@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 
-    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -11,11 +10,9 @@
                 
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <form action="{{ url_for('update_rates_route') }}" method="POST" class="d-inline">
-                            <button type="submit" class="btn btn-success me-2">
-                                <i class="fas fa-sync-alt me-2"></i>Update Exchange Rates
-                            </button>
-                        </form>
+                        <button id="updateRatesBtn" class="btn btn-success me-2">
+                            <i class="fas fa-sync-alt me-2"></i>Update Exchange Rates
+                        </button>
                         <button id="toggleCurrencyForm" class="btn btn-primary">
                             <i class="fas fa-plus me-2"></i>Add Currency
                         </button>
@@ -36,7 +33,7 @@
             <h5 class="mb-0">Your Default Currency</h5>
         </div>
         <div class="card-body">
-            <form action="{{ url_for('set_default_currency') }}" method="POST" class="row align-items-center">
+            <form action="{{ url_for('set_default_currency') }}" method="POST" id="defaultCurrencyForm" class="row align-items-center">
                 <div class="col-md-6">
                     <select class="form-select bg-dark text-light" name="default_currency" required>
                         {% for currency in currencies %}
@@ -63,7 +60,7 @@
     {% if current_user.is_admin %}
     <div id="currencyFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Add New Currency</h4>
-        <form action="{{ url_for('add_currency') }}" method="POST">
+        <form action="{{ url_for('add_currency') }}" method="POST" id="addCurrencyForm">
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label for="code" class="form-label">Currency Code</label>
@@ -138,19 +135,16 @@
                             <td>
                                 <div class="btn-group">
                                     {% if not currency.is_base %}
-                                    <form action="{{ url_for('set_base_currency', code=currency.code) }}" method="POST" class="d-inline me-2">
-                                        <button type="submit" class="btn btn-sm btn-warning" 
-                                                onclick="return confirm('Are you sure you want to change the base currency to {{ currency.code }}? This will update all exchange rates.')">
-                                            <i class="fas fa-exchange-alt me-1"></i> Set as Base Currency
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-sm btn-warning set-base-btn" data-code="{{ currency.code }}">
+                                        <i class="fas fa-exchange-alt me-1"></i> Set as Base
+                                    </button>
                                     {% else %}
                                     <span class="badge bg-success">Current Base Currency</span>
                                     {% endif %}
-                                    <button type="button" class="btn btn-sm btn-primary edit-currency-btn" data-code="{{ currency.code }}">
+                                    <button type="button" class="btn btn-sm btn-primary edit-currency-btn ms-1" data-code="{{ currency.code }}">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button type="button" class="btn btn-sm btn-danger delete-currency-btn" data-code="{{ currency.code }}" 
+                                    <button type="button" class="btn btn-sm btn-danger delete-currency-btn ms-1" data-code="{{ currency.code }}" 
                                             {% if currency.is_base %}disabled title="Cannot delete base currency"{% endif %}>
                                         <i class="fas fa-trash"></i>
                                     </button>
@@ -166,7 +160,7 @@
                                 <strong>{{ currency.code }}</strong>
                             </td>
                             <td colspan="5">
-                                <form action="{{ url_for('update_currency', code=currency.code) }}" method="POST" class="row g-2">
+                                <form action="{{ url_for('update_currency', code=currency.code) }}" method="POST" id="editCurrencyForm-{{ currency.code }}" class="row g-2">
                                     <div class="col-md-4">
                                         <label class="form-label small">Name</label>
                                         <input type="text" class="form-control form-control-sm bg-dark text-light" name="name" value="{{ currency.name }}" required>
@@ -269,7 +263,75 @@
                 editRow.style.display = 'none';
             });
         });
+        
+        // Set up set-base-currency buttons
+        const setBaseButtons = document.querySelectorAll('.set-base-btn');
+        setBaseButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const currencyCode = this.getAttribute('data-code');
+                setBaseWithConfirmation(currencyCode);
+            });
+        });
+        
+        // Setup delete currency buttons
+        const deleteButtons = document.querySelectorAll('.delete-currency-btn:not([disabled])');
+        deleteButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const currencyCode = this.getAttribute('data-code');
+                deleteCurrency(currencyCode);
+            });
+        });
+        
+        // Setup update rates button
+        const updateRatesBtn = document.getElementById('updateRatesBtn');
+        if (updateRatesBtn) {
+            updateRatesBtn.addEventListener('click', updateRates);
+        }
+        
+        // Setup add currency form submission
+        const addCurrencyForm = document.getElementById('addCurrencyForm');
+        if (addCurrencyForm) {
+            addCurrencyForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                submitFormWithAjax(this, handleAddCurrencySuccess);
+            });
+        }
+        
+        // Setup edit currency forms 
+        document.querySelectorAll('[id^="editCurrencyForm-"]').forEach(form => {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formElement = this; // Store reference to the form element
+                submitFormWithAjax(this, function(data) {
+                    // Hide edit row and show main row
+                    const currencyCode = formElement.id.replace('editCurrencyForm-', '');
+                    const currencyRow = document.getElementById(`currency-row-${currencyCode}`);
+                    const editRow = document.getElementById(`edit-row-${currencyCode}`);
+                    
+                    if (currencyRow && editRow) {
+                        currencyRow.style.display = 'table-row';
+                        editRow.style.display = 'none';
+                    }
+                    
+                    // Reload page to show updated data
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1000);
+                });
+            });
+        });
         {% endif %}
+        
+        // Setup default currency form
+        const defaultCurrencyForm = document.getElementById('defaultCurrencyForm');
+        if (defaultCurrencyForm) {
+            defaultCurrencyForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                submitFormWithAjax(this, function(data) {
+                    showToast(data.message || 'Default currency updated successfully', 'success');
+                });
+            });
+        }
     });
     
     {% if current_user.is_admin %}
@@ -285,56 +347,178 @@
             form.style.display = 'none';
             button.innerHTML = '<i class="fas fa-plus me-2"></i>Add Currency';
             button.classList.replace('btn-secondary', 'btn-primary');
+            
+            // Reset form when closing
+            const addCurrencyForm = document.getElementById('addCurrencyForm');
+            if (addCurrencyForm) {
+                addCurrencyForm.reset();
+            }
         }
     }
-    {% endif %}
-// Add delete button functionality
-const deleteButtons = document.querySelectorAll('.delete-currency-btn');
-deleteButtons.forEach(button => {
-    button.addEventListener('click', function() {
-        const currencyCode = this.getAttribute('data-code');
+    
+    function handleAddCurrencySuccess(data) {
+        // Close form
+        toggleCurrencyForm();
         
-        // Confirm deletion
-        const confirmDelete = confirm(`Are you sure you want to delete the currency ${currencyCode}? 
-This will remove the currency from your system and cannot be undone.`);
-        
-        if (confirmDelete) {
-            // Send DELETE request to server
-            fetch(`/currencies/delete/${currencyCode}`, {
-                method: 'DELETE',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to delete currency');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Remove the row from the table
-                    const currencyRow = document.getElementById(`currency-row-${currencyCode}`);
-                    const editRow = document.getElementById(`edit-row-${currencyCode}`);
-                    
-                    if (currencyRow) currencyRow.remove();
-                    if (editRow) editRow.remove();
-                    
-                    // Show success message
-                    alert(`Currency ${currencyCode} has been deleted successfully.`);
-                } else {
-                    // Show error message from server
-                    alert(data.message || `Failed to delete currency ${currencyCode}`);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert(`An error occurred while deleting ${currencyCode}: ${error.message}`);
-            });
+        // Reload page to show new currency
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
+    
+    function handleEditCurrencySuccess(data) {
+        // Find the currency code from the form id
+        const formId = this.id || '';
+        const match = formId.match(/editCurrencyForm-(.+)/);
+        if (match && match[1]) {
+            const code = match[1];
+            
+            // Hide edit row and show main row
+            const currencyRow = document.getElementById(`currency-row-${code}`);
+            const editRow = document.getElementById(`edit-row-${code}`);
+            
+            if (currencyRow && editRow) {
+                currencyRow.style.display = 'table-row';
+                editRow.style.display = 'none';
+            }
         }
-    });
-});
+        
+        // Reload page to show updated data
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
+    
+    function setBaseWithConfirmation(currencyCode) {
+        showConfirmDialog(
+            'Change Base Currency',
+            `Are you sure you want to set ${currencyCode} as the base currency? This will update exchange rates for all other currencies.`,
+            function() {
+                // Send AJAX request
+                fetch(`/currencies/set-base/${currencyCode}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to set base currency');
+                    }
+                    // Try to parse JSON, but fall back gracefully if not JSON
+                    return response.text().then(text => {
+                        try {
+                            return JSON.parse(text);
+                        } catch (e) {
+                            // Not JSON, return simple object
+                            return { success: true };
+                        }
+                    });
+                })
+                .then(data => {
+                    showToast(`${currencyCode} is now the base currency`, 'success');
+                    // Reload page to show updated status
+                    setTimeout(() => location.reload(), 1000);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast(`Error: ${error.message}`, 'error');
+                });
+            }
+        );
+    }
+    
+    function deleteCurrency(currencyCode) {
+        showConfirmDialog(
+            'Delete Currency',
+            `Are you sure you want to delete ${currencyCode}? This will remove the currency from your system.`,
+            function() {
+                // Send DELETE request
+                fetch(`/currencies/delete/${currencyCode}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to delete currency');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message || `Currency ${currencyCode} deleted successfully`, 'success');
+                        
+                        // Remove the row with animation
+                        const row = document.getElementById(`currency-row-${currencyCode}`);
+                        const editRow = document.getElementById(`edit-row-${currencyCode}`);
+                        
+                        if (row) {
+                            row.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                            row.style.opacity = '0';
+                            row.style.transform = 'translateY(-20px)';
+                            
+                            // Remove after animation
+                            setTimeout(() => {
+                                row.remove();
+                                if (editRow) editRow.remove();
+                            }, 500);
+                        }
+                    } else {
+                        showToast(data.message || 'Failed to delete currency', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast(`Error: ${error.message}`, 'error');
+                });
+            }
+        );
+    }
+    
+    function updateRates() {
+        // Get the button and show loading state
+        const button = document.getElementById('updateRatesBtn');
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+        
+        // Send AJAX request
+        fetch('/update_currency_rates', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to update rates');
+            }
+            // Try to parse JSON, but fall back gracefully if not JSON
+            return response.text().then(text => {
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    // Not JSON, return simple object
+                    return { success: true };
+                }
+            });
+        })
+        .then(data => {
+            showToast('Currency rates updated successfully', 'success');
+            // Reload page to show updated rates
+            setTimeout(() => location.reload(), 1000);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast(`Error: ${error.message}`, 'error');
+            
+            // Reset button state
+            button.disabled = false;
+            button.innerHTML = originalText;
+        });
+    }
+    {% endif %}
 </script>
 {% endblock %}

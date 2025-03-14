@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 
-    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -17,7 +16,7 @@
     <!-- Create Group Form (Hidden by default) -->
     <div id="groupFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Create New Group</h4>
-        <form action="{{ url_for('create_group') }}" method="POST">
+        <form action="{{ url_for('create_group') }}" method="POST" id="createGroupForm">
             <div class="mb-3">
                 <label for="name" class="form-label">Group Name</label>
                 <input type="text" class="form-control bg-dark text-light" id="name" name="name" required>
@@ -28,7 +27,7 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Add Members</label>
-                <select class="form-select bg-dark text-light" name="members" multiple>
+                <select class="form-select bg-dark text-light" name="members" id="groupMembers" multiple>
                     {% for user in users %}
                         {% if user != current_user %}
                             <option value="{{ user.id }}">{{ user.name }} ({{ user.id }})</option>
@@ -45,12 +44,24 @@
     </div>
 
     <!-- Groups Grid -->
-    <div class="row">
+    <div class="row" id="groupsContainer">
         {% for group in groups %}
-        <div class="col-md-4 mb-4">
+        <div class="col-md-4 mb-4" id="group-card-{{ group.id }}" data-group-id="{{ group.id }}">
             <div class="card h-100">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="card-title mb-0">{{ group.name }}</h5>
+                    {% if current_user == group.creator %}
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="groupActionDropdown{{ group.id }}" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end bg-dark" aria-labelledby="groupActionDropdown{{ group.id }}">
+                            <li><a class="dropdown-item text-light" href="{{ url_for('group_details', group_id=group.id) }}"><i class="fas fa-eye me-2"></i>View Details</a></li>
+                            <li><hr class="dropdown-divider border-secondary"></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="deleteGroup({{ group.id }}, '{{ group.name }}'); return false;"><i class="fas fa-trash-alt me-2"></i>Delete Group</a></li>
+                        </ul>
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     {% if group.description %}
@@ -69,7 +80,7 @@
             </div>
         </div>
         {% else %}
-        <div class="col-12">
+        <div class="col-12" id="no-groups-message">
             <div class="alert alert-info">
                 You haven't joined any groups yet. Create one to get started!
             </div>
@@ -77,14 +88,76 @@
         {% endfor %}
     </div>
 </div>
-
-<!-- NO MODALS HERE ANYMORE, USING IN-PAGE FORMS INSTEAD -->
 {% endblock %}
 
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Toggle group form visibility
         document.getElementById('toggleGroupForm').addEventListener('click', toggleGroupForm);
+        
+        // Handle form submission with AJAX
+        const createGroupForm = document.getElementById('createGroupForm');
+        if (createGroupForm) {
+            createGroupForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Show loading state
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalBtnText = submitBtn.innerHTML;
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating...';
+                
+                // Add form-submitting class for progress indicator
+                this.classList.add('form-submitting');
+                
+                // Get form data
+                const formData = new FormData(this);
+                
+                // Send request
+                fetch(this.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Reset button and form state
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
+                    this.classList.remove('form-submitting');
+                    
+                    if (data.success) {
+                        // Show success message
+                        showToast(data.message || 'Group created successfully!', 'success');
+                        
+                        // Create new group card
+                        if (data.group) {
+                            addGroupCardToUI(data.group);
+                        }
+                        
+                        // Reset form and hide it
+                        this.reset();
+                        toggleGroupForm();
+                    } else {
+                        // Show error message
+                        showToast(data.message || 'Failed to create group', 'error');
+                    }
+                })
+                .catch(error => {
+                    // Reset button and form state
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
+                    this.classList.remove('form-submitting');
+                    
+                    // Show error message
+                    console.error('Error:', error);
+                    showToast(`Error creating group: ${error.message}`, 'error');
+                });
+            });
+        }
     });
     
     function toggleGroupForm() {
@@ -99,7 +172,136 @@
             form.style.display = 'none';
             button.innerHTML = '<i class="fas fa-plus me-2"></i>Create Group';
             button.classList.replace('btn-secondary', 'btn-primary');
+            
+            // Reset form when closing
+            const groupForm = document.getElementById('createGroupForm');
+            if (groupForm) {
+                groupForm.reset();
+            }
         }
+    }
+    
+    function deleteGroup(groupId, groupName) {
+        showConfirmDialog(
+            'Delete Group',
+            `Are you sure you want to delete the group "${groupName}"? This action cannot be undone.`,
+            function() {
+                // User confirmed, send DELETE request
+                fetch(`/groups/delete/${groupId}`, {
+                    method: 'POST',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to delete group');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showToast('Group deleted successfully', 'success');
+                        
+                        // Find and remove the group card
+                        const groupCard = document.querySelector(`[data-group-id="${groupId}"]`);
+                        if (groupCard) {
+                            // Add fade-out animation
+                            groupCard.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+                            groupCard.style.opacity = '0';
+                            groupCard.style.transform = 'translateY(-20px)';
+                            
+                            // Remove after animation completes
+                            setTimeout(() => {
+                                groupCard.remove();
+                                
+                                // Check if there are no more groups
+                                const groupsContainer = document.getElementById('groupsContainer');
+                                if (groupsContainer && groupsContainer.children.length === 0) {
+                                    // Add the "no groups" message
+                                    groupsContainer.innerHTML = `
+                                        <div class="col-12" id="no-groups-message">
+                                            <div class="alert alert-info">
+                                                You haven't joined any groups yet. Create one to get started!
+                                            </div>
+                                        </div>
+                                    `;
+                                }
+                            }, 500);
+                        } else {
+                            // Fallback - reload the page
+                            location.reload();
+                        }
+                    } else {
+                        showToast(data.message || 'Failed to delete group', 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast(`Error deleting group: ${error.message}`, 'error');
+                });
+            }
+        );
+    }
+    
+    function addGroupCardToUI(groupData) {
+        // Remove the "no groups" message if present
+        const noGroupsMessage = document.getElementById('no-groups-message');
+        if (noGroupsMessage) {
+            noGroupsMessage.remove();
+        }
+        
+        // Create new group card element
+        const newGroup = document.createElement('div');
+        newGroup.className = 'col-md-4 mb-4';
+        newGroup.id = `group-card-${groupData.id}`;
+        newGroup.setAttribute('data-group-id', groupData.id);
+        
+        // Set initial styles for animation
+        newGroup.style.opacity = '0';
+        newGroup.style.transform = 'translateY(20px)';
+        newGroup.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        
+        // Build card HTML
+        newGroup.innerHTML = `
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">${groupData.name}</h5>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-light dropdown-toggle" type="button" id="groupActionDropdown${groupData.id}" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-ellipsis-v"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end bg-dark" aria-labelledby="groupActionDropdown${groupData.id}">
+                            <li><a class="dropdown-item text-light" href="/groups/${groupData.id}"><i class="fas fa-eye me-2"></i>View Details</a></li>
+                            <li><hr class="dropdown-divider border-secondary"></li>
+                            <li><a class="dropdown-item text-danger" href="#" onclick="deleteGroup(${groupData.id}, '${groupData.name}'); return false;"><i class="fas fa-trash-alt me-2"></i>Delete Group</a></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">
+                        <small>Created by: {{ current_user.name }}</small><br>
+                        <small>Members: ${groupData.member_count || 1}</small>
+                    </p>
+                </div>
+                <div class="card-footer bg-dark border-secondary">
+                    <a href="/groups/${groupData.id}" class="btn btn-primary btn-sm">
+                        View Details
+                    </a>
+                </div>
+            </div>
+        `;
+        
+        // Add to the DOM
+        const groupsContainer = document.getElementById('groupsContainer');
+        groupsContainer.appendChild(newGroup);
+        
+        // Trigger animation after a short delay
+        setTimeout(() => {
+            newGroup.style.opacity = '1';
+            newGroup.style.transform = 'translateY(0)';
+        }, 10);
     }
 </script>
 {% endblock %}

@@ -1,4 +1,3 @@
-r"""29a41de6a866d56c36aba5159f45257c"""
 import os
 from dotenv import load_dotenv
 from flask import Flask, render_template, send_file, request, jsonify, request, redirect, url_for, flash, session
@@ -25,7 +24,6 @@ import json
 from sqlalchemy import inspect, text
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
-from datetime import datetime, date, timedelta
 
 os.environ['OPENSSL_LEGACY_PROVIDER'] = '1'
 
@@ -83,10 +81,6 @@ login_manager.login_view = 'login'
 
 
 migrate = Migrate(app, db)
-
-
-
-
 #--------------------
 # DATABASE MODELS
 #--------------------
@@ -122,7 +116,7 @@ class User(UserMixin, db.Model):
     user_color = db.Column(db.String(7), default="#15803d")
     created_groups = db.relationship('Group', backref='creator', lazy=True,
         foreign_keys=[Group.created_by])
-    #User_budgets = db.relationship('Budget', backref='user', lazy=True)
+
     # OIDC related fields
     oidc_id = db.Column(db.String(255), nullable=True, index=True, unique=True)
     oidc_provider = db.Column(db.String(50), nullable=True)
@@ -161,9 +155,6 @@ class User(UserMixin, db.Model):
 if oidc_enabled:
     User = extend_user_model(db, User)       
 
-
-
-
 class Settlement(db.Model):
     __tablename__ = 'settlements'
     id = db.Column(db.Integer, primary_key=True)
@@ -192,26 +183,6 @@ expense_tags = db.Table('expense_tags',
     db.Column('expense_id', db.Integer, db.ForeignKey('expenses.id'), primary_key=True),
     db.Column('tag_id', db.Integer, db.ForeignKey('tags.id'), primary_key=True)
 )
-class Category(db.Model):
-    __tablename__ = 'categories'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
-    icon = db.Column(db.String(50), default="fa-tag")  # FontAwesome icon name
-    color = db.Column(db.String(20), default="#6c757d")
-    parent_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    is_system = db.Column(db.Boolean, default=False)  # System categories can't be deleted
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Relationships
-    user = db.relationship('User', backref=db.backref('categories', lazy=True))
-    parent = db.relationship('Category', remote_side=[id], backref=db.backref('subcategories', lazy=True))
-    expenses = db.relationship('Expense', backref=db.backref('category', lazy=True))
-
-    def __repr__(self):
-        return f"<Category: {self.name}>"
-    
-
 
 class Expense(db.Model):
     __tablename__ = 'expenses'
@@ -232,8 +203,7 @@ class Expense(db.Model):
                    backref=db.backref('expenses', lazy=True))
     # Add these fields to your existing Expense class:
     currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code'), nullable=True)
-    original_amount = db.Column(db.Float, nullable=True) # Amount in original currency
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
+    original_amount = db.Column(db.Float, nullable=True)  # Amount in original currency
     currency = db.relationship('Currency', backref=db.backref('expenses', lazy=True))
     def calculate_splits(self):
     
@@ -459,9 +429,7 @@ class RecurringExpense(db.Model):
     currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code'), nullable=True)
     original_amount = db.Column(db.Float, nullable=True)  # Amount in original currency
     currency = db.relationship('Currency', backref=db.backref('recurring_expenses', lazy=True))
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
-    category = db.relationship('Category', backref=db.backref('recurring_expenses', lazy=True))
-
+    
     def create_expense_instance(self, for_date=None):
         """Create a single expense instance from this recurring template"""
         if for_date is None:
@@ -480,7 +448,6 @@ class RecurringExpense(db.Model):
             user_id=self.user_id,
             group_id=self.group_id,
             split_with=self.split_with,
-            category_id=self.category_id,
             recurring_id=self.id  # Link to this recurring expense
         )
         
@@ -501,134 +468,25 @@ class Tag(db.Model):
     # Relationship
     user = db.relationship('User', backref=db.backref('tags', lazy=True))
 
-        
-#--------------------
-# Budget
-#--------------------
-
-class Budget(db.Model):
-    __tablename__ = 'budgets'
+class AppSettings(db.Model):
+    __tablename__ = 'app_settings'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=False)
-    name = db.Column(db.String(100), nullable=True)  # Optional custom name for the budget
-    amount = db.Column(db.Float, nullable=False)
-    period = db.Column(db.String(20), nullable=False)  # 'weekly', 'monthly', 'yearly'
-    include_subcategories = db.Column(db.Boolean, default=True)
-    start_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    is_recurring = db.Column(db.Boolean, default=True)
-    active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    app_title = db.Column(db.String(100), default="Dollar Dollar Bill Y'all")
+    app_logo_url = db.Column(db.String(500), default="/static/images/dollar-logo.png")
+    app_logo_emoji = db.Column(db.String(10), default="💵")
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_by = db.Column(db.String(128))
+    is_customized = db.Column(db.Boolean, default=False)
     
-    # Relationships
-    user = db.relationship('User', backref=db.backref('budgets', lazy=True))
-    category = db.relationship('Category', backref=db.backref('budgets', lazy=True))
-    
-    def get_current_period_dates(self):
-        """Get start and end dates for the current budget period"""
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        if self.period == 'weekly':
-            # Start of the week (Monday)
-            start_of_week = today - timedelta(days=today.weekday())
-            end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
-            return start_of_week, end_of_week
-            
-        elif self.period == 'monthly':
-            # Start of the month
-            start_of_month = today.replace(day=1)
-            # End of the month
-            if today.month == 12:
-                end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(seconds=1)
-            else:
-                end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(seconds=1)
-            return start_of_month, end_of_month
-            
-        elif self.period == 'yearly':
-            # Start of the year
-            start_of_year = today.replace(month=1, day=1)
-            # End of the year
-            end_of_year = today.replace(year=today.year + 1, month=1, day=1) - timedelta(seconds=1)
-            return start_of_year, end_of_year
-            
-        # Default to current day
-        return today, today.replace(hour=23, minute=59, second=59)
-    
-    def calculate_spent_amount(self):
-        """Calculate how much has been spent in this budget's category during the current period"""
-        start_date, end_date = self.get_current_period_dates()
-        
-        # Base query: find all expenses in the relevant date range for this user
-        # that have this category or are in subcategories (if include_subcategories is True)
-        from sqlalchemy import or_
-        
-        if self.include_subcategories:
-            # If this is a parent category, include subcategories
-            subcategories = Category.query.filter_by(parent_id=self.category_id).all()
-            subcategory_ids = [subcat.id for subcat in subcategories]
-            
-            # Include the parent category itself and all subcategories
-            category_filter = or_(
-                Expense.category_id == self.category_id,
-                Expense.category_id.in_(subcategory_ids) if subcategory_ids else False
-            )
-        else:
-            # Only include this specific category
-            category_filter = (Expense.category_id == self.category_id)
-        
-        expenses = Expense.query.filter(
-            Expense.user_id == self.user_id,
-            Expense.date >= start_date,
-            Expense.date <= end_date,
-            category_filter
-        ).all()
-        
-        # Calculate the total spent for these expenses
-        # We only want to count the user's portion of shared expenses
-        total_spent = 0.0
-        for expense in expenses:
-            splits = expense.calculate_splits()
-            
-            if expense.paid_by == self.user_id:
-                # If user paid, add their own portion
-                total_spent += splits['payer']['amount']
-            else:
-                # If someone else paid, find user's portion from splits
-                for split in splits['splits']:
-                    if split['email'] == self.user_id:
-                        total_spent += split['amount']
-                        break
-        
-        return total_spent
-    
-    def get_remaining_amount(self):
-        """Calculate remaining budget amount"""
-        spent = self.calculate_spent_amount()
-        return self.amount - spent
-    
-    def get_progress_percentage(self):
-        """Calculate budget usage as a percentage"""
-        if self.amount <= 0:
-            return 100  # Avoid division by zero
-            
-        spent = self.calculate_spent_amount()
-        percentage = (spent / self.amount) * 100
-        return min(percentage, 100)  # Cap at 100%
-    
-    def get_status(self):
-        """Return the budget status: 'under', 'approaching', 'over'"""
-        percentage = self.get_progress_percentage()
-        
-        if percentage >= 100:
-            return 'over'
-        elif percentage >= 85:
-            return 'approaching'
-        else:
-            return 'under'
-        
-
-
+    @classmethod
+    def get_settings(cls):
+        """Get app settings or create default if not exists"""
+        settings = cls.query.first()
+        if not settings:
+            settings = cls()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
 #--------------------
 # AUTH AND UTILITIES
 #--------------------
@@ -679,70 +537,20 @@ def init_db():
             db.session.commit()
             print("Development user created:", DEV_USER_EMAIL)
 
+def flash_message(message, category='success'):
+    """
+    Enhanced flash message with category support
+    
+    Args:
+        message (str): The message to flash
+        category (str): Message category ('success', 'error', 'warning', 'info')
+    """
+    from flask import flash
+    flash(message, category)
 #--------------------
 # BUSINESS LOGIC FUNCTIONS
 #--------------------
 # Add this function to your app.py file
-def create_default_categories(user_id):
-    """Create default expense categories for a new user"""
-    default_categories = [
-        # Housing
-        {"name": "Housing", "icon": "fa-home", "color": "#3498db", "subcategories": [
-            {"name": "Rent/Mortgage", "icon": "fa-building", "color": "#3498db"},
-            {"name": "Utilities", "icon": "fa-bolt", "color": "#3498db"},
-            {"name": "Home Maintenance", "icon": "fa-tools", "color": "#3498db"}
-        ]},
-        # Food
-        {"name": "Food", "icon": "fa-utensils", "color": "#e74c3c", "subcategories": [
-            {"name": "Groceries", "icon": "fa-shopping-basket", "color": "#e74c3c"},
-            {"name": "Restaurants", "icon": "fa-hamburger", "color": "#e74c3c"},
-            {"name": "Coffee Shops", "icon": "fa-coffee", "color": "#e74c3c"}
-        ]},
-        # Transportation
-        {"name": "Transportation", "icon": "fa-car", "color": "#2ecc71", "subcategories": [
-            {"name": "Gas", "icon": "fa-gas-pump", "color": "#2ecc71"},
-            {"name": "Public Transit", "icon": "fa-bus", "color": "#2ecc71"},
-            {"name": "Rideshare", "icon": "fa-taxi", "color": "#2ecc71"}
-        ]},
-        # Shopping
-        {"name": "Shopping", "icon": "fa-shopping-cart", "color": "#9b59b6", "subcategories": [
-            {"name": "Clothing", "icon": "fa-tshirt", "color": "#9b59b6"},
-            {"name": "Electronics", "icon": "fa-laptop", "color": "#9b59b6"},
-            {"name": "Gifts", "icon": "fa-gift", "color": "#9b59b6"}
-        ]},
-        # Entertainment
-        {"name": "Entertainment", "icon": "fa-film", "color": "#f39c12", "subcategories": [
-            {"name": "Movies", "icon": "fa-ticket-alt", "color": "#f39c12"},
-            {"name": "Music", "icon": "fa-music", "color": "#f39c12"},
-            {"name": "Subscriptions", "icon": "fa-play-circle", "color": "#f39c12"}
-        ]},
-        # Health
-        {"name": "Health", "icon": "fa-heartbeat", "color": "#1abc9c", "subcategories": [
-            {"name": "Medical", "icon": "fa-stethoscope", "color": "#1abc9c"},
-            {"name": "Pharmacy", "icon": "fa-prescription-bottle", "color": "#1abc9c"},
-            {"name": "Fitness", "icon": "fa-dumbbell", "color": "#1abc9c"}
-        ]},
-        # Personal
-        {"name": "Personal", "icon": "fa-user", "color": "#34495e", "subcategories": [
-            {"name": "Self-care", "icon": "fa-spa", "color": "#34495e"},
-            {"name": "Education", "icon": "fa-graduation-cap", "color": "#34495e"}
-        ]},
-        # Other
-        {"name": "Other", "icon": "fa-question-circle", "color": "#95a5a6", "is_system": True}
-    ]
-
-    for cat_data in default_categories:
-        subcategories = cat_data.pop('subcategories', [])
-        category = Category(user_id=user_id, **cat_data)
-        db.session.add(category)
-        db.session.flush()  # Get the ID without committing
-
-        for subcat_data in subcategories:
-            subcat = Category(user_id=user_id, parent_id=category.id, **subcat_data)
-            db.session.add(subcat)
-
-    db.session.commit()
-
 def update_currency_rates():
     """
     Update currency exchange rates using a public API
@@ -1286,6 +1094,15 @@ def check_db_structure():
             db.session.commit()
             app.logger.info("Added last_login column to users table")
             
+        # Check AppSettings model for is_customized column
+        if inspector.has_table('app_settings'):
+            app_settings_columns = [col['name'] for col in inspector.get_columns('app_settings')]
+            if 'is_customized' not in app_settings_columns:
+                app.logger.warning("Missing is_customized column in app_settings table - adding it now")
+                db.session.execute(text('ALTER TABLE app_settings ADD COLUMN is_customized BOOLEAN DEFAULT FALSE'))
+                db.session.commit()
+                app.logger.info("Added is_customized column to app_settings table")
+            
         app.logger.info("Database structure check completed")
 
 @app.context_processor
@@ -1323,61 +1140,20 @@ def utility_processor():
         Returns None if user not found to prevent template errors
         """
         return User.query.filter_by(id=user_id).first()
-    
-    def get_category_icon_html(category):
-        """
-        Generate HTML for a category icon with proper styling
-        """
-        if not category:
-            return '<i class="fas fa-tag"></i>'
-
-        icon = category.icon or 'fa-tag'
-        color = category.color or '#6c757d'
-
-        return f'<i class="fas {icon}" style="color: {color};"></i>'
-
-    def get_categories_as_tree():
-        """
-        Return categories in a hierarchical structure for dropdowns
-        """
-        # Get top-level categories
-        top_categories = Category.query.filter_by(
-            user_id=current_user.id,
-            parent_id=None
-        ).order_by(Category.name).all()
-
-        result = []
-
-        # Build tree structure
-        for category in top_categories:
-            cat_data = {
-                'id': category.id,
-                'name': category.name,
-                'icon': category.icon,
-                'color': category.color,
-                'subcategories': []
-            }
-
-            # Add subcategories
-            for subcat in category.subcategories:
-                cat_data['subcategories'].append({
-                    'id': subcat.id,
-                    'name': subcat.name,
-                    'icon': subcat.icon,
-                    'color': subcat.color
-                })
-
-            result.append(cat_data)
-
-        return result
 
     return {
         'get_user_color': get_user_color,
-        'get_user_by_id': get_user_by_id,
-        'get_category_icon_html': get_category_icon_html,
-        'get_categories_as_tree': get_categories_as_tree
+        'get_user_by_id': get_user_by_id
     }
     
+# Add this near your other app context processors
+
+@app.context_processor
+def inject_settings():
+    def get_app_settings():
+        return AppSettings.get_settings()
+    return dict(get_app_settings=get_app_settings)
+
 @app.route('/get_transaction_details/<other_user_id>')
 @login_required_dev
 def get_transaction_details(other_user_id):
@@ -1515,7 +1291,6 @@ def signup():
         
         db.session.add(user)
         db.session.commit()
-        create_default_categories(user.id)
         
         # Send welcome email
         try:
@@ -1741,10 +1516,7 @@ def dashboard():
         'i_owe': {user['id']: {'name': user['name'], 'amount': user['amount']} for user in you_owe},
         'net_balance': net_balance
     }
-
-    budget_summary = get_budget_summary()
-
-    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    
     currencies = Currency.query.all()
     print(f"Passing {len(currencies)} currencies to dashboard template")
     # Pre-calculate expense splits to avoid repeated calculations in template
@@ -1763,21 +1535,21 @@ def dashboard():
                          groups=groups,
                          iou_data=iou_data,
                          base_currency=base_currency,
-                         budget_summary=budget_summary,
                          currencies=currencies,
-                         categories=categories,
                          now=now)
+
+
 
 #--------------------
 # ROUTES: EXPENSES MANAGEMENT
 #--------------------
+
+
 @app.route('/add_expense', methods=['GET', 'POST'])
 @login_required_dev
 def add_expense():
-    print("Request method:", request.method)
+    """Add a new expense with support for AJAX requests"""
     if request.method == 'POST':
-        print("Form data:", request.form)
-        
         try:
             # Check if this is a personal expense (no splits)
             is_personal_expense = request.form.get('personal_expense') == 'on'
@@ -1785,14 +1557,17 @@ def add_expense():
             # Handle split_with based on whether it's a personal expense
             if is_personal_expense:
                 # For personal expenses, we set split_with to empty
-                # This will make calculate_splits assign the full amount to the payer
                 split_with_str = None
             else:
                 # Handle multi-select for split_with
                 split_with_ids = request.form.getlist('split_with')
                 if not split_with_ids:
-                    flash('Please select at least one person to split with or mark as personal expense.')
-                    return redirect(url_for('dashboard'))
+                    error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return jsonify({'success': False, 'message': error_msg}), 400
+                    else:
+                        flash_message(error_msg, 'error')
+                        return redirect(url_for('dashboard'))
                 
                 split_with_str = ','.join(split_with_ids) if split_with_ids else None
             
@@ -1800,13 +1575,16 @@ def add_expense():
             try:
                 expense_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
             except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD format.')
-                return redirect(url_for('dashboard'))
+                error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('dashboard'))
             
             # Process split details if provided
             split_details = None
             if request.form.get('split_details'):
-                import json
                 split_details = request.form.get('split_details')
             
             # Get currency information
@@ -1823,16 +1601,15 @@ def add_expense():
             base_currency = Currency.query.filter_by(is_base=True).first()
             
             if not selected_currency or not base_currency:
-                flash('Currency configuration error.')
-                return redirect(url_for('dashboard'))
+                error_msg = 'Currency configuration error.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('dashboard'))
             
             # Convert original amount to base currency
-            # Multiply by the rate to convert from selected currency to base currency
-            # For example, if 1 INR = 0.012 USD, then 1 * 0.012 = 0.012 USD
             amount = original_amount * selected_currency.rate_to_base
-            category_id = request.form.get('category_id')
-            if category_id and not category_id.strip():
-                category_id = None
             
             # Create expense record
             expense = Expense(
@@ -1847,7 +1624,6 @@ def add_expense():
                 split_details=split_details,
                 paid_by=request.form['paid_by'],
                 user_id=current_user.id,
-                category_id=category_id,
                 group_id=request.form.get('group_id') if request.form.get('group_id') else None,
                 split_with=split_with_str,
             )
@@ -1862,33 +1638,57 @@ def add_expense():
             
             db.session.add(expense)
             db.session.commit()
-            flash('Expense added successfully!')
-            print("Expense added successfully")
+            
+            # Success response
+            success_msg = 'Expense added successfully!'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': True,
+                    'message': success_msg,
+                    'expense': {
+                        'id': expense.id,
+                        'description': expense.description,
+                        'amount': expense.amount,
+                        'date': expense.date.strftime('%Y-%m-%d')
+                    }
+                })
+            else:
+                flash_message(success_msg, 'success')
+                return redirect(url_for('dashboard'))
             
         except Exception as e:
-            print("Error adding expense:", str(e))
-            flash(f'Error: {str(e)}')
+            db.session.rollback()
+            app.logger.error(f"Error adding expense: {str(e)}")
+            error_msg = f'Error: {str(e)}'
             
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 500
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('dashboard'))
+    
+    # GET request just redirects to dashboard
     return redirect(url_for('dashboard'))
 
 
 @app.route('/delete_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def delete_expense(expense_id):
-    """Delete an expense by ID"""
+    """Delete an expense by ID with AJAX support"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
         
         # Security check: Only the creator can delete the expense
         if expense.user_id != current_user.id:
+            error_msg = 'You do not have permission to delete this expense'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
                     'success': False,
-                    'message': 'You do not have permission to delete this expense'
+                    'message': error_msg
                 }), 403
             else:
-                flash('You do not have permission to delete this expense')
+                flash_message(error_msg, 'error')
                 return redirect(url_for('transactions'))
         
         # Delete the expense
@@ -1896,26 +1696,28 @@ def delete_expense(expense_id):
         db.session.commit()
         
         # Handle AJAX and regular requests
+        success_msg = 'Expense deleted successfully'
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': True,
-                'message': 'Expense deleted successfully'
+                'message': success_msg
             })
         else:
-            flash('Expense deleted successfully')
+            flash_message(success_msg, 'success')
             return redirect(url_for('transactions'))
             
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error deleting expense {expense_id}: {str(e)}")
+        error_msg = f'Error: {str(e)}'
         
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': False,
-                'message': f'Error: {str(e)}'
+                'message': error_msg
             }), 500
         else:
-            flash(f'Error: {str(e)}')
+            flash_message(error_msg, 'error')
             return redirect(url_for('transactions'))
 
 @app.route('/get_expense/<int:expense_id>', methods=['GET'])
@@ -1972,15 +1774,19 @@ def get_expense(expense_id):
 @app.route('/update_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def update_expense(expense_id):
-    """Update an existing expense"""
+    """Update an existing expense with AJAX support"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
         
         # Security check: Only the creator can update the expense
         if expense.user_id != current_user.id:
-            flash('You do not have permission to edit this expense')
-            return redirect(url_for('transactions'))
+            error_msg = 'You do not have permission to edit this expense'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Check if this is a personal expense (no splits)
         is_personal_expense = request.form.get('personal_expense') == 'on'
@@ -1993,8 +1799,12 @@ def update_expense(expense_id):
             # Handle multi-select for split_with
             split_with_ids = request.form.getlist('split_with')
             if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('transactions'))
+                error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('transactions'))
             
             split_with_str = ','.join(split_with_ids) if split_with_ids else None
         
@@ -2002,8 +1812,12 @@ def update_expense(expense_id):
         try:
             expense_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('transactions'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Process split details if provided
         split_details = None
@@ -2024,8 +1838,12 @@ def update_expense(expense_id):
         base_currency = Currency.query.filter_by(is_base=True).first()
         
         if not selected_currency or not base_currency:
-            flash('Currency configuration error.')
-            return redirect(url_for('transactions'))
+            error_msg = 'Currency configuration error.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Convert original amount to base currency
         amount = original_amount * selected_currency.rate_to_base
@@ -2057,18 +1875,41 @@ def update_expense(expense_id):
         
         # Save changes
         db.session.commit()
-        flash('Expense updated successfully!')
+        
+        # Success response
+        success_msg = 'Expense updated successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'expense': {
+                    'id': expense.id,
+                    'description': expense.description,
+                    'amount': expense.amount,
+                    'date': expense.date.strftime('%Y-%m-%d')
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('transactions'))
         
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error updating expense {expense_id}: {str(e)}")
-        flash(f'Error: {str(e)}')
+        error_msg = f'Error: {str(e)}'
         
-    return redirect(url_for('transactions'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('transactions'))
+
 
 #--------------------
 # ROUTES: tags
 #--------------------
+
+
 @app.route('/tags')
 @login_required_dev
 def manage_tags():
@@ -2078,44 +1919,93 @@ def manage_tags():
 @app.route('/tags/add', methods=['POST'])
 @login_required_dev
 def add_tag():
-    name = request.form.get('name')
-    color = request.form.get('color', "#6c757d")
-    
-    # Check if tag already exists for this user
-    existing_tag = Tag.query.filter_by(user_id=current_user.id, name=name).first()
-    if existing_tag:
-        flash('Tag with this name already exists')
-        return redirect(url_for('manage_tags'))
-    
-    tag = Tag(name=name, color=color, user_id=current_user.id)
-    db.session.add(tag)
-    db.session.commit()
-    
-    flash('Tag added successfully')
-    return redirect(url_for('manage_tags'))
-
+    """Add a new tag with AJAX support"""
+    try:
+        name = request.form.get('name')
+        color = request.form.get('color', "#6c757d")
+        
+        # Check if tag already exists for this user
+        existing_tag = Tag.query.filter_by(user_id=current_user.id, name=name).first()
+        if existing_tag:
+            error_msg = 'Tag with this name already exists'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('manage_tags'))
+        
+        tag = Tag(name=name, color=color, user_id=current_user.id)
+        db.session.add(tag)
+        db.session.commit()
+        
+        success_msg = 'Tag added successfully'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'tag': {
+                    'id': tag.id,
+                    'name': tag.name,
+                    'color': tag.color
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('manage_tags'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding tag: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('manage_tags'))
+            
 @app.route('/tags/delete/<int:tag_id>', methods=['POST'])
 @login_required_dev
 def delete_tag(tag_id):
-    tag = Tag.query.get_or_404(tag_id)
-    
-    # Check if tag belongs to current user
-    if tag.user_id != current_user.id:
-        flash('You don\'t have permission to delete this tag')
-        return redirect(url_for('manage_tags'))
-    
-    db.session.delete(tag)
-    db.session.commit()
-    
-    flash('Tag deleted successfully')
-    return redirect(url_for('manage_tags'))
+    """Delete a tag with AJAX support"""
+    try:
+        tag = Tag.query.get_or_404(tag_id)
+        
+        # Check if tag belongs to current user
+        if tag.user_id != current_user.id:
+            error_msg = 'You don\'t have permission to delete this tag'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('manage_tags'))
+        
+        # Remove tag from all expenses
+        for expense in tag.expenses:
+            expense.tags.remove(tag)
+        
+        # Delete the tag
+        db.session.delete(tag)
+        db.session.commit()
+        
+        success_msg = 'Tag deleted successfully'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': success_msg})
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('manage_tags'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting tag {tag_id}: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('manage_tags'))
 
-
-
-
-#--------------------
-# ROUTES: recurring
-#--------------------
 @app.route('/recurring')
 @login_required_dev
 def recurring():
@@ -2151,8 +2041,12 @@ def add_recurring():
             # Handle multi-select for split_with
             split_with_ids = request.form.getlist('split_with')
             if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('recurring'))
+                error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash(error_msg)
+                    return redirect(url_for('recurring'))
             
             split_with_str = ','.join(split_with_ids) if split_with_ids else None
         
@@ -2163,22 +2057,48 @@ def add_recurring():
             if request.form.get('end_date'):
                 end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('recurring'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
         
         # Process split details if provided
-        category_id = request.form.get('category_id')
-        if category_id and not category_id.strip():
-            category_id = None
         split_details = None
         if request.form.get('split_details'):
-            import json
             split_details = request.form.get('split_details')
+        
+        # Get currency information
+        currency_code = request.form.get('currency_code', 'USD')
+        if not currency_code:
+            # Use user's default currency or system default (USD)
+            currency_code = current_user.default_currency_code or 'USD'
+        
+        # Get original amount in the selected currency
+        original_amount = float(request.form['amount'])
+        
+        # Find the currencies
+        selected_currency = Currency.query.filter_by(code=currency_code).first()
+        base_currency = Currency.query.filter_by(is_base=True).first()
+        
+        if not selected_currency or not base_currency:
+            error_msg = 'Currency configuration error.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
+        
+        # Convert original amount to base currency
+        amount = original_amount * selected_currency.rate_to_base
         
         # Create new recurring expense
         recurring_expense = RecurringExpense(
             description=request.form['description'],
-            amount=float(request.form['amount']),
+            amount=amount,
+            original_amount=original_amount,
+            currency_code=currency_code,
             card_used=request.form['card_used'],
             split_method=request.form['split_method'],
             split_value=float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0,
@@ -2189,7 +2109,6 @@ def add_recurring():
             split_with=split_with_str,
             frequency=request.form['frequency'],
             start_date=start_date,
-            category_id=category_id,
             end_date=end_date,
             active=True
         )
@@ -2215,49 +2134,113 @@ def add_recurring():
             db.session.add(expense)
             db.session.commit()
         
-        flash('Recurring expense added successfully!')
-        
+        success_msg = 'Recurring expense added successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'recurring': {
+                    'id': recurring_expense.id,
+                    'description': recurring_expense.description,
+                    'amount': recurring_expense.amount,
+                    'frequency': recurring_expense.frequency
+                }
+            })
+        else:
+            flash(success_msg)
+            return redirect(url_for('recurring'))
+            
     except Exception as e:
-        print("Error adding recurring expense:", str(e))
-        flash(f'Error: {str(e)}')
-    
-    return redirect(url_for('recurring'))
+        app.logger.error(f"Error adding recurring expense: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash(error_msg)
+            return redirect(url_for('recurring'))
 
 @app.route('/toggle_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
 def toggle_recurring(recurring_id):
-    recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
-    
-    # Security check
-    if recurring_expense.user_id != current_user.id:
-        flash('You don\'t have permission to modify this recurring expense')
-        return redirect(url_for('recurring'))
-    
-    # Toggle the active status
-    recurring_expense.active = not recurring_expense.active
-    db.session.commit()
-    
-    status = "activated" if recurring_expense.active else "deactivated"
-    flash(f'Recurring expense {status} successfully')
-    
-    return redirect(url_for('recurring'))
+    try:
+        recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
+        
+        # Security check
+        if recurring_expense.user_id != current_user.id:
+            error_msg = "You don't have permission to modify this recurring expense"
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
+        
+        # Toggle the active status
+        recurring_expense.active = not recurring_expense.active
+        db.session.commit()
+        
+        status = "activated" if recurring_expense.active else "deactivated"
+        success_msg = f'Recurring expense {status} successfully'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'status': recurring_expense.active
+            })
+        else:
+            flash(success_msg)
+            return redirect(url_for('recurring'))
+            
+    except Exception as e:
+        app.logger.error(f"Error toggling recurring expense: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash(error_msg)
+            return redirect(url_for('recurring'))
 
 @app.route('/delete_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
 def delete_recurring(recurring_id):
-    recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
-    
-    # Security check
-    if recurring_expense.user_id != current_user.id:
-        flash('You don\'t have permission to delete this recurring expense')
-        return redirect(url_for('recurring'))
-    
-    db.session.delete(recurring_expense)
-    db.session.commit()
-    
-    flash('Recurring expense deleted successfully')
-    
-    return redirect(url_for('recurring'))
+    try:
+        recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
+        
+        # Security check
+        if recurring_expense.user_id != current_user.id:
+            error_msg = "You don't have permission to delete this recurring expense"
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
+        
+        db.session.delete(recurring_expense)
+        db.session.commit()
+        
+        success_msg = 'Recurring expense deleted successfully'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg
+            })
+        else:
+            flash(success_msg)
+            return redirect(url_for('recurring'))
+            
+    except Exception as e:
+        app.logger.error(f"Error deleting recurring expense: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash(error_msg)
+            return redirect(url_for('recurring'))
+            
 #--------------------
 # ROUTES: GROUPS
 #--------------------
@@ -2272,6 +2255,7 @@ def groups():
 @app.route('/groups/create', methods=['POST'])
 @login_required_dev
 def create_group():
+    """Create a new group with AJAX support"""
     try:
         name = request.form.get('name')
         description = request.form.get('description')
@@ -2294,11 +2278,32 @@ def create_group():
         
         db.session.add(group)
         db.session.commit()
-        flash('Group created successfully!')
+        
+        success_msg = 'Group created successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'group': {
+                    'id': group.id,
+                    'name': group.name,
+                    'member_count': len(group.members)
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('groups'))
+            
     except Exception as e:
-        flash(f'Error creating group: {str(e)}')
-    
-    return redirect(url_for('groups'))
+        db.session.rollback()
+        app.logger.error(f"Error creating group: {str(e)}")
+        error_msg = f'Error creating group: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('groups'))
 
 @app.route('/groups/<int:group_id>')
 @login_required_dev
@@ -2308,60 +2313,154 @@ def group_details(group_id):
 
     # Check if user is member of group
     if current_user not in group.members:
-        flash('Access denied. You are not a member of this group.')
+        flash_message('Access denied. You are not a member of this group.', 'error')
         return redirect(url_for('groups'))
-    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     
     expenses = Expense.query.filter_by(group_id=group_id).order_by(Expense.date.desc()).all()
     all_users = User.query.all()
     currencies = Currency.query.all()
-    return render_template('group_details.html', 
-                           group=group, 
-                           expenses=expenses,
-                           currencies=currencies, 
-                           base_currency=base_currency,
-                           categories=categories,
-                           users=all_users)
+    return render_template('group_details.html', group=group, expenses=expenses, currencies=currencies, base_currency=base_currency, users=all_users)
 
 @app.route('/groups/<int:group_id>/add_member', methods=['POST'])
 @login_required_dev
 def add_group_member(group_id):
-    group = Group.query.get_or_404(group_id)
-    if current_user != group.creator:
-        flash('Only group creator can add members')
-        return redirect(url_for('group_details', group_id=group_id))
-    
-    member_id = request.form.get('user_id')
-    user = User.query.filter_by(id=member_id).first()
-    
-    if user and user not in group.members:
+    """Add a member to a group with AJAX support"""
+    try:
+        group = Group.query.get_or_404(group_id)
+        
+        # Check permissions
+        if current_user != group.creator:
+            error_msg = 'Only group creator can add members'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Get user to add
+        member_id = request.form.get('user_id')
+        user = User.query.filter_by(id=member_id).first()
+        
+        if not user:
+            error_msg = 'User not found'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 404
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Check if already a member
+        if user in group.members:
+            error_msg = f'{user.name} is already a member of this group'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'info')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Add member
         group.members.append(user)
         db.session.commit()
-        flash(f'{user.name} added to group!')
-        create_default_categories(user.id)
-        # Send group invitation email
+        
+        # Send invitation email
         try:
             send_group_invitation_email(user, group, current_user)
         except Exception as e:
             app.logger.error(f"Failed to send group invitation email: {str(e)}")
-    
-    return redirect(url_for('group_details', group_id=group_id))
+        
+        success_msg = f'{user.name} added to group!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'user': {
+                    'id': user.id,
+                    'name': user.name
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('group_details', group_id=group_id))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding group member: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('group_details', group_id=group_id))
 
 @app.route('/groups/<int:group_id>/remove_member/<member_id>', methods=['POST'])
 @login_required_dev
 def remove_group_member(group_id, member_id):
-    group = Group.query.get_or_404(group_id)
-    if current_user != group.creator:
-        flash('Only group creator can remove members')
-        return redirect(url_for('group_details', group_id=group_id))
-    
-    user = User.query.filter_by(id=member_id).first()
-    if user and user in group.members and user != group.creator:
+    """Remove a member from a group with AJAX support"""
+    try:
+        group = Group.query.get_or_404(group_id)
+        
+        # Check permissions
+        if current_user != group.creator:
+            error_msg = 'Only group creator can remove members'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Get user to remove
+        user = User.query.filter_by(id=member_id).first()
+        
+        if not user:
+            error_msg = 'User not found'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 404
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Check if user is a member and not the creator
+        if user not in group.members:
+            error_msg = f'{user.name} is not a member of this group'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        if user == group.creator:
+            error_msg = 'Cannot remove group creator'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Remove member
         group.members.remove(user)
         db.session.commit()
-        flash(f'{user.name} removed from group!')
-    
-    return redirect(url_for('group_details', group_id=group_id))
+        
+        success_msg = f'{user.name} removed from group!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('group_details', group_id=group_id))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error removing group member: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('group_details', group_id=group_id))
 
 #--------------------
 # ROUTES: ADMIN
@@ -2375,7 +2474,10 @@ def admin():
         return redirect(url_for('dashboard'))
     
     users = User.query.all()
-    return render_template('admin.html', users=users)
+    app_settings = AppSettings.get_settings()
+    
+    return render_template('admin.html', users=users, settings=app_settings)
+    
 @app.route('/admin/add_user', methods=['POST'])
 @login_required_dev
 def admin_add_user():
@@ -2405,15 +2507,16 @@ def admin_add_user():
     
     flash('User added successfully!')
     return redirect(url_for('admin'))
+
 @app.route('/admin/delete_user/<user_id>', methods=['POST'])
 @login_required_dev
 def admin_delete_user(user_id):
     if not current_user.is_admin:
-        flash('Access denied. Admin privileges required.')
+        flash_message('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('dashboard'))
     
     if user_id == current_user.id:
-        flash('Cannot delete your own admin account!')
+        flash_message('Cannot delete your own admin account!', 'error')
         return redirect(url_for('admin'))
     
     user = User.query.filter_by(id=user_id).first()
@@ -2422,7 +2525,7 @@ def admin_delete_user(user_id):
         Expense.query.filter_by(user_id=user_id).delete()
         db.session.delete(user)
         db.session.commit()
-        flash('User deleted successfully!')
+        flash_message('User deleted successfully!', 'success')
     
     return redirect(url_for('admin'))
 
@@ -2452,6 +2555,41 @@ def admin_reset_password():
         
     return redirect(url_for('admin'))
 
+# Add this with your other admin routes
+
+@app.route('/admin/update_app_branding', methods=['POST'])
+@login_required_dev
+def update_app_branding():
+    """Update app branding settings (admin only)"""
+    if not current_user.is_admin:
+        flash_message('Only administrators can change app branding', 'danger')
+        return redirect(url_for('admin'))
+        
+    settings = AppSettings.get_settings()
+    settings.app_title = request.form.get('app_title')
+    settings.app_logo_emoji = request.form.get('app_logo_emoji')
+    settings.app_logo_url = request.form.get('app_logo_url')
+    settings.last_updated = datetime.utcnow()
+    settings.updated_by = current_user.id
+    settings.is_customized = True  # Mark as customized
+    
+    db.session.commit()
+    
+    flash_message('App branding settings updated successfully', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/reset_app_branding', methods=['POST'])
+@login_required_dev
+def reset_app_branding():
+    """Reset app branding to default values"""
+    if not current_user.is_admin:
+        flash_message('Only administrators can change app branding', 'danger')
+        return redirect(url_for('admin'))
+        
+    settings = AppSettings.get_settings()
+    settings.app_title = "Dollar Dollar Bill Y'all"
+    settings.app_logo_emoji = "💵"
+    settings.app_logo_url = "/static/images/dollar-logo.png"
 #--------------------
 # ROUTES: SETTLEMENTS
 #--------------------
@@ -2507,13 +2645,18 @@ def settlements():
 @app.route('/add_settlement', methods=['POST'])
 @login_required_dev
 def add_settlement():
+    """Add a settlement with AJAX support"""
     try:
         # Parse date with error handling
         try:
             settlement_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('settlements'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('settlements'))
         
         # Create settlement record
         settlement = Settlement(
@@ -2526,17 +2669,35 @@ def add_settlement():
         
         db.session.add(settlement)
         db.session.commit()
-        flash('Settlement recorded successfully!')
+        
+        success_msg = 'Settlement recorded successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'settlement': {
+                    'id': settlement.id,
+                    'amount': settlement.amount,
+                    'date': settlement.date.strftime('%Y-%m-%d'),
+                    'payer': settlement.payer.name,
+                    'receiver': settlement.receiver.name
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('settlements'))
         
     except Exception as e:
-        flash(f'Error: {str(e)}')
+        db.session.rollback()
+        app.logger.error(f"Error adding settlement: {str(e)}")
+        error_msg = f'Error: {str(e)}'
         
-    return redirect(url_for('settlements'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('settlements'))
 
-
-#--------------------
-# ROUTES: currencies
-#--------------------
 
 @app.route('/currencies')
 @login_required_dev
@@ -2548,7 +2709,7 @@ def manage_currencies():
 @login_required_dev
 def add_currency():
     if not current_user.is_admin:
-        flash('Only administrators can add currencies')
+        flash_message('Only administrators can add currencies', 'error')
         return redirect(url_for('manage_currencies'))
     
     code = request.form.get('code', '').upper()
@@ -2559,13 +2720,13 @@ def add_currency():
     
     # Validate currency code format
     if not code or len(code) != 3 or not code.isalpha():
-        flash('Invalid currency code. Please use 3-letter ISO currency code (e.g., USD, EUR, GBP)')
+        flash_message('Invalid currency code. Please use 3-letter ISO currency code (e.g., USD, EUR, GBP)', 'error')
         return redirect(url_for('manage_currencies'))
     
     # Check if currency already exists
     existing = Currency.query.filter_by(code=code).first()
     if existing:
-        flash(f'Currency {code} already exists')
+        flash_message(f'Currency {code} already exists', 'error')
         return redirect(url_for('manage_currencies'))
     
     # If setting as base, update all existing base currencies
@@ -2585,10 +2746,10 @@ def add_currency():
     
     try:
         db.session.commit()
-        flash(f'Currency {code} added successfully')
+        flash_message(f'Currency {code} added successfully', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Error adding currency: {str(e)}')
+        flash_message(f'Error adding currency: {str(e)}', 'error')
     
     return redirect(url_for('manage_currencies'))
 
@@ -2596,6 +2757,8 @@ def add_currency():
 @login_required_dev
 def update_currency(code):
     if not current_user.is_admin:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': 'Only administrators can update currencies'}), 403
         flash('Only administrators can update currencies')
         return redirect(url_for('manage_currencies'))
     
@@ -2617,9 +2780,13 @@ def update_currency(code):
     
     try:
         db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': f'Currency {code} updated successfully'})
         flash(f'Currency {code} updated successfully')
     except Exception as e:
         db.session.rollback()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': f'Error updating currency: {str(e)}'}), 500
         flash(f'Error updating currency: {str(e)}')
     
     return redirect(url_for('manage_currencies'))
@@ -2763,13 +2930,6 @@ def set_default_currency():
     
     flash(f'Default currency set to {currency.code} ({currency.symbol})')
     return redirect(url_for('manage_currencies'))
-
-
-
-
-#--------------------
-# ROUTES: Transactions
-#--------------------
 
 @app.route('/transactions')
 @login_required_dev
@@ -3026,642 +3186,6 @@ def export_transactions():
         app.logger.error(f"Error exporting transactions: {str(e)}")
         return jsonify({"error": str(e)}), 500
     
-
-#--------------------
-# ROUTES: Categories
-#--------------------
-
-
-
-@app.route('/categories')
-@login_required_dev
-def manage_categories():
-    """View and manage expense categories"""
-    # Get all top-level categories
-    categories = Category.query.filter_by(
-        user_id=current_user.id,
-        parent_id=None
-    ).order_by(Category.name).all()
-
-    # Get all FontAwesome icons for the icon picker
-    icons = [
-        "fa-home", "fa-building", "fa-bolt", "fa-tools", 
-        "fa-utensils", "fa-shopping-basket", "fa-hamburger", "fa-coffee",
-        "fa-car", "fa-gas-pump", "fa-bus", "fa-taxi",
-        "fa-shopping-cart", "fa-tshirt", "fa-laptop", "fa-gift",
-        "fa-film", "fa-ticket-alt", "fa-music", "fa-play-circle",
-        "fa-heartbeat", "fa-stethoscope", "fa-prescription-bottle", "fa-dumbbell",
-        "fa-user", "fa-spa", "fa-graduation-cap",
-        "fa-question-circle", "fa-tag", "fa-money-bill", "fa-credit-card",
-        "fa-plane", "fa-hotel", "fa-glass-cheers", "fa-book", "fa-gamepad", 
-        "fa-baby", "fa-dog", "fa-cat", "fa-phone", "fa-wifi"
-    ]
-
-    return render_template('categories.html', categories=categories, icons=icons)
-
-@app.route('/categories/add', methods=['POST'])
-@login_required_dev
-def add_category():
-    """Add a new category or subcategory"""
-    name = request.form.get('name')
-    icon = request.form.get('icon', 'fa-tag')
-    color = request.form.get('color', "#6c757d")
-    parent_id = request.form.get('parent_id')
-    if parent_id == "":
-        parent_id = None
-    if not name:
-        flash('Category name is required')
-        return redirect(url_for('manage_categories'))
-
-    # Validate parent category belongs to user
-    if parent_id:
-        parent = Category.query.get(parent_id)
-        if not parent or parent.user_id != current_user.id:
-            flash('Invalid parent category')
-            return redirect(url_for('manage_categories'))
-
-    category = Category(
-        name=name,
-        icon=icon,
-        color=color,
-        parent_id=parent_id,
-        user_id=current_user.id
-    )
-
-    db.session.add(category)
-    db.session.commit()
-
-    flash('Category added successfully')
-    return redirect(url_for('manage_categories'))
-
-@app.route('/categories/edit/<int:category_id>', methods=['POST'])
-@login_required_dev
-def edit_category(category_id):
-    """Edit an existing category"""
-    category = Category.query.get_or_404(category_id)
-
-    # Check if category belongs to current user
-    if category.user_id != current_user.id:
-        flash('You don\'t have permission to edit this category')
-        return redirect(url_for('manage_categories'))
-
-    # Don't allow editing system categories
-    if category.is_system:
-        flash('System categories cannot be edited')
-        return redirect(url_for('manage_categories'))
-
-    category.name = request.form.get('name', category.name)
-    category.icon = request.form.get('icon', category.icon)
-    category.color = request.form.get('color', category.color)
-
-    db.session.commit()
-
-    flash('Category updated successfully')
-    return redirect(url_for('manage_categories'))
-
-@app.route('/categories/delete/<int:category_id>', methods=['POST'])
-@login_required_dev
-def delete_category(category_id):
-    """Delete a category"""
-    category = Category.query.get_or_404(category_id)
-
-    # Check if category belongs to current user
-    if category.user_id != current_user.id:
-        flash('You don\'t have permission to delete this category')
-        return redirect(url_for('manage_categories'))
-
-    # Don't allow deleting system categories
-    if category.is_system:
-        flash('System categories cannot be deleted')
-        return redirect(url_for('manage_categories'))
-
-    # Find 'Other' category
-    other_category = Category.query.filter_by(
-        name='Other', 
-        user_id=current_user.id,
-        is_system=True
-    ).first()
-
-    # Check if category has expenses associated with it
-    if category.expenses:
-        if other_category:
-            # Move expenses to 'Other' category
-            for expense in category.expenses:
-                expense.category_id = other_category.id
-        else:
-            # If 'Other' doesn't exist, clear category_id
-            for expense in category.expenses:
-                expense.category_id = None
-
-    # Also handle recurring expenses with this category
-    recurring_expenses = RecurringExpense.query.filter_by(category_id=category_id).all()
-    if recurring_expenses:
-        if other_category:
-            # Move recurring expenses to 'Other' category
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = other_category.id
-        else:
-            # If 'Other' doesn't exist, clear category_id
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = None
-
-    # Delete subcategories first
-    for subcategory in category.subcategories:
-        db.session.delete(subcategory)
-
-    db.session.delete(category)
-    db.session.commit()
-
-    flash('Category deleted successfully')
-    return redirect(url_for('manage_categories'))
-
-#--------------------
-# ROUTES: Budget
-#--------------------
-
-@app.route('/budgets')
-@login_required_dev
-def budgets():
-    """View and manage budgets"""
-    # Get all budgets for the current user
-    user_budgets = Budget.query.filter_by(user_id=current_user.id).order_by(Budget.created_at.desc()).all()
-    
-    # Get all categories for the form
-    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
-    
-    # Calculate budget progress for each budget
-    budget_data = []
-    for budget in user_budgets:
-        spent = budget.calculate_spent_amount()
-        remaining = budget.get_remaining_amount()
-        percentage = budget.get_progress_percentage()
-        status = budget.get_status()
-        
-        period_start, period_end = budget.get_current_period_dates()
-        
-        budget_data.append({
-            'budget': budget,
-            'spent': spent,
-            'remaining': remaining,
-            'percentage': percentage,
-            'status': status,
-            'period_start': period_start,
-            'period_end': period_end
-        })
-    
-    # Get base currency for display
-    base_currency = get_base_currency()
-    
-    return render_template('budgets.html',
-                          budget_data=budget_data,
-                          categories=categories,
-                          base_currency=base_currency)
-
-@app.route('/budgets/add', methods=['POST'])
-@login_required_dev
-def add_budget():
-    """Add a new budget"""
-    try:
-        # Get form data
-        category_id = request.form.get('category_id')
-        amount = float(request.form.get('amount', 0))
-        period = request.form.get('period', 'monthly')
-        include_subcategories = request.form.get('include_subcategories') == 'on'
-        name = request.form.get('name', '').strip() or None
-        start_date_str = request.form.get('start_date')
-        is_recurring = request.form.get('is_recurring') == 'on'
-        
-        # Validate category exists
-        category = Category.query.get(category_id)
-        if not category or category.user_id != current_user.id:
-            flash('Invalid category selected.')
-            return redirect(url_for('budgets'))
-        
-        # Parse start date
-        try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d') if start_date_str else datetime.utcnow()
-        except ValueError:
-            start_date = datetime.utcnow()
-        
-        # Check if a budget already exists for this category
-        existing_budget = Budget.query.filter_by(
-            user_id=current_user.id,
-            category_id=category_id,
-            period=period,
-            active=True
-        ).first()
-        
-        if existing_budget:
-            flash(f'An active {period} budget already exists for this category. Please edit or deactivate it first.')
-            return redirect(url_for('budgets'))
-        
-        # Create new budget
-        budget = Budget(
-            user_id=current_user.id,
-            category_id=category_id,
-            name=name,
-            amount=amount,
-            period=period,
-            include_subcategories=include_subcategories,
-            start_date=start_date,
-            is_recurring=is_recurring,
-            active=True
-        )
-        
-        db.session.add(budget)
-        db.session.commit()
-        
-        flash('Budget added successfully!')
-        
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error adding budget: {str(e)}")
-        flash(f'Error adding budget: {str(e)}')
-    
-    return redirect(url_for('budgets'))
-
-@app.route('/budgets/edit/<int:budget_id>', methods=['POST'])
-@login_required_dev
-def edit_budget(budget_id):
-    """Edit an existing budget"""
-    try:
-        # Find the budget
-        budget = Budget.query.get_or_404(budget_id)
-        
-        # Security check
-        if budget.user_id != current_user.id:
-            flash('You do not have permission to edit this budget.')
-            return redirect(url_for('budgets'))
-        
-        # Update fields
-        budget.category_id = request.form.get('category_id', budget.category_id)
-        budget.name = request.form.get('name', '').strip() or budget.name
-        budget.amount = float(request.form.get('amount', budget.amount))
-        budget.period = request.form.get('period', budget.period)
-        budget.include_subcategories = request.form.get('include_subcategories') == 'on'
-        
-        if request.form.get('start_date'):
-            try:
-                budget.start_date = datetime.strptime(request.form.get('start_date'), '%Y-%m-%d')
-            except ValueError:
-                pass  # Keep original if parsing fails
-        
-        budget.is_recurring = request.form.get('is_recurring') == 'on'
-        budget.updated_at = datetime.utcnow()
-        
-        db.session.commit()
-        flash('Budget updated successfully!')
-        
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error updating budget: {str(e)}")
-        flash(f'Error updating budget: {str(e)}')
-    
-    return redirect(url_for('budgets'))
-
-@app.route('/budgets/toggle/<int:budget_id>', methods=['POST'])
-@login_required_dev
-def toggle_budget(budget_id):
-    """Toggle budget active status"""
-    try:
-        # Find the budget
-        budget = Budget.query.get_or_404(budget_id)
-        
-        # Security check
-        if budget.user_id != current_user.id:
-            flash('You do not have permission to modify this budget.')
-            return redirect(url_for('budgets'))
-        
-        # Toggle active status
-        budget.active = not budget.active
-        db.session.commit()
-        
-        status = "activated" if budget.active else "deactivated"
-        flash(f'Budget {status} successfully!')
-        
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error toggling budget: {str(e)}")
-        flash(f'Error toggling budget: {str(e)}')
-    
-    return redirect(url_for('budgets'))
-
-@app.route('/budgets/delete/<int:budget_id>', methods=['POST'])
-@login_required_dev
-def delete_budget(budget_id):
-    """Delete a budget"""
-    try:
-        # Find the budget
-        budget = Budget.query.get_or_404(budget_id)
-        
-        # Security check
-        if budget.user_id != current_user.id:
-            flash('You do not have permission to delete this budget.')
-            return redirect(url_for('budgets'))
-        
-        db.session.delete(budget)
-        db.session.commit()
-        
-        flash('Budget deleted successfully!')
-        
-    except Exception as e:
-        db.session.rollback()
-        app.logger.error(f"Error deleting budget: {str(e)}")
-        flash(f'Error deleting budget: {str(e)}')
-    
-    return redirect(url_for('budgets'))
-
-@app.route('/budgets/get/<int:budget_id>', methods=['GET'])
-@login_required_dev
-def get_budget(budget_id):
-    """Get budget details for editing via AJAX"""
-    try:
-        # Find the budget
-        budget = Budget.query.get_or_404(budget_id)
-        
-        # Security check
-        if budget.user_id != current_user.id:
-            return jsonify({
-                'success': False,
-                'message': 'You do not have permission to view this budget'
-            }), 403
-        
-        # Get category details
-        category = Category.query.get(budget.category_id)
-        category_name = category.name if category else "Unknown"
-        
-        # Format dates
-        start_date = budget.start_date.strftime('%Y-%m-%d')
-        
-        # Calculate spent amount
-        spent = budget.calculate_spent_amount()
-        remaining = budget.get_remaining_amount()
-        percentage = budget.get_progress_percentage()
-        status = budget.get_status()
-        
-        # Return the budget data
-        return jsonify({
-            'success': True,
-            'budget': {
-                'id': budget.id,
-                'name': budget.name or '',
-                'category_id': budget.category_id,
-                'category_name': category_name,
-                'amount': budget.amount,
-                'period': budget.period,
-                'include_subcategories': budget.include_subcategories,
-                'start_date': start_date,
-                'is_recurring': budget.is_recurring,
-                'active': budget.active,
-                'spent': spent,
-                'remaining': remaining,
-                'percentage': percentage,
-                'status': status
-            }
-        })
-            
-    except Exception as e:
-        app.logger.error(f"Error retrieving budget {budget_id}: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-# Add this method to get budget status for the dashboard
-def get_budget_summary():
-    """Get budget summary for current user"""
-    # Get all active budgets
-    active_budgets = Budget.query.filter_by(
-        user_id=current_user.id,
-        active=True
-    ).all()
-    
-    # Process budget data
-    budget_summary = {
-        'total_budgets': len(active_budgets),
-        'over_budget': 0,
-        'approaching_limit': 0,
-        'under_budget': 0,
-        'alert_budgets': []  # For budgets that are over or approaching limit
-    }
-    
-    for budget in active_budgets:
-        status = budget.get_status()
-        if status == 'over':
-            budget_summary['over_budget'] += 1
-            budget_summary['alert_budgets'].append({
-                'id': budget.id,
-                'name': budget.name or budget.category.name,
-                'percentage': budget.get_progress_percentage(),
-                'status': status,
-                'amount': budget.amount,
-                'spent': budget.calculate_spent_amount()
-            })
-        elif status == 'approaching':
-            budget_summary['approaching_limit'] += 1
-            budget_summary['alert_budgets'].append({
-                'id': budget.id,
-                'name': budget.name or budget.category.name,
-                'percentage': budget.get_progress_percentage(),
-                'status': status,
-                'amount': budget.amount,
-                'spent': budget.calculate_spent_amount()
-            })
-        else:
-            budget_summary['under_budget'] += 1
-    
-    # Sort alert budgets by percentage (highest first)
-    budget_summary['alert_budgets'] = sorted(
-        budget_summary['alert_budgets'],
-        key=lambda x: x['percentage'],
-        reverse=True
-    )
-    
-    return budget_summary
-@app.route('/budgets/subcategory-spending/<int:budget_id>')
-@login_required_dev
-def get_subcategory_spending(budget_id):
-    """Get spending details for subcategories of a budget category"""
-    try:
-        # Find the budget
-        budget = Budget.query.get_or_404(budget_id)
-        
-        # Security check
-        if budget.user_id != current_user.id:
-            return jsonify({
-                'success': False,
-                'message': 'You do not have permission to view this budget'
-            }), 403
-        
-        # Get the base currency symbol
-        base_currency = get_base_currency()
-        
-        # Check if base_currency is a dictionary or an object
-        currency_symbol = base_currency['symbol'] if isinstance(base_currency, dict) else base_currency.symbol
-        
-        # Get the category and its subcategories
-        category = Category.query.get(budget.category_id)
-        if not category:
-            return jsonify({
-                'success': False,
-                'message': 'Category not found'
-            }), 404
-        
-        subcategories = []
-        
-        # Get period dates for this budget
-        period_start, period_end = budget.get_current_period_dates()
-        
-        # If this budget includes the parent category directly
-        if not budget.include_subcategories:
-            # Only include the parent category itself
-            spent = calculate_category_spending(category.id, period_start, period_end)
-            
-            subcategories.append({
-                'id': category.id,
-                'name': category.name,
-                'icon': category.icon,
-                'color': category.color,
-                'spent': spent
-            })
-        else:
-            # Include all subcategories
-            for subcategory in category.subcategories:
-                spent = calculate_category_spending(subcategory.id, period_start, period_end)
-                
-                subcategories.append({
-                    'id': subcategory.id,
-                    'name': subcategory.name,
-                    'icon': subcategory.icon,
-                    'color': subcategory.color,
-                    'spent': spent
-                })
-                
-            # If the parent category itself has direct expenses, add it too
-            spent = calculate_category_spending(category.id, period_start, period_end, include_subcategories=False)
-            
-            if spent > 0:
-                subcategories.append({
-                    'id': category.id,
-                    'name': f"{category.name} (direct)",
-                    'icon': category.icon,
-                    'color': category.color,
-                    'spent': spent
-                })
-        
-        # Sort subcategories by spent amount (highest first)
-        subcategories = sorted(subcategories, key=lambda x: x['spent'], reverse=True)
-        
-        return jsonify({
-            'success': True,
-            'budget_id': budget.id,
-            'budget_amount': float(budget.amount),
-            'currency_symbol': currency_symbol,
-            'subcategories': subcategories
-        })
-            
-    except Exception as e:
-        app.logger.error(f"Error retrieving subcategory spending for budget {budget_id}: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }), 500
-
-# Helper function to calculate spending for a category in a date range
-def calculate_category_spending(category_id, start_date, end_date, include_subcategories=True):
-    """Calculate total spending for a category within a date range"""
-    
-    # Get the category
-    category = Category.query.get(category_id)
-    if not category:
-        return 0
-    
-    # Start with expenses directly in this category
-    query = Expense.query.filter(
-        Expense.user_id == current_user.id,
-        Expense.category_id == category_id,
-        Expense.date >= start_date,
-        Expense.date <= end_date
-    )
-    
-    # Calculate total - handle potential missing amount_base
-    total_spent = 0
-    for expense in query.all():
-        try:
-            # Try to use amount_base if it exists
-            if hasattr(expense, 'amount_base') and expense.amount_base is not None:
-                total_spent += expense.amount_base
-            else:
-                # Fall back to regular amount if amount_base doesn't exist
-                total_spent += expense.amount
-        except AttributeError:
-            # If there's any issue, fall back to amount
-            total_spent += expense.amount
-    
-    # If we should include subcategories and this is a parent category
-    if include_subcategories and not category.parent_id:
-        # Get all subcategory IDs
-        subcategory_ids = [subcat.id for subcat in category.subcategories]
-        
-        if subcategory_ids:
-            # Query for expenses in subcategories
-            subcat_query = Expense.query.filter(
-                Expense.user_id == current_user.id,
-                Expense.category_id.in_(subcategory_ids),
-                Expense.date >= start_date,
-                Expense.date <= end_date
-            )
-            
-            # Add subcategory expenses to total - handle potential missing amount_base
-            for expense in subcat_query.all():
-                try:
-                    # Try to use amount_base if it exists
-                    if hasattr(expense, 'amount_base') and expense.amount_base is not None:
-                        total_spent += expense.amount_base
-                    else:
-                        # Fall back to regular amount if amount_base doesn't exist
-                        total_spent += expense.amount
-                except AttributeError:
-                    # If there's any issue, fall back to amount
-                    total_spent += expense.amount
-    
-    return total_spent
-
-# Add to utility_processor to make budget info available in templates
-@app.context_processor
-def utility_processor():
-    # Previous utility functions...
-    
-    def get_budget_status_for_category(category_id):
-        """Get budget status for a specific category"""
-        if not current_user.is_authenticated:
-            return None
-            
-        # Find active budget for this category
-        budget = Budget.query.filter_by(
-            user_id=current_user.id,
-            category_id=category_id,
-            active=True
-        ).first()
-        
-        if not budget:
-            return None
-            
-        return {
-            'id': budget.id,
-            'percentage': budget.get_progress_percentage(),
-            'status': budget.get_status(),
-            'amount': budget.amount,
-            'spent': budget.calculate_spent_amount(),
-            'remaining': budget.get_remaining_amount()
-        }
-    
-    return {
-        # Previous functions...
-        'get_budget_status_for_category': get_budget_status_for_category
-    }
-
-
 #--------------------
 # ROUTES: user 
 #--------------------
@@ -3690,63 +3214,79 @@ def profile():
 @app.route('/profile/change_password', methods=['POST'])
 @login_required_dev
 def change_password():
-    """Handle password change request"""
+    # Update to use flash_message instead of flash
     current_password = request.form.get('current_password')
     new_password = request.form.get('new_password')
     confirm_password = request.form.get('confirm_password')
     
     # Validate inputs
     if not current_password or not new_password or not confirm_password:
-        flash('All password fields are required')
+        flash_message('All password fields are required', 'error')
         return redirect(url_for('profile'))
     
     if new_password != confirm_password:
-        flash('New passwords do not match')
+        flash_message('New passwords do not match', 'error')
         return redirect(url_for('profile'))
     
     # Verify current password
     if not current_user.check_password(current_password):
-        flash('Current password is incorrect')
+        flash_message('Current password is incorrect', 'error')
         return redirect(url_for('profile'))
     
     # Set new password
     current_user.set_password(new_password)
     db.session.commit()
     
-    flash('Password updated successfully')
+    flash_message('Password updated successfully', 'success')
     return redirect(url_for('profile'))
 
 @app.route('/profile/update_color', methods=['POST'])
 @login_required_dev
 def update_color():
-    """Update user's personal color"""
-    # Retrieve color from form, defaulting to primary green
-    user_color = request.form.get('user_color', '#15803d').strip()
-    
-    # Validate hex color format (supports 3 or 6 digit hex colors)
-    hex_pattern = r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$'
-    if not user_color or not re.match(hex_pattern, user_color):
-        flash('Invalid color format. Please use a valid hex color code.')
-        return redirect(url_for('profile'))
-    
-    # Normalize to 6-digit hex if 3-digit shorthand is used
-    if len(user_color) == 4:  # #RGB format
-        user_color = '#' + ''.join(2 * c for c in user_color[1:])
-    
-    # Update user's color
-    current_user.user_color = user_color
-    db.session.commit()
-    
-    flash('Your personal color has been updated')
-    return redirect(url_for('profile'))
-
-
-#--------------------
-# ROUTES: stats
-#--------------------
-# Add this to the beginning of your route in app.py
-# This helps verify what data is actually being passed to the template
-
+    """Update user's personal color with AJAX support"""
+    try:
+        # Retrieve color from form, defaulting to primary green
+        user_color = request.form.get('user_color', '#15803d').strip()
+        
+        # Validate hex color format (supports 3 or 6 digit hex colors)
+        hex_pattern = r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$'
+        if not user_color or not re.match(hex_pattern, user_color):
+            error_msg = 'Invalid color format. Please use a valid hex color code.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('profile'))
+        
+        # Normalize to 6-digit hex if 3-digit shorthand is used
+        if len(user_color) == 4:  # #RGB format
+            user_color = '#' + ''.join(2 * c for c in user_color[1:])
+        
+        # Update user's color
+        current_user.user_color = user_color
+        db.session.commit()
+        
+        success_msg = 'Your personal color has been updated'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'color': user_color
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('profile'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating user color: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('profile'))
 @app.route('/stats')
 @login_required_dev
 def stats():
@@ -3757,10 +3297,6 @@ def stats():
     end_date_str = request.args.get('endDate', None)
     group_id = request.args.get('groupId', 'all')
     chart_type = request.args.get('chartType', 'all')
-    is_comparison = request.args.get('compare', 'false') == 'true'
-
-    if is_comparison:
-        return handle_comparison_request()
     
     # Parse dates or use defaults (last 6 months)
     try:
@@ -3833,7 +3369,7 @@ def stats():
         
         # Only add to list if user has a portion
         if user_portion > 0:
-            expense_data = {
+            current_user_expenses.append({
                 'id': expense.id,
                 'description': expense.description,
                 'date': expense.date,
@@ -3844,21 +3380,7 @@ def stats():
                 'card_used': expense.card_used,
                 'group_id': expense.group_id,
                 'group_name': expense.group.name if expense.group else None
-            }
-            
-            # Add category information for the expense
-            if hasattr(expense, 'category_id') and expense.category_id:
-                category = Category.query.get(expense.category_id)
-                if category:
-                    expense_data['category_name'] = category.name
-                    expense_data['category_icon'] = category.icon
-                    expense_data['category_color'] = category.color
-            else:
-                expense_data['category_name'] = None
-                expense_data['category_icon'] = 'fa-tag'
-                expense_data['category_color'] = '#6c757d'
-            
-            current_user_expenses.append(expense_data)
+            })
             
             # Add to user's total
             total_user_expenses += user_portion
@@ -4034,12 +3556,11 @@ def stats():
     
     # Converting month labels to datetime objects for comparison
     month_dates = [datetime.strptime(f"{label} 01", "%b %Y %d") for label in monthly_labels]
-   
-    # Create a copy for processing
-    items_to_process = chronological_items.copy()
+    
     for month_date in month_dates:
-        while items_to_process and items_to_process[0]['date'] < month_date:
-            item = items_to_process.pop(0)
+        # Add all items that occurred before this month
+        while chronological_items and chronological_items[0]['date'] < month_date:
+            item = chronological_items.pop(0)
             running_balance += item['amount']
         
         balance_amounts.append(running_balance)
@@ -4068,464 +3589,27 @@ def stats():
     # Top expenses for the table - show user's portion
     top_expenses = sorted(current_user_expenses, key=lambda x: x['user_portion'], reverse=True)[:10]  # Top 10
 
-    # NEW CODE FOR CATEGORY-BASED ANALYSIS
-    # -------------------------------------
-    
-    # Get actual categories from Category model
-    user_categories = {}
-    
-    # Try to get all user categories
-    try:
-        for category in Category.query.filter_by(user_id=current_user.id).all():
-            if not category.parent_id:  # Only top-level categories
-                user_categories[category.id] = {
-                    'name': category.name,
-                    'total': 0,
-                    'color': category.color,
-                    'monthly': {month_key: 0 for month_key in sorted(monthly_spending.keys())}
-                }
-                
-        # Add uncategorized as a fallback
-        uncategorized_id = 0
-        user_categories[uncategorized_id] = {
-            'name': 'Uncategorized',
-            'total': 0,
-            'color': '#6c757d',
-            'monthly': {month_key: 0 for month_key in sorted(monthly_spending.keys())}
-        }
-        
-        # Calculate totals per actual category and monthly trends
-        for expense_data in current_user_expenses:
-            # Get category ID, default to uncategorized
-            cat_id = uncategorized_id
-            
-            # DEBUGGING: Check the actual structure of expense_data
-            app.logger.info(f"Processing expense: {expense_data['id']} - {expense_data['description']}")
-            
-            # Fetch the actual expense object
-            expense_obj = Expense.query.get(expense_data['id'])
-            
-            if expense_obj and hasattr(expense_obj, 'category_id') and expense_obj.category_id:
-                cat_id = expense_obj.category_id
-                app.logger.info(f"Found category_id: {cat_id}")
-                
-                # If it's a subcategory, use parent category ID instead
-                category = Category.query.get(cat_id)
-                if category and category.parent_id and category.parent_id in user_categories:
-                    cat_id = category.parent_id
-                    app.logger.info(f"Using parent category: {cat_id}")
-            
-            # Only process if we have this category
-            if cat_id in user_categories:
-                # Add to total
-                user_categories[cat_id]['total'] += expense_data['user_portion']
-                
-                # Add to monthly data
-                month_key = expense_data['date'].strftime('%Y-%m')
-                if month_key in user_categories[cat_id]['monthly']:
-                    user_categories[cat_id]['monthly'][month_key] += expense_data['user_portion']
-            else:
-                app.logger.warning(f"Category ID {cat_id} not found in user_categories")
-    except Exception as e:
-        # Log the full error for debugging
-        app.logger.error(f"Error getting category data: {str(e)}", exc_info=True)
-        user_categories = {
-            1: {'name': 'Food', 'total': 350, 'color': '#ec4899'},
-            2: {'name': 'Housing', 'total': 1200, 'color': '#8b5cf6'},
-            3: {'name': 'Transport', 'total': 250, 'color': '#3b82f6'},
-            4: {'name': 'Entertainment', 'total': 180, 'color': '#10b981'},
-            5: {'name': 'Shopping', 'total': 320, 'color': '#f97316'},
-            0: {'name': 'Others', 'total': 150, 'color': '#6c757d'}
-        }
-    
-    # Prepare category data for charts - sort by amount
-    sorted_categories = sorted(user_categories.items(), key=lambda x: x[1]['total'], reverse=True)
-    
-    app.logger.info(f"Sorted categories: {[cat[1]['name'] for cat in sorted_categories]}")
-    
-    # Category data for pie chart
-    category_names = [cat_data['name'] for _, cat_data in sorted_categories[:8]]  # Top 8
-    category_totals = [cat_data['total'] for _, cat_data in sorted_categories[:8]]
-    
-    app.logger.info(f"Category names: {category_names}")
-    app.logger.info(f"Category totals: {category_totals}")
-    
-    # Category trend data for line chart
-    category_trend_data = []
-    for cat_id, cat_data in sorted_categories[:4]:  # Top 4 for trend 
-        if 'monthly' in cat_data:
-            monthly_data = []
-            for month_key in sorted(cat_data['monthly'].keys()):
-                monthly_data.append(cat_data['monthly'][month_key])
-                
-            category_trend_data.append({
-                'name': cat_data['name'],
-                'color': cat_data['color'],
-                'data': monthly_data
-            })
-        else:
-            # Fallback if monthly data isn't available
-            category_trend_data.append({
-                'name': cat_data['name'],
-                'color': cat_data['color'],
-                'data': [cat_data['total'] / len(monthly_labels)] * len(monthly_labels)
-            })
-    
-    app.logger.info(f"Category trend data: {category_trend_data}")
-    
-    # NEW CODE FOR TAG ANALYSIS
-    # -------------------------
-    tag_data = {}
-    
-    # Try to get tag information
-    try:
-        for expense_data in current_user_expenses:
-            expense_obj = Expense.query.get(expense_data['id'])
-            if expense_obj and hasattr(expense_obj, 'tags'):
-                for tag in expense_obj.tags:
-                    if tag.id not in tag_data:
-                        tag_data[tag.id] = {
-                            'name': tag.name,
-                            'total': 0,
-                            'color': tag.color
-                        }
-                    tag_data[tag.id]['total'] += expense_data['user_portion']
-    except Exception as e:
-        # Fallback for tags in case of error
-        app.logger.error(f"Error getting tag data: {str(e)}", exc_info=True)
-        tag_data = {
-            1: {'name': 'Groceries', 'total': 280, 'color': '#f43f5e'},
-            2: {'name': 'Dining', 'total': 320, 'color': '#fb7185'},
-            3: {'name': 'Bills', 'total': 150, 'color': '#f97316'},
-            4: {'name': 'Rent', 'total': 950, 'color': '#fb923c'},
-            5: {'name': 'Gas', 'total': 120, 'color': '#f59e0b'},
-            6: {'name': 'Coffee', 'total': 75, 'color': '#fbbf24'}
-        }
-    
-    # Sort and prepare tag data
-    sorted_tags = sorted(tag_data.items(), key=lambda x: x[1]['total'], reverse=True)[:6]  # Top 6
-    
-    tag_names = [tag_data['name'] for _, tag_data in sorted_tags]
-    tag_totals = [tag_data['total'] for _, tag_data in sorted_tags]
-    tag_colors = [tag_data['color'] for _, tag_data in sorted_tags]
-    
-    app.logger.info(f"Tag names: {tag_names}")
-    app.logger.info(f"Tag totals: {tag_totals}")
-
     return render_template('stats.html',
-                          expenses=expenses,
-                          total_expenses=total_user_expenses,  # User's spending only
-                          spending_trend=spending_trend,
-                          net_balance=net_balance,
-                          balance_count=balance_count,
-                          monthly_average=monthly_average,
-                          month_count=month_count,
-                          largest_expense=largest_expense,
-                          monthly_labels=monthly_labels,
-                          monthly_amounts=monthly_amounts,
-                          payment_methods=payment_methods,
-                          payment_amounts=payment_amounts,
-                          expense_categories=expense_categories,
-                          category_amounts=category_amounts,
-                          balance_labels=balance_labels,
-                          balance_amounts=balance_amounts,
-                          group_names=group_names,
-                          group_totals=group_totals,
-                          base_currency=base_currency,
-                          top_expenses=top_expenses,
-                          # New data for enhanced charts
-                          category_names=category_names,
-                          category_totals=category_totals,
-                          category_trend_data=category_trend_data,
-                          tag_names=tag_names,
-                          tag_totals=tag_totals,
-                          tag_colors=tag_colors)
-
-  
-def handle_comparison_request():
-    """Handle time frame comparison requests within the stats route"""
-    # Get parameters from request
-    primary_start = request.args.get('primaryStart')
-    primary_end = request.args.get('primaryEnd')
-    comparison_start = request.args.get('comparisonStart')
-    comparison_end = request.args.get('comparisonEnd')
-    metric = request.args.get('metric', 'spending')
-    
-    # Convert string dates to datetime objects
-    try:
-        primary_start_date = datetime.strptime(primary_start, '%Y-%m-%d')
-        primary_end_date = datetime.strptime(primary_end, '%Y-%m-%d')
-        comparison_start_date = datetime.strptime(comparison_start, '%Y-%m-%d')
-        comparison_end_date = datetime.strptime(comparison_end, '%Y-%m-%d')
-    except ValueError:
-        return jsonify({'error': 'Invalid date format'}), 400
-    
-    # Initialize response data structure
-    result = {
-        'primary': {
-            'totalSpending': 0,
-            'transactionCount': 0,
-            'topCategory': 'None'
-        },
-        'comparison': {
-            'totalSpending': 0,
-            'transactionCount': 0,
-            'topCategory': 'None'
-        }
-    }
-    
-    # Get expenses for both periods - reuse your existing query logic
-    primary_query_filters = [
-        or_(
-            Expense.user_id == current_user.id,
-            Expense.split_with.like(f'%{current_user.id}%')
-        ),
-        Expense.date >= primary_start_date,
-        Expense.date <= primary_end_date
-    ]
-    primary_expenses_raw = Expense.query.filter(and_(*primary_query_filters)).order_by(Expense.date).all()
-    
-    comparison_query_filters = [
-        or_(
-            Expense.user_id == current_user.id,
-            Expense.split_with.like(f'%{current_user.id}%')
-        ),
-        Expense.date >= comparison_start_date,
-        Expense.date <= comparison_end_date
-    ]
-    comparison_expenses_raw = Expense.query.filter(and_(*comparison_query_filters)).order_by(Expense.date).all()
-    
-    # Process expenses to get user's portion - similar to your existing code
-    primary_expenses = []
-    comparison_expenses = []
-    primary_total = 0
-    comparison_total = 0
-    
-    # Process primary period expenses
-    for expense in primary_expenses_raw:
-        splits = expense.calculate_splits()
-        user_portion = 0
-        
-        if expense.paid_by == current_user.id:
-            user_portion = splits['payer']['amount']
-        else:
-            for split in splits['splits']:
-                if split['email'] == current_user.id:
-                    user_portion = split['amount']
-                    break
-        
-        if user_portion > 0:
-            expense_data = {
-                'id': expense.id,
-                'description': expense.description,
-                'date': expense.date,
-                'total_amount': expense.amount,
-                'user_portion': user_portion,
-                'paid_by': expense.paid_by,
-                'category_name': get_category_name(expense)
-            }
-            primary_expenses.append(expense_data)
-            primary_total += user_portion
-    
-    # Process comparison period expenses
-    for expense in comparison_expenses_raw:
-        splits = expense.calculate_splits()
-        user_portion = 0
-        
-        if expense.paid_by == current_user.id:
-            user_portion = splits['payer']['amount']
-        else:
-            for split in splits['splits']:
-                if split['email'] == current_user.id:
-                    user_portion = split['amount']
-                    break
-        
-        if user_portion > 0:
-            expense_data = {
-                'id': expense.id,
-                'description': expense.description,
-                'date': expense.date,
-                'total_amount': expense.amount,
-                'user_portion': user_portion,
-                'paid_by': expense.paid_by,
-                'category_name': get_category_name(expense)
-            }
-            comparison_expenses.append(expense_data)
-            comparison_total += user_portion
-    
-    # Update basic metrics
-    result['primary']['totalSpending'] = primary_total
-    result['primary']['transactionCount'] = len(primary_expenses)
-    result['comparison']['totalSpending'] = comparison_total
-    result['comparison']['transactionCount'] = len(comparison_expenses)
-    
-    # Process data based on the selected metric
-    if metric == 'spending':
-        # Daily spending data
-        primary_daily = process_daily_spending(primary_expenses, primary_start_date, primary_end_date)
-        comparison_daily = process_daily_spending(comparison_expenses, comparison_start_date, comparison_end_date)
-        
-        # Normalize to 10 data points for consistent display
-        result['primary']['dailyAmounts'] = normalize_time_series(primary_daily, 10)
-        result['comparison']['dailyAmounts'] = normalize_time_series(comparison_daily, 10)
-        result['dateLabels'] = [f'Day {i+1}' for i in range(10)]
-        
-    elif metric == 'categories':
-        # Get category spending for both periods
-        primary_categories = {}
-        comparison_categories = {}
-        
-        # Process primary period categories
-        for expense in primary_expenses:
-            category = expense['category_name'] or 'Uncategorized'
-            if category not in primary_categories:
-                primary_categories[category] = 0
-            primary_categories[category] += expense['user_portion']
-            
-        # Process comparison period categories
-        for expense in comparison_expenses:
-            category = expense['category_name'] or 'Uncategorized'
-            if category not in comparison_categories:
-                comparison_categories[category] = 0
-            comparison_categories[category] += expense['user_portion']
-        
-        # Get top categories across both periods
-        all_categories = set(list(primary_categories.keys()) + list(comparison_categories.keys()))
-        top_categories = sorted(
-            all_categories,
-            key=lambda c: (primary_categories.get(c, 0) + comparison_categories.get(c, 0)),
-            reverse=True
-        )[:5]
-        
-        result['categoryLabels'] = top_categories
-        result['primary']['categoryAmounts'] = [primary_categories.get(cat, 0) for cat in top_categories]
-        result['comparison']['categoryAmounts'] = [comparison_categories.get(cat, 0) for cat in top_categories]
-        
-        # Set top category
-        result['primary']['topCategory'] = max(primary_categories.items(), key=lambda x: x[1])[0] if primary_categories else 'None'
-        result['comparison']['topCategory'] = max(comparison_categories.items(), key=lambda x: x[1])[0] if comparison_categories else 'None'
-        
-    elif metric == 'tags':
-        # Similar logic for tags - adapt based on your data model
-        # You'll need to adjust this based on how tags are stored in your database
-        primary_tags = {}
-        comparison_tags = {}
-        
-        # For primary period
-        for expense in primary_expenses:
-            # Get tags for this expense - adapt to your model
-            expense_obj = Expense.query.get(expense['id'])
-            if expense_obj and hasattr(expense_obj, 'tags'):
-                for tag in expense_obj.tags:
-                    if tag.name not in primary_tags:
-                        primary_tags[tag.name] = 0
-                    primary_tags[tag.name] += expense['user_portion']
-        
-        # For comparison period
-        for expense in comparison_expenses:
-            expense_obj = Expense.query.get(expense['id'])
-            if expense_obj and hasattr(expense_obj, 'tags'):
-                for tag in expense_obj.tags:
-                    if tag.name not in comparison_tags:
-                        comparison_tags[tag.name] = 0
-                    comparison_tags[tag.name] += expense['user_portion']
-        
-        # Get top tags
-        all_tags = set(list(primary_tags.keys()) + list(comparison_tags.keys()))
-        top_tags = sorted(
-            all_tags,
-            key=lambda t: (primary_tags.get(t, 0) + comparison_tags.get(t, 0)),
-            reverse=True
-        )[:5]
-        
-        result['tagLabels'] = top_tags
-        result['primary']['tagAmounts'] = [primary_tags.get(tag, 0) for tag in top_tags]
-        result['comparison']['tagAmounts'] = [comparison_tags.get(tag, 0) for tag in top_tags]
-        
-    elif metric == 'payment':
-        # Payment method comparison
-        primary_payment = {}
-        comparison_payment = {}
-        
-        # For primary period - only count what the user paid directly
-        for expense in primary_expenses:
-            if expense['paid_by'] == current_user.id:
-                # Get the payment method (assuming it's stored as card_used)
-                expense_obj = Expense.query.get(expense['id'])
-                if expense_obj and hasattr(expense_obj, 'card_used'):
-                    card = expense_obj.card_used
-                    if card not in primary_payment:
-                        primary_payment[card] = 0
-                    primary_payment[card] += expense['user_portion']
-        
-        # For comparison period
-        for expense in comparison_expenses:
-            if expense['paid_by'] == current_user.id:
-                expense_obj = Expense.query.get(expense['id'])
-                if expense_obj and hasattr(expense_obj, 'card_used'):
-                    card = expense_obj.card_used
-                    if card not in comparison_payment:
-                        comparison_payment[card] = 0
-                    comparison_payment[card] += expense['user_portion']
-        
-        # Combine payment methods
-        all_methods = set(list(primary_payment.keys()) + list(comparison_payment.keys()))
-        
-        result['paymentLabels'] = list(all_methods)
-        result['primary']['paymentAmounts'] = [primary_payment.get(method, 0) for method in all_methods]
-        result['comparison']['paymentAmounts'] = [comparison_payment.get(method, 0) for method in all_methods]
-    
-    return jsonify(result)
-
-
-def get_category_name(expense):
-    """Helper function to get the category name for an expense"""
-    if hasattr(expense, 'category_id') and expense.category_id:
-        category = Category.query.get(expense.category_id)
-        if category:
-            return category.name
-    return None
-
-
-def process_daily_spending(expenses, start_date, end_date):
-    """Process expenses into daily totals"""
-    days = (end_date - start_date).days + 1
-    daily_spending = [0] * days
-    
-    for expense in expenses:
-        day_index = (expense['date'] - start_date).days
-        if 0 <= day_index < days:
-            daily_spending[day_index] += expense['user_portion']
-    
-    return daily_spending
-
-
-def normalize_time_series(data, target_length):
-    """Normalize a time series to a target length for better comparison"""
-    if len(data) == 0:
-        return [0] * target_length
-    
-    if len(data) == target_length:
-        return data
-    
-    # Use resampling to normalize the data
-    result = []
-    ratio = len(data) / target_length
-    
-    for i in range(target_length):
-        start_idx = int(i * ratio)
-        end_idx = int((i + 1) * ratio)
-        if end_idx > len(data):
-            end_idx = len(data)
-        
-        if start_idx == end_idx:
-            segment_avg = data[start_idx] if start_idx < len(data) else 0
-        else:
-            segment_avg = sum(data[start_idx:end_idx]) / (end_idx - start_idx)
-        
-        result.append(segment_avg)
-    
-    return result
+                        expenses=expenses,
+                        total_expenses=total_user_expenses,  # User's spending only
+                        spending_trend=spending_trend,
+                        net_balance=net_balance,
+                        balance_count=balance_count,
+                        monthly_average=monthly_average,
+                        month_count=month_count,
+                        largest_expense=largest_expense,
+                        monthly_labels=monthly_labels,
+                        monthly_amounts=monthly_amounts,
+                        payment_methods=payment_methods,
+                        payment_amounts=payment_amounts,
+                        expense_categories=expense_categories,
+                        category_amounts=category_amounts,
+                        balance_labels=balance_labels,
+                        balance_amounts=balance_amounts,
+                        group_names=group_names,
+                        group_totals=group_totals,
+                        base_currency=base_currency,
+                        top_expenses=top_expenses)
 
 
 #--------------------

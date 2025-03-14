@@ -1,4 +1,3 @@
-r"""29a41de6a866d56c36aba5159f45257c"""
 """
 OIDC Authentication module for DollarDollar Bill Y'all
 Provides OpenID Connect integration

@@ -1,4 +1,3 @@
-r"""29a41de6a866d56c36aba5159f45257c"""
 #!/usr/bin/env python
 """
 This script updates currency exchange rates in the application database.

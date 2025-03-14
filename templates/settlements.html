@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 
-    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -55,7 +54,7 @@
                                     <span class="badge bg-secondary me-2">{{ balance.name }}</span>
                                     <small class="text-muted">({{ balance.email }})</small>
                                 </div>
-                                <div class="d-flex align-items-center">
+                            <div class="d-flex align-items-center">
                                     <span class="badge bg-success me-2">{{ base_currency.symbol }}{{ "%.2f"|format(balance.amount) }}</span>
                                     <button class="btn btn-secondary btn-sm" onclick="prepareSettlement('{{ balance.id }}', '{{ balance.name }}', {{ balance.amount }}, false)">
                                         <i class="fas fa-check me-1"></i>Record
@@ -78,7 +77,7 @@
             <h5 class="mb-0">Record a Settlement</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('add_settlement') }}">
+            <form method="POST" action="{{ url_for('add_settlement') }}" id="settlementForm">
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label for="payer_id" class="form-label">Who Paid</label>
@@ -140,7 +139,7 @@
                     <tbody>
                         {% if settlements %}
                             {% for settlement in settlements %}
-                            <tr>
+                            <tr id="settlement-{{ settlement.id }}">
                                 <td>{{ settlement.date.strftime('%Y-%m-%d') }}</td>
                                 <td>{{ settlement.description }}</td>
                                 <td>
@@ -175,12 +174,75 @@
 
 {% block scripts %}
 <script>
-    const baseCurrencySymbol = "{{ base_currency.symbol }}";   
+    const baseCurrencySymbol = "{{ base_currency.symbol }}";
+    
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize today's date
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('date').value = today;
+        
+        // Add AJAX submission to the settlement form
+        const settlementForm = document.getElementById('settlementForm');
+        if (settlementForm) {
+            settlementForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Validate form
+                if (!validateSettlementForm()) {
+                    return;
+                }
+                
+                // Submit form with AJAX
+                submitFormWithAjax(this, handleSettlementSuccess);
+            });
+        }
     });
+    
+    function validateSettlementForm() {
+        const payerId = document.getElementById('payer_id').value;
+        const receiverId = document.getElementById('receiver_id').value;
+        const amount = document.getElementById('amount').value;
+        
+        // Basic validation
+        if (!payerId) {
+            showToast('Please select who paid', 'error');
+            return false;
+        }
+        
+        if (!receiverId) {
+            showToast('Please select who received', 'error');
+            return false;
+        }
+        
+        if (payerId === receiverId) {
+            showToast('Payer and receiver cannot be the same person', 'error');
+            return false;
+        }
+        
+        if (!amount || amount <= 0) {
+            showToast('Please enter a valid amount', 'error');
+            return false;
+        }
+        
+        return true;
+    }
+    
+    function handleSettlementSuccess(data) {
+        // Clear form
+        document.getElementById('settlementForm').reset();
+        
+        // Set today's date again
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('date').value = today;
+        
+        // Show success message
+        showToast(data.message || 'Settlement recorded successfully', 'success');
+        
+        // Reload the page after a slight delay to show updated balances
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
     
     function prepareSettlement(userId, userName, amount, youArePaying) {
         // Pre-fill the settlement form
@@ -201,6 +263,14 @@
         document.querySelector('.card-header:contains("Record a Settlement")').scrollIntoView({ 
             behavior: 'smooth' 
         });
+        
+        // Focus on the amount field
+        document.getElementById('amount').focus();
     }
+    
+    // Utility function to find elements by text content
+    Element.prototype.contains = function(text) {
+        return this.textContent.includes(text);
+    };
 </script>
-{% endblock %}
+{% endblock %}    
