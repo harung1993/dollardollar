@@ -83,10 +83,6 @@ login_manager.login_view = 'login'
 
 
 migrate = Migrate(app, db)
-
-
-
-
 #--------------------
 # DATABASE MODELS
 #--------------------
@@ -161,9 +157,6 @@ class User(UserMixin, db.Model):
 if oidc_enabled:
     User = extend_user_model(db, User)       
 
-
-
-
 class Settlement(db.Model):
     __tablename__ = 'settlements'
     id = db.Column(db.Integer, primary_key=True)
@@ -210,8 +203,20 @@ class Category(db.Model):
 
     def __repr__(self):
         return f"<Category: {self.name}>"
+        
+class DeletedCategory(db.Model):
+    __tablename__ = 'deleted_categories'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
+    category_name = db.Column(db.String(50), nullable=False)
+    deleted_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-
+    # Relationship
+    user = db.relationship('User', backref=db.backref('deleted_categories', lazy=True))
+    
+    def __repr__(self):
+        return f"<DeletedCategory: {self.category_name} (User: {self.user_id})>"
+        
 
 class Expense(db.Model):
     __tablename__ = 'expenses'
@@ -501,6 +506,27 @@ class Tag(db.Model):
     # Relationship
     user = db.relationship('User', backref=db.backref('tags', lazy=True))
 
+# Branding and customization settings
+class AppSettings(db.Model):
+    __tablename__ = 'app_settings'
+    id = db.Column(db.Integer, primary_key=True)
+    app_title = db.Column(db.String(100), default="Dollar Dollar Bill Y'all")
+    app_logo_url = db.Column(db.String(500), default="/static/images/dollar-logo.png")
+    app_logo_emoji = db.Column(db.String(10), default="💵")
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_by = db.Column(db.String(128))
+    is_customized = db.Column(db.Boolean, default=False)
+    
+    @classmethod
+    def get_settings(cls):
+        """Get app settings or create default if not exists"""
+        settings = cls.query.first()
+        if not settings:
+            settings = cls()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
         
 #--------------------
 # Budget
@@ -679,9 +705,20 @@ def init_db():
             db.session.commit()
             print("Development user created:", DEV_USER_EMAIL)
 
+def flash_message(message, category='success'):
+    """
+    Enhanced flash message with category support
+    
+    Args:
+        message (str): The message to flash
+        category (str): Message category ('success', 'error', 'warning', 'info')
+    """
+    from flask import flash
+    flash(message, category)
 #--------------------
 # BUSINESS LOGIC FUNCTIONS
 #--------------------
+# Add this function to your app.py file
 # Add this function to your app.py file
 def create_default_categories(user_id):
     """Create default expense categories for a new user"""
@@ -1286,6 +1323,33 @@ def check_db_structure():
             db.session.commit()
             app.logger.info("Added last_login column to users table")
             
+        # Check Expense model for category_id column
+        if inspector.has_table('expenses'):
+            expenses_columns = [col['name'] for col in inspector.get_columns('expenses')]
+            if 'category_id' not in expenses_columns:
+                app.logger.warning("Missing category_id column in expenses table - adding it now")
+                db.session.execute(text('ALTER TABLE expenses ADD COLUMN category_id INTEGER'))
+                db.session.commit()
+                app.logger.info("Added category_id column to expenses table")
+            
+        # Check RecurringExpense model for category_id column
+        if inspector.has_table('recurring_expenses'):
+            recurring_expenses_columns = [col['name'] for col in inspector.get_columns('recurring_expenses')]
+            if 'category_id' not in recurring_expenses_columns:
+                app.logger.warning("Missing category_id column in recurring_expenses table - adding it now")
+                db.session.execute(text('ALTER TABLE recurring_expenses ADD COLUMN category_id INTEGER'))
+                db.session.commit()
+                app.logger.info("Added category_id column to recurring_expenses table")
+            
+        # Check AppSettings model for is_customized column
+        if inspector.has_table('app_settings'):
+            app_settings_columns = [col['name'] for col in inspector.get_columns('app_settings')]
+            if 'is_customized' not in app_settings_columns:
+                app.logger.warning("Missing is_customized column in app_settings table - adding it now")
+                db.session.execute(text('ALTER TABLE app_settings ADD COLUMN is_customized BOOLEAN DEFAULT FALSE'))
+                db.session.commit()
+                app.logger.info("Added is_customized column to app_settings table")
+            
         app.logger.info("Database structure check completed")
 
 @app.context_processor
@@ -1323,7 +1387,7 @@ def utility_processor():
         Returns None if user not found to prevent template errors
         """
         return User.query.filter_by(id=user_id).first()
-    
+
     def get_category_icon_html(category):
         """
         Generate HTML for a category icon with proper styling
@@ -1378,6 +1442,14 @@ def utility_processor():
         'get_categories_as_tree': get_categories_as_tree
     }
     
+@app.context_processor
+def inject_settings():
+    def get_app_settings():
+        # Get fresh settings from database each time
+        return AppSettings.query.first() or AppSettings()
+    
+    return {'get_app_settings': get_app_settings}
+
 @app.route('/get_transaction_details/<other_user_id>')
 @login_required_dev
 def get_transaction_details(other_user_id):
@@ -1516,7 +1588,7 @@ def signup():
         db.session.add(user)
         db.session.commit()
         create_default_categories(user.id)
-        
+
         # Send welcome email
         try:
             send_welcome_email(user)
@@ -1774,10 +1846,8 @@ def dashboard():
 @app.route('/add_expense', methods=['GET', 'POST'])
 @login_required_dev
 def add_expense():
-    print("Request method:", request.method)
+    """Add a new expense with support for AJAX requests"""
     if request.method == 'POST':
-        print("Form data:", request.form)
-        
         try:
             # Check if this is a personal expense (no splits)
             is_personal_expense = request.form.get('personal_expense') == 'on'
@@ -1785,14 +1855,17 @@ def add_expense():
             # Handle split_with based on whether it's a personal expense
             if is_personal_expense:
                 # For personal expenses, we set split_with to empty
-                # This will make calculate_splits assign the full amount to the payer
                 split_with_str = None
             else:
                 # Handle multi-select for split_with
                 split_with_ids = request.form.getlist('split_with')
                 if not split_with_ids:
-                    flash('Please select at least one person to split with or mark as personal expense.')
-                    return redirect(url_for('dashboard'))
+                    error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return jsonify({'success': False, 'message': error_msg}), 400
+                    else:
+                        flash_message(error_msg, 'error')
+                        return redirect(url_for('dashboard'))
                 
                 split_with_str = ','.join(split_with_ids) if split_with_ids else None
             
@@ -1800,8 +1873,12 @@ def add_expense():
             try:
                 expense_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
             except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD format.')
-                return redirect(url_for('dashboard'))
+                error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('dashboard'))
             
             # Process split details if provided
             split_details = None
@@ -1823,8 +1900,12 @@ def add_expense():
             base_currency = Currency.query.filter_by(is_base=True).first()
             
             if not selected_currency or not base_currency:
-                flash('Currency configuration error.')
-                return redirect(url_for('dashboard'))
+                error_msg = 'Currency configuration error.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('dashboard'))
             
             # Convert original amount to base currency
             # Multiply by the rate to convert from selected currency to base currency
@@ -1872,33 +1953,57 @@ def add_expense():
             
             db.session.add(expense)
             db.session.commit()
-            flash('Expense added successfully!')
-            print("Expense added successfully")
+            
+            # Success response
+            success_msg = 'Expense added successfully!'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({
+                    'success': True,
+                    'message': success_msg,
+                    'expense': {
+                        'id': expense.id,
+                        'description': expense.description,
+                        'amount': expense.amount,
+                        'date': expense.date.strftime('%Y-%m-%d')
+                    }
+                })
+            else:
+                flash_message(success_msg, 'success')
+                return redirect(url_for('dashboard'))
             
         except Exception as e:
-            print("Error adding expense:", str(e))
-            flash(f'Error: {str(e)}')
+            db.session.rollback()
+            app.logger.error(f"Error adding expense: {str(e)}")
+            error_msg = f'Error: {str(e)}'
             
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 500
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('dashboard'))
+    
+    # GET request just redirects to dashboard
     return redirect(url_for('dashboard'))
 
 
 @app.route('/delete_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def delete_expense(expense_id):
-    """Delete an expense by ID"""
+    """Delete an expense by ID with AJAX support"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
         
         # Security check: Only the creator can delete the expense
         if expense.user_id != current_user.id:
+            error_msg = 'You do not have permission to delete this expense'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
                     'success': False,
-                    'message': 'You do not have permission to delete this expense'
+                    'message': error_msg
                 }), 403
             else:
-                flash('You do not have permission to delete this expense')
+                flash_message(error_msg, 'error')
                 return redirect(url_for('transactions'))
         
         # Delete the expense
@@ -1906,26 +2011,28 @@ def delete_expense(expense_id):
         db.session.commit()
         
         # Handle AJAX and regular requests
+        success_msg = 'Expense deleted successfully'
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': True,
-                'message': 'Expense deleted successfully'
+                'message': success_msg
             })
         else:
-            flash('Expense deleted successfully')
+            flash_message(success_msg, 'success')
             return redirect(url_for('transactions'))
             
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error deleting expense {expense_id}: {str(e)}")
+        error_msg = f'Error: {str(e)}'
         
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'success': False,
-                'message': f'Error: {str(e)}'
+                'message': error_msg
             }), 500
         else:
-            flash(f'Error: {str(e)}')
+            flash_message(error_msg, 'error')
             return redirect(url_for('transactions'))
 
 @app.route('/get_expense/<int:expense_id>', methods=['GET'])
@@ -1982,15 +2089,19 @@ def get_expense(expense_id):
 @app.route('/update_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def update_expense(expense_id):
-    """Update an existing expense"""
+    """Update an existing expense with AJAX support"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
         
         # Security check: Only the creator can update the expense
         if expense.user_id != current_user.id:
-            flash('You do not have permission to edit this expense')
-            return redirect(url_for('transactions'))
+            error_msg = 'You do not have permission to edit this expense'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Check if this is a personal expense (no splits)
         is_personal_expense = request.form.get('personal_expense') == 'on'
@@ -2003,8 +2114,12 @@ def update_expense(expense_id):
             # Handle multi-select for split_with
             split_with_ids = request.form.getlist('split_with')
             if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('transactions'))
+                error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash_message(error_msg, 'error')
+                    return redirect(url_for('transactions'))
             
             split_with_str = ','.join(split_with_ids) if split_with_ids else None
         
@@ -2012,8 +2127,12 @@ def update_expense(expense_id):
         try:
             expense_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('transactions'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Process split details if provided
         split_details = None
@@ -2047,8 +2166,12 @@ def update_expense(expense_id):
         base_currency = Currency.query.filter_by(is_base=True).first()
         
         if not selected_currency or not base_currency:
-            flash('Currency configuration error.')
-            return redirect(url_for('transactions'))
+            error_msg = 'Currency configuration error.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('transactions'))
         
         # Convert original amount to base currency
         amount = original_amount * selected_currency.rate_to_base
@@ -2068,7 +2191,6 @@ def update_expense(expense_id):
         expense.split_with = split_with_str
         expense.category_id = category_id
         
-        
         # Handle tags - first remove all existing tags
         expense.tags = []
         
@@ -2082,18 +2204,41 @@ def update_expense(expense_id):
         
         # Save changes
         db.session.commit()
-        flash('Expense updated successfully!')
+        
+        # Success response
+        success_msg = 'Expense updated successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'expense': {
+                    'id': expense.id,
+                    'description': expense.description,
+                    'amount': expense.amount,
+                    'date': expense.date.strftime('%Y-%m-%d')
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('transactions'))
         
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error updating expense {expense_id}: {str(e)}")
-        flash(f'Error: {str(e)}')
+        error_msg = f'Error: {str(e)}'
         
-    return redirect(url_for('transactions'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('transactions'))
+
 
 #--------------------
 # ROUTES: tags
 #--------------------
+
+
 @app.route('/tags')
 @login_required_dev
 def manage_tags():
@@ -2103,39 +2248,92 @@ def manage_tags():
 @app.route('/tags/add', methods=['POST'])
 @login_required_dev
 def add_tag():
-    name = request.form.get('name')
-    color = request.form.get('color', "#6c757d")
-    
-    # Check if tag already exists for this user
-    existing_tag = Tag.query.filter_by(user_id=current_user.id, name=name).first()
-    if existing_tag:
-        flash('Tag with this name already exists')
-        return redirect(url_for('manage_tags'))
-    
-    tag = Tag(name=name, color=color, user_id=current_user.id)
-    db.session.add(tag)
-    db.session.commit()
-    
-    flash('Tag added successfully')
-    return redirect(url_for('manage_tags'))
-
+    """Add a new tag with AJAX support"""
+    try:
+        name = request.form.get('name')
+        color = request.form.get('color', "#6c757d")
+        
+        # Check if tag already exists for this user
+        existing_tag = Tag.query.filter_by(user_id=current_user.id, name=name).first()
+        if existing_tag:
+            error_msg = 'Tag with this name already exists'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('manage_tags'))
+        
+        tag = Tag(name=name, color=color, user_id=current_user.id)
+        db.session.add(tag)
+        db.session.commit()
+        
+        success_msg = 'Tag added successfully'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'tag': {
+                    'id': tag.id,
+                    'name': tag.name,
+                    'color': tag.color
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('manage_tags'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding tag: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('manage_tags'))
+            
 @app.route('/tags/delete/<int:tag_id>', methods=['POST'])
 @login_required_dev
 def delete_tag(tag_id):
-    tag = Tag.query.get_or_404(tag_id)
-    
-    # Check if tag belongs to current user
-    if tag.user_id != current_user.id:
-        flash('You don\'t have permission to delete this tag')
-        return redirect(url_for('manage_tags'))
-    
-    db.session.delete(tag)
-    db.session.commit()
-    
-    flash('Tag deleted successfully')
-    return redirect(url_for('manage_tags'))
-
-
+    """Delete a tag with AJAX support"""
+    try:
+        tag = Tag.query.get_or_404(tag_id)
+        
+        # Check if tag belongs to current user
+        if tag.user_id != current_user.id:
+            error_msg = 'You don\'t have permission to delete this tag'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('manage_tags'))
+        
+        # Remove tag from all expenses
+        for expense in tag.expenses:
+            expense.tags.remove(tag)
+        
+        # Delete the tag
+        db.session.delete(tag)
+        db.session.commit()
+        
+        success_msg = 'Tag deleted successfully'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': success_msg})
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('manage_tags'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting tag {tag_id}: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('manage_tags'))
 
 
 #--------------------
@@ -2178,8 +2376,12 @@ def add_recurring():
             # Handle multi-select for split_with
             split_with_ids = request.form.getlist('split_with')
             if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('recurring'))
+                error_msg = 'Please select at least one person to split with or mark as personal expense.'
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({'success': False, 'message': error_msg}), 400
+                else:
+                    flash(error_msg)
+                    return redirect(url_for('recurring'))
             
             split_with_str = ','.join(split_with_ids) if split_with_ids else None
         
@@ -2190,8 +2392,12 @@ def add_recurring():
             if request.form.get('end_date'):
                 end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('recurring'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
         
         # Process category - set to "Other" if not provided
         category_id = request.form.get('category_id')
@@ -2211,10 +2417,36 @@ def add_recurring():
         if request.form.get('split_details'):
             split_details = request.form.get('split_details')
         
+        # Get currency information
+        currency_code = request.form.get('currency_code', 'USD')
+        if not currency_code:
+            # Use user's default currency or system default (USD)
+            currency_code = current_user.default_currency_code or 'USD'
+        
+        # Get original amount in the selected currency
+        original_amount = float(request.form['amount'])
+        
+        # Find the currencies
+        selected_currency = Currency.query.filter_by(code=currency_code).first()
+        base_currency = Currency.query.filter_by(is_base=True).first()
+        
+        if not selected_currency or not base_currency:
+            error_msg = 'Currency configuration error.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
+        
+        # Convert original amount to base currency
+        amount = original_amount * selected_currency.rate_to_base
+        
         # Create new recurring expense
         recurring_expense = RecurringExpense(
             description=request.form['description'],
             amount=float(request.form['amount']),
+            original_amount=original_amount,
+            currency_code=currency_code,
             card_used=request.form['card_used'],
             split_method=request.form['split_method'],
             split_value=float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0,
@@ -2251,32 +2483,73 @@ def add_recurring():
             db.session.add(expense)
             db.session.commit()
         
-        flash('Recurring expense added successfully!')
-        
+        success_msg = 'Recurring expense added successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'recurring': {
+                    'id': recurring_expense.id,
+                    'description': recurring_expense.description,
+                    'amount': recurring_expense.amount,
+                    'frequency': recurring_expense.frequency
+                }
+            })
+        else:
+            flash(success_msg)
+            return redirect(url_for('recurring'))
+
     except Exception as e:
-        print("Error adding recurring expense:", str(e))
-        flash(f'Error: {str(e)}')
-    
-    return redirect(url_for('recurring'))
+        app.logger.error(f"Error adding recurring expense: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash(error_msg)
+            return redirect(url_for('recurring'))
 
 @app.route('/toggle_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
 def toggle_recurring(recurring_id):
-    recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
-    
-    # Security check
-    if recurring_expense.user_id != current_user.id:
-        flash('You don\'t have permission to modify this recurring expense')
-        return redirect(url_for('recurring'))
-    
-    # Toggle the active status
-    recurring_expense.active = not recurring_expense.active
-    db.session.commit()
-    
-    status = "activated" if recurring_expense.active else "deactivated"
-    flash(f'Recurring expense {status} successfully')
-    
-    return redirect(url_for('recurring'))
+    try:
+        recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
+        
+        # Security check
+        if recurring_expense.user_id != current_user.id:
+            error_msg = "You don't have permission to modify this recurring expense"
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash(error_msg)
+                return redirect(url_for('recurring'))
+        
+        # Toggle the active status
+        recurring_expense.active = not recurring_expense.active
+        db.session.commit()
+        
+        status = "activated" if recurring_expense.active else "deactivated"
+        success_msg = f'Recurring expense {status} successfully'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True,
+                'message': success_msg,
+                'status': recurring_expense.active
+            })
+        else:
+            flash(success_msg)
+            return redirect(url_for('recurring'))
+            
+    except Exception as e:
+        app.logger.error(f"Error toggling recurring expense: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash(error_msg)
+            return redirect(url_for('recurring'))
 
 @app.route('/delete_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
@@ -2422,6 +2695,7 @@ def groups():
 @app.route('/groups/create', methods=['POST'])
 @login_required_dev
 def create_group():
+    """Create a new group with AJAX support"""
     try:
         name = request.form.get('name')
         description = request.form.get('description')
@@ -2444,11 +2718,32 @@ def create_group():
         
         db.session.add(group)
         db.session.commit()
-        flash('Group created successfully!')
+        
+        success_msg = 'Group created successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'group': {
+                    'id': group.id,
+                    'name': group.name,
+                    'member_count': len(group.members)
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('groups'))
+            
     except Exception as e:
-        flash(f'Error creating group: {str(e)}')
-    
-    return redirect(url_for('groups'))
+        db.session.rollback()
+        app.logger.error(f"Error creating group: {str(e)}")
+        error_msg = f'Error creating group: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('groups'))
 
 @app.route('/groups/<int:group_id>')
 @login_required_dev
@@ -2458,60 +2753,155 @@ def group_details(group_id):
 
     # Check if user is member of group
     if current_user not in group.members:
-        flash('Access denied. You are not a member of this group.')
+        flash_message('Access denied. You are not a member of this group.', 'error')
         return redirect(url_for('groups'))
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     
     expenses = Expense.query.filter_by(group_id=group_id).order_by(Expense.date.desc()).all()
     all_users = User.query.all()
     currencies = Currency.query.all()
-    return render_template('group_details.html', 
-                           group=group, 
-                           expenses=expenses,
-                           currencies=currencies, 
-                           base_currency=base_currency,
-                           categories=categories,
-                           users=all_users)
+    return render_template('group_details.html', group=group, expenses=expenses, currencies=currencies, base_currency=base_currency, users=all_users)
 
 @app.route('/groups/<int:group_id>/add_member', methods=['POST'])
 @login_required_dev
 def add_group_member(group_id):
-    group = Group.query.get_or_404(group_id)
-    if current_user != group.creator:
-        flash('Only group creator can add members')
-        return redirect(url_for('group_details', group_id=group_id))
-    
-    member_id = request.form.get('user_id')
-    user = User.query.filter_by(id=member_id).first()
-    
-    if user and user not in group.members:
+    """Add a member to a group with AJAX support"""
+    try:
+        group = Group.query.get_or_404(group_id)
+        
+        # Check permissions
+        if current_user != group.creator:
+            error_msg = 'Only group creator can add members'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Get user to add
+        member_id = request.form.get('user_id')
+        user = User.query.filter_by(id=member_id).first()
+        
+        if not user:
+            error_msg = 'User not found'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 404
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Check if already a member
+        if user in group.members:
+            error_msg = f'{user.name} is already a member of this group'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'info')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Add member
         group.members.append(user)
         db.session.commit()
-        flash(f'{user.name} added to group!')
-        create_default_categories(user.id)
-        # Send group invitation email
+        
+        # Send invitation email
         try:
             send_group_invitation_email(user, group, current_user)
         except Exception as e:
             app.logger.error(f"Failed to send group invitation email: {str(e)}")
-    
-    return redirect(url_for('group_details', group_id=group_id))
+        
+        success_msg = f'{user.name} added to group!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'user': {
+                    'id': user.id,
+                    'name': user.name
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('group_details', group_id=group_id))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding group member: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('group_details', group_id=group_id))
 
 @app.route('/groups/<int:group_id>/remove_member/<member_id>', methods=['POST'])
 @login_required_dev
 def remove_group_member(group_id, member_id):
-    group = Group.query.get_or_404(group_id)
-    if current_user != group.creator:
-        flash('Only group creator can remove members')
-        return redirect(url_for('group_details', group_id=group_id))
-    
-    user = User.query.filter_by(id=member_id).first()
-    if user and user in group.members and user != group.creator:
+    """Remove a member from a group with AJAX support"""
+    try:
+        group = Group.query.get_or_404(group_id)
+        
+        # Check permissions
+        if current_user != group.creator:
+            error_msg = 'Only group creator can remove members'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 403
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Get user to remove
+        user = User.query.filter_by(id=member_id).first()
+        
+        if not user:
+            error_msg = 'User not found'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 404
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Check if user is a member and not the creator
+        if user not in group.members:
+            error_msg = f'{user.name} is not a member of this group'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        if user == group.creator:
+            error_msg = 'Cannot remove group creator'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('group_details', group_id=group_id))
+        
+        # Remove member
         group.members.remove(user)
         db.session.commit()
-        flash(f'{user.name} removed from group!')
-    
-    return redirect(url_for('group_details', group_id=group_id))
+        
+        success_msg = f'{user.name} removed from group!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('group_details', group_id=group_id))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error removing group member: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('group_details', group_id=group_id))
 
 #--------------------
 # ROUTES: ADMIN
@@ -2525,7 +2915,10 @@ def admin():
         return redirect(url_for('dashboard'))
     
     users = User.query.all()
-    return render_template('admin.html', users=users)
+    app_settings = AppSettings.get_settings()
+    
+    return render_template('admin.html', users=users, settings=app_settings)
+    
 @app.route('/admin/add_user', methods=['POST'])
 @login_required_dev
 def admin_add_user():
@@ -2555,15 +2948,16 @@ def admin_add_user():
     
     flash('User added successfully!')
     return redirect(url_for('admin'))
+
 @app.route('/admin/delete_user/<user_id>', methods=['POST'])
 @login_required_dev
 def admin_delete_user(user_id):
     if not current_user.is_admin:
-        flash('Access denied. Admin privileges required.')
+        flash_message('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('dashboard'))
     
     if user_id == current_user.id:
-        flash('Cannot delete your own admin account!')
+        flash_message('Cannot delete your own admin account!', 'error')
         return redirect(url_for('admin'))
     
     user = User.query.filter_by(id=user_id).first()
@@ -2572,7 +2966,7 @@ def admin_delete_user(user_id):
         Expense.query.filter_by(user_id=user_id).delete()
         db.session.delete(user)
         db.session.commit()
-        flash('User deleted successfully!')
+        flash_message('User deleted successfully!', 'success')
     
     return redirect(url_for('admin'))
 
@@ -2602,6 +2996,68 @@ def admin_reset_password():
         
     return redirect(url_for('admin'))
 
+# Branding Customization
+
+@app.route('/admin/update_app_branding', methods=['POST'])
+@login_required_dev
+def update_app_branding():
+    """Update app branding settings (admin only)"""
+    if not current_user.is_admin:
+        flash_message('Only administrators can change app branding', 'danger')
+        return redirect(url_for('admin'))
+        
+    settings = AppSettings.get_settings()
+    settings.app_title = request.form.get('app_title')
+    settings.app_logo_emoji = request.form.get('app_logo_emoji')
+    settings.app_logo_url = request.form.get('app_logo_url')
+    settings.last_updated = datetime.utcnow()
+    settings.updated_by = current_user.id
+    settings.is_customized = True  # Mark as customized
+    
+    db.session.commit()
+    
+    flash_message('App branding settings updated successfully', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/reset_app_branding', methods=['POST'])
+@login_required_dev
+def reset_app_branding():
+    """Reset app branding to default values"""
+    if not current_user.is_admin:
+        flash_message('Only administrators can change app branding', 'danger')
+        return redirect(url_for('admin'))
+        
+    try:
+        settings = AppSettings.get_settings()
+        old_title = settings.app_title
+        old_emoji = settings.app_logo_emoji
+        old_url = settings.app_logo_url
+        
+        # Set default values
+        settings.app_title = "Dollar Dollar Bill Y'all"
+        settings.app_logo_emoji = "💵"
+        settings.app_logo_url = ""
+        settings.is_customized = False  # Mark as not customized
+        settings.last_updated = datetime.utcnow()
+        settings.updated_by = current_user.id
+        
+        # Force commit to ensure changes are saved
+        db.session.commit()
+        
+        # Get settings again to verify changes were saved
+        updated_settings = AppSettings.query.first()
+        
+        # Log before and after values for debugging
+        app.logger.info(f"RESET BRANDING - Before: title='{old_title}' emoji='{old_emoji}' url='{old_url}'")
+        app.logger.info(f"RESET BRANDING - After: title='{updated_settings.app_title}' emoji='{updated_settings.app_logo_emoji}' url='{updated_settings.app_logo_url}'")
+        
+        flash_message(f'App branding reset to default values (Title: {updated_settings.app_title})', 'success')
+        return redirect(url_for('admin'))
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error resetting app branding: {str(e)}")
+        flash_message(f'Error resetting app branding: {str(e)}', 'danger')
+        return redirect(url_for('admin'))
 #--------------------
 # ROUTES: SETTLEMENTS
 #--------------------
@@ -2657,13 +3113,18 @@ def settlements():
 @app.route('/add_settlement', methods=['POST'])
 @login_required_dev
 def add_settlement():
+    """Add a settlement with AJAX support"""
     try:
         # Parse date with error handling
         try:
             settlement_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
         except ValueError:
-            flash('Invalid date format. Please use YYYY-MM-DD format.')
-            return redirect(url_for('settlements'))
+            error_msg = 'Invalid date format. Please use YYYY-MM-DD format.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('settlements'))
         
         # Create settlement record
         settlement = Settlement(
@@ -2676,17 +3137,35 @@ def add_settlement():
         
         db.session.add(settlement)
         db.session.commit()
-        flash('Settlement recorded successfully!')
+        
+        success_msg = 'Settlement recorded successfully!'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'settlement': {
+                    'id': settlement.id,
+                    'amount': settlement.amount,
+                    'date': settlement.date.strftime('%Y-%m-%d'),
+                    'payer': settlement.payer.name,
+                    'receiver': settlement.receiver.name
+                }
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('settlements'))
         
     except Exception as e:
-        flash(f'Error: {str(e)}')
+        db.session.rollback()
+        app.logger.error(f"Error adding settlement: {str(e)}")
+        error_msg = f'Error: {str(e)}'
         
-    return redirect(url_for('settlements'))
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('settlements'))
 
-
-#--------------------
-# ROUTES: currencies
-#--------------------
 
 @app.route('/currencies')
 @login_required_dev
@@ -2698,7 +3177,7 @@ def manage_currencies():
 @login_required_dev
 def add_currency():
     if not current_user.is_admin:
-        flash('Only administrators can add currencies')
+        flash_message('Only administrators can add currencies', 'error')
         return redirect(url_for('manage_currencies'))
     
     code = request.form.get('code', '').upper()
@@ -2709,13 +3188,13 @@ def add_currency():
     
     # Validate currency code format
     if not code or len(code) != 3 or not code.isalpha():
-        flash('Invalid currency code. Please use 3-letter ISO currency code (e.g., USD, EUR, GBP)')
+        flash_message('Invalid currency code. Please use 3-letter ISO currency code (e.g., USD, EUR, GBP)', 'error')
         return redirect(url_for('manage_currencies'))
     
     # Check if currency already exists
     existing = Currency.query.filter_by(code=code).first()
     if existing:
-        flash(f'Currency {code} already exists')
+        flash_message(f'Currency {code} already exists', 'error')
         return redirect(url_for('manage_currencies'))
     
     # If setting as base, update all existing base currencies
@@ -2735,10 +3214,10 @@ def add_currency():
     
     try:
         db.session.commit()
-        flash(f'Currency {code} added successfully')
+        flash_message(f'Currency {code} added successfully', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Error adding currency: {str(e)}')
+        flash_message(f'Error adding currency: {str(e)}', 'error')
     
     return redirect(url_for('manage_currencies'))
 
@@ -2746,6 +3225,8 @@ def add_currency():
 @login_required_dev
 def update_currency(code):
     if not current_user.is_admin:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': 'Only administrators can update currencies'}), 403
         flash('Only administrators can update currencies')
         return redirect(url_for('manage_currencies'))
     
@@ -2767,9 +3248,13 @@ def update_currency(code):
     
     try:
         db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': True, 'message': f'Currency {code} updated successfully'})
         flash(f'Currency {code} updated successfully')
     except Exception as e:
         db.session.rollback()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': f'Error updating currency: {str(e)}'}), 500
         flash(f'Error updating currency: {str(e)}')
     
     return redirect(url_for('manage_currencies'))
@@ -2920,6 +3405,7 @@ def set_default_currency():
 #--------------------
 # ROUTES: Transactions
 #--------------------
+
 
 @app.route('/transactions')
 @login_required_dev
@@ -3302,7 +3788,7 @@ def edit_category(category_id):
 @app.route('/categories/delete/<int:category_id>', methods=['POST'])
 @login_required_dev
 def delete_category(category_id):
-    """Delete a category"""
+    """Delete a category and record this deletion"""
     category = Category.query.get_or_404(category_id)
 
     # Check if category belongs to current user
@@ -3333,26 +3819,210 @@ def delete_category(category_id):
             for expense in category.expenses:
                 expense.category_id = None
 
-    # Also handle recurring expenses with this category
-    recurring_expenses = RecurringExpense.query.filter_by(category_id=category_id).all()
-    if recurring_expenses:
-        if other_category:
-            # Move recurring expenses to 'Other' category
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = other_category.id
-        else:
-            # If 'Other' doesn't exist, clear category_id
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = None
-
-    # Delete subcategories first
+    # Handle recurring expenses with this category
+    # First check if the table has the column by inspecting the model
+    inspector = inspect(db.engine)
+    recurring_expenses_columns = [col['name'] for col in inspector.get_columns('recurring_expenses')]
+    
+    if 'category_id' in recurring_expenses_columns:
+        # If the column exists, handle the RecurringExpense entries properly
+        recurring_expenses = RecurringExpense.query.filter_by(category_id=category_id).all()
+        if recurring_expenses:
+            if other_category:
+                # Move recurring expenses to 'Other' category
+                for rec_expense in recurring_expenses:
+                    rec_expense.category_id = other_category.id
+            else:
+                # If 'Other' doesn't exist, clear category_id
+                for rec_expense in recurring_expenses:
+                    rec_expense.category_id = None
+    
+    # Record this deletion before we delete subcategories and the category itself
+    deleted_record = DeletedCategory(
+        user_id=current_user.id,
+        category_name=category.name
+    )
+    db.session.add(deleted_record)
+    
+    # If it's a parent category, also record deleted subcategories
     for subcategory in category.subcategories:
+        subcat_record = DeletedCategory(
+            user_id=current_user.id,
+            category_name=subcategory.name
+        )
+        db.session.add(subcat_record)
         db.session.delete(subcategory)
 
+    # Delete the category itself
     db.session.delete(category)
     db.session.commit()
 
     flash('Category deleted successfully')
+    return redirect(url_for('manage_categories'))
+    
+@app.route('/categories/restore_defaults', methods=['POST'])
+@login_required_dev
+def restore_default_categories():
+    """Restore missing default categories, except those explicitly deleted by the user"""
+    try:
+        # Get existing categories for this user
+        existing_categories = {cat.name: cat for cat in Category.query.filter_by(
+            user_id=current_user.id, 
+            parent_id=None
+        ).all()}
+        
+        # Get the list of explicitly deleted categories
+        deleted_categories = {del_cat.category_name for del_cat in DeletedCategory.query.filter_by(
+            user_id=current_user.id
+        ).all()}
+        
+        # Define the default categories exactly as they appear in create_default_categories
+        default_categories = [
+            # Housing
+            {"name": "Housing", "icon": "fa-home", "color": "#3498db", "subcategories": [
+                {"name": "Rent/Mortgage", "icon": "fa-building", "color": "#3498db"},
+                {"name": "Utilities", "icon": "fa-bolt", "color": "#3498db"},
+                {"name": "Home Maintenance", "icon": "fa-tools", "color": "#3498db"}
+            ]},
+            # Food
+            {"name": "Food", "icon": "fa-utensils", "color": "#e74c3c", "subcategories": [
+                {"name": "Groceries", "icon": "fa-shopping-basket", "color": "#e74c3c"},
+                {"name": "Restaurants", "icon": "fa-hamburger", "color": "#e74c3c"},
+                {"name": "Coffee Shops", "icon": "fa-coffee", "color": "#e74c3c"}
+            ]},
+            # Transportation
+            {"name": "Transportation", "icon": "fa-car", "color": "#2ecc71", "subcategories": [
+                {"name": "Gas", "icon": "fa-gas-pump", "color": "#2ecc71"},
+                {"name": "Public Transit", "icon": "fa-bus", "color": "#2ecc71"},
+                {"name": "Rideshare", "icon": "fa-taxi", "color": "#2ecc71"}
+            ]},
+            # Shopping
+            {"name": "Shopping", "icon": "fa-shopping-cart", "color": "#9b59b6", "subcategories": [
+                {"name": "Clothing", "icon": "fa-tshirt", "color": "#9b59b6"},
+                {"name": "Electronics", "icon": "fa-laptop", "color": "#9b59b6"},
+                {"name": "Gifts", "icon": "fa-gift", "color": "#9b59b6"}
+            ]},
+            # Entertainment
+            {"name": "Entertainment", "icon": "fa-film", "color": "#f39c12", "subcategories": [
+                {"name": "Movies", "icon": "fa-ticket-alt", "color": "#f39c12"},
+                {"name": "Music", "icon": "fa-music", "color": "#f39c12"},
+                {"name": "Subscriptions", "icon": "fa-play-circle", "color": "#f39c12"}
+            ]},
+            # Health
+            {"name": "Health", "icon": "fa-heartbeat", "color": "#1abc9c", "subcategories": [
+                {"name": "Medical", "icon": "fa-stethoscope", "color": "#1abc9c"},
+                {"name": "Pharmacy", "icon": "fa-prescription-bottle", "color": "#1abc9c"},
+                {"name": "Fitness", "icon": "fa-dumbbell", "color": "#1abc9c"}
+            ]},
+            # Personal
+            {"name": "Personal", "icon": "fa-user", "color": "#34495e", "subcategories": [
+                {"name": "Self-care", "icon": "fa-spa", "color": "#34495e"},
+                {"name": "Education", "icon": "fa-graduation-cap", "color": "#34495e"}
+            ]},
+            # Other
+            {"name": "Other", "icon": "fa-question-circle", "color": "#95a5a6", "is_system": True}
+        ]
+        
+        # Counter for tracking how many categories were restored
+        categories_added = 0
+        categories_skipped = 0
+        
+        # For each default category
+        for cat_data in default_categories:
+            cat_name = cat_data.get("name")
+            
+            # Make a copy of the category data to avoid modifying the original
+            category_attrs = cat_data.copy()
+            
+            # Extract special attributes before creating the category
+            is_system = category_attrs.pop('is_system', False) 
+            subcategories = category_attrs.pop('subcategories', [])
+            
+            # Skip if this category was explicitly deleted by the user
+            if cat_name in deleted_categories:
+                categories_skipped += 1
+                app.logger.info(f"Skipping deleted category: {cat_name}")
+                continue
+                
+            # If this category doesn't exist, create it
+            if cat_name not in existing_categories:
+                category = Category(
+                    user_id=current_user.id, 
+                    is_system=is_system,
+                    **category_attrs
+                )
+                db.session.add(category)
+                db.session.flush()  # Get the ID without committing
+                categories_added += 1
+                app.logger.info(f"Adding category: {cat_name}")
+                
+                # Add subcategories (if they weren't explicitly deleted)
+                for subcat_data in subcategories:
+                    subcat_name = subcat_data.get("name")
+                    if subcat_name not in deleted_categories:
+                        subcat = Category(user_id=current_user.id, parent_id=category.id, **subcat_data)
+                        db.session.add(subcat)
+                        categories_added += 1
+                        app.logger.info(f"Adding subcategory: {subcat_name} under {cat_name}")
+                    else:
+                        categories_skipped += 1
+                        app.logger.info(f"Skipping deleted subcategory: {subcat_name}")
+            else:
+                # Category exists, check for missing subcategories
+                parent_cat = existing_categories[cat_name]
+                
+                # Get existing subcategory names
+                existing_subcats = {subcat.name: subcat for subcat in Category.query.filter_by(
+                    user_id=current_user.id,
+                    parent_id=parent_cat.id
+                ).all()}
+                
+                # Add any missing subcategories that weren't explicitly deleted
+                for subcat_data in subcategories:
+                    subcat_name = subcat_data.get("name")
+                    if subcat_name not in existing_subcats and subcat_name not in deleted_categories:
+                        subcat = Category(user_id=current_user.id, parent_id=parent_cat.id, **subcat_data)
+                        db.session.add(subcat)
+                        categories_added += 1
+                        app.logger.info(f"Adding missing subcategory: {subcat_name} under {cat_name}")
+                    elif subcat_name not in existing_subcats:
+                        categories_skipped += 1
+                        app.logger.info(f"Skipping deleted subcategory: {subcat_name}")
+        
+        # Commit all changes
+        db.session.commit()
+        
+        if categories_added > 0:
+            message = f'Successfully restored {categories_added} default categories'
+            if categories_skipped > 0:
+                message += f' (skipped {categories_skipped} previously deleted categories)'
+            flash_message(message, 'success')
+        elif categories_skipped > 0:
+            flash_message(f'No categories restored. Skipped {categories_skipped} previously deleted categories.', 'info')
+        else:
+            flash_message('All default categories already exist', 'info')
+            
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error restoring default categories: {str(e)}", exc_info=True)
+        flash_message(f'Error restoring categories: {str(e)}', 'error')
+    
+    return redirect(url_for('manage_categories'))
+    
+@app.route('/categories/clear_deletion_history', methods=['POST'])
+@login_required_dev
+def clear_category_deletion_history():
+    """Clear the user's category deletion history"""
+    try:
+        deleted_count = DeletedCategory.query.filter_by(user_id=current_user.id).delete()
+        db.session.commit()
+        
+        flash_message(f'Cleared {deleted_count} items from deletion history', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error clearing deletion history: {str(e)}")
+        flash_message(f'Error clearing deletion history: {str(e)}', 'error')
+    
     return redirect(url_for('manage_categories'))
 
 #--------------------
@@ -3871,60 +4541,82 @@ def profile():
 @login_required_dev
 def change_password():
     """Handle password change request"""
+    # Use flash_message instead of flash
     current_password = request.form.get('current_password')
     new_password = request.form.get('new_password')
     confirm_password = request.form.get('confirm_password')
     
     # Validate inputs
     if not current_password or not new_password or not confirm_password:
-        flash('All password fields are required')
+        flash_message('All password fields are required', 'error')
         return redirect(url_for('profile'))
     
     if new_password != confirm_password:
-        flash('New passwords do not match')
+        flash_message('New passwords do not match', 'error')
         return redirect(url_for('profile'))
     
     # Verify current password
     if not current_user.check_password(current_password):
-        flash('Current password is incorrect')
+        flash_message('Current password is incorrect', 'error')
         return redirect(url_for('profile'))
     
     # Set new password
     current_user.set_password(new_password)
     db.session.commit()
     
-    flash('Password updated successfully')
+    flash_message('Password updated successfully', 'success')
     return redirect(url_for('profile'))
 
 @app.route('/profile/update_color', methods=['POST'])
 @login_required_dev
 def update_color():
-    """Update user's personal color"""
-    # Retrieve color from form, defaulting to primary green
-    user_color = request.form.get('user_color', '#15803d').strip()
-    
-    # Validate hex color format (supports 3 or 6 digit hex colors)
-    hex_pattern = r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$'
-    if not user_color or not re.match(hex_pattern, user_color):
-        flash('Invalid color format. Please use a valid hex color code.')
-        return redirect(url_for('profile'))
-    
-    # Normalize to 6-digit hex if 3-digit shorthand is used
-    if len(user_color) == 4:  # #RGB format
-        user_color = '#' + ''.join(2 * c for c in user_color[1:])
-    
-    # Update user's color
-    current_user.user_color = user_color
-    db.session.commit()
-    
-    flash('Your personal color has been updated')
-    return redirect(url_for('profile'))
-
-
+    """Update user's personal color with AJAX support"""
+    try:
+        # Retrieve color from form, defaulting to primary green
+        user_color = request.form.get('user_color', '#15803d').strip()
+        
+        # Validate hex color format (supports 3 or 6 digit hex colors)
+        hex_pattern = r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$'
+        if not user_color or not re.match(hex_pattern, user_color):
+            error_msg = 'Invalid color format. Please use a valid hex color code.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'success': False, 'message': error_msg}), 400
+            else:
+                flash_message(error_msg, 'error')
+                return redirect(url_for('profile'))
+        
+        # Normalize to 6-digit hex if 3-digit shorthand is used
+        if len(user_color) == 4:  # #RGB format
+            user_color = '#' + ''.join(2 * c for c in user_color[1:])
+        
+        # Update user's color
+        current_user.user_color = user_color
+        db.session.commit()
+        
+        success_msg = 'Your personal color has been updated'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'color': user_color
+            })
+        else:
+            flash_message(success_msg, 'success')
+            return redirect(url_for('profile'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating user color: {str(e)}")
+        error_msg = f'Error: {str(e)}'
+        
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': error_msg}), 500
+        else:
+            flash_message(error_msg, 'error')
+            return redirect(url_for('profile'))
 #--------------------
 # ROUTES: stats
 #--------------------
-# Add this to the beginning of your route in app.py
 # This helps verify what data is actually being passed to the template
 
 @app.route('/stats')
@@ -3940,7 +4632,7 @@ def stats():
     is_comparison = request.args.get('compare', 'false') == 'true'
 
     if is_comparison:
-        return handle_comparison_request()
+        return handle_comparison_request()    
     
     # Parse dates or use defaults (last 6 months)
     try:
@@ -4025,7 +4717,7 @@ def stats():
                 'group_id': expense.group_id,
                 'group_name': expense.group.name if expense.group else None
             }
-            
+
             # Add category information for the expense
             if hasattr(expense, 'category_id') and expense.category_id:
                 category = Category.query.get(expense.category_id)
@@ -4214,10 +4906,11 @@ def stats():
     
     # Converting month labels to datetime objects for comparison
     month_dates = [datetime.strptime(f"{label} 01", "%b %Y %d") for label in monthly_labels]
-   
+
     # Create a copy for processing
     items_to_process = chronological_items.copy()
     for month_date in month_dates:
+        # Add all items that occurred before this month
         while items_to_process and items_to_process[0]['date'] < month_date:
             item = items_to_process.pop(0)
             running_balance += item['amount']
@@ -4393,33 +5086,33 @@ def stats():
     app.logger.info(f"Tag totals: {tag_totals}")
 
     return render_template('stats.html',
-                          expenses=expenses,
-                          total_expenses=total_user_expenses,  # User's spending only
-                          spending_trend=spending_trend,
-                          net_balance=net_balance,
-                          balance_count=balance_count,
-                          monthly_average=monthly_average,
-                          month_count=month_count,
-                          largest_expense=largest_expense,
-                          monthly_labels=monthly_labels,
-                          monthly_amounts=monthly_amounts,
-                          payment_methods=payment_methods,
-                          payment_amounts=payment_amounts,
-                          expense_categories=expense_categories,
-                          category_amounts=category_amounts,
-                          balance_labels=balance_labels,
-                          balance_amounts=balance_amounts,
-                          group_names=group_names,
-                          group_totals=group_totals,
-                          base_currency=base_currency,
-                          top_expenses=top_expenses,
-                          # New data for enhanced charts
-                          category_names=category_names,
-                          category_totals=category_totals,
-                          category_trend_data=category_trend_data,
-                          tag_names=tag_names,
-                          tag_totals=tag_totals,
-                          tag_colors=tag_colors)
+                        expenses=expenses,
+                        total_expenses=total_user_expenses,  # User's spending only
+                        spending_trend=spending_trend,
+                        net_balance=net_balance,
+                        balance_count=balance_count,
+                        monthly_average=monthly_average,
+                        month_count=month_count,
+                        largest_expense=largest_expense,
+                        monthly_labels=monthly_labels,
+                        monthly_amounts=monthly_amounts,
+                        payment_methods=payment_methods,
+                        payment_amounts=payment_amounts,
+                        expense_categories=expense_categories,
+                        category_amounts=category_amounts,
+                        balance_labels=balance_labels,
+                        balance_amounts=balance_amounts,
+                        group_names=group_names,
+                        group_totals=group_totals,
+                        base_currency=base_currency,
+                        top_expenses=top_expenses,
+                        # New data for enhanced charts
+                        category_names=category_names,
+                        category_totals=category_totals,
+                        category_trend_data=category_trend_data,
+                        tag_names=tag_names,
+                        tag_totals=tag_totals,
+                        tag_colors=tag_colors)
 
   
 def handle_comparison_request():

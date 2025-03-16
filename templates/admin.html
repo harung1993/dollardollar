@@ -8,7 +8,7 @@
     <!-- Add New User Form -->
     <div class="card mb-4">
         <div class="card-header">
-            <h3 class="mb-0">Add New User</h3>
+            <h5 class="mb-0">Add New User</h5>
         </div>
         <div class="card-body">
             <form method="POST" action="{{ url_for('admin_add_user') }}">
@@ -37,10 +37,82 @@
         </div>
     </div>
 
+    <!-- App Branding Customization Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">App Branding</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('update_app_branding') }}" id="brandingForm">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="app_title" class="form-label">Application Title</label>
+                        <input type="text" class="form-control bg-dark text-light" id="app_title" name="app_title" 
+                               value="{{ settings.app_title or 'Dollar Dollar Bill Y\'all' }}" 
+                               placeholder="Dollar Dollar Bill Y'all">
+                        <small class="text-muted">The name displayed in the header and browser tab</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="app_logo_emoji" class="form-label">Logo Emoji</label>
+                        <input type="text" class="form-control bg-dark text-light" id="app_logo_emoji" name="app_logo_emoji" 
+                               value="{{ settings.app_logo_emoji or '💵' }}" 
+                               placeholder="💵">
+                        <small class="text-muted">Emoji shown next to the app name (e.g., 💰, 💵, 💲)</small>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="app_logo_url" class="form-label">Custom Logo URL (Optional)</label>
+                        <input type="text" class="form-control bg-dark text-light" id="app_logo_url" name="app_logo_url" 
+                               value="{{ settings.app_logo_url or '' }}" 
+                               placeholder="Example: https://example.com/logo.png">
+                        <small class="text-muted">URL to a custom logo image (leave empty to use emoji)</small>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <div class="card bg-dark">
+                            <div class="card-header">
+                                <h5 class="mb-0">Live Preview</h5>
+                            </div>
+                            <div class="card-body text-center">
+                                <div class="d-inline-flex align-items-center bg-dark p-2 rounded" style="border: 1px solid rgba(255,255,255,0.1);">
+                                    <!-- Logo preview container -->
+                                    <div id="preview_logo_container" class="me-2" style="display: inline-block; min-width: 24px; text-align: center;">
+                                        <span id="preview_logo_text" style="font-size: 1.5rem;">{{ settings.app_logo_emoji or '💵' }}</span>
+                                    </div>
+                                    <span id="preview_title" style="font-size: 1.5rem; background: linear-gradient(to right, #86efac, #fbbf24); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: bold;">{{ settings.app_title or 'Dollar Dollar Bill Y\'all' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Button section styled to match the screenshot -->
+        <div class="card-footer bg-dark">
+            <div class="row">
+                <div class="col-12">
+                    <div class="d-flex justify-content-between">
+                        <button type="button" onclick="confirmReset()" class="btn btn-secondary" style="width: 48%;">
+                            <i class="fas fa-undo me-2"></i>Reset to Defaults
+                        </button>
+                        <button type="submit" form="brandingForm" class="btn btn-success" style="width: 48%;">
+                            <i class="fas fa-save me-2"></i>Save Branding
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Reset Form -->
+    <form method="POST" action="{{ url_for('reset_app_branding') }}" id="resetForm" style="display: none;"></form>
+
     <!-- User List -->
     <div class="card">
         <div class="card-header">
-            <h3 class="mb-0">Manage Users</h3>
+            <h5 class="mb-0">Manage Users</h5>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -132,6 +204,13 @@
 
 {% block scripts %}
 <script>
+    // Function to handle reset button click
+    function confirmReset() {
+        if (confirm('Are you sure you want to reset app branding to defaults?')) {
+            document.getElementById('resetForm').submit();
+        }
+    }
+
     function togglePasswordReset(userId) {
         const resetRow = document.getElementById('password-reset-' + userId);
         if (resetRow.style.display === 'none') {
@@ -161,5 +240,71 @@
             return true;
         }
     }
+
+    // Live preview functionality for app branding
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get form elements
+        const appTitleInput = document.getElementById('app_title');
+        const appLogoEmojiInput = document.getElementById('app_logo_emoji');
+        const appLogoUrlInput = document.getElementById('app_logo_url');
+        
+        // Get preview elements
+        const previewTitle = document.getElementById('preview_title');
+        const previewLogoContainer = document.getElementById('preview_logo_container');
+        const previewLogoText = document.getElementById('preview_logo_text');
+        
+        // Set initial preview state based on URL or emoji
+        function initializePreview() {
+            const logoUrl = appLogoUrlInput.value.trim();
+            const logoEmoji = appLogoEmojiInput.value.trim();
+            
+            if (logoUrl) {
+                // Show image logo
+                previewLogoContainer.innerHTML = `<img src="${logoUrl}" alt="Logo" height="24" width="24" style="max-height: 24px;">`;
+            } else if (logoEmoji) {
+                // Show emoji
+                previewLogoContainer.innerHTML = `<span style="font-size: 1.5rem;">${logoEmoji}</span>`;
+            } else {
+                // Fallback to default emoji
+                previewLogoContainer.innerHTML = `<span style="font-size: 1.5rem;">💵</span>`;
+            }
+        }
+        
+        // Initialize on page load
+        initializePreview();
+        
+        // Update preview when title changes
+        if (appTitleInput && previewTitle) {
+            appTitleInput.addEventListener('input', function() {
+                previewTitle.textContent = this.value || 'Dollar Dollar Bill Y\'all';
+            });
+        }
+        
+        // Update preview when logo emoji changes
+        if (appLogoEmojiInput) {
+            appLogoEmojiInput.addEventListener('input', function() {
+                // Only update emoji if URL is not being used
+                if (!appLogoUrlInput.value.trim()) {
+                    const emoji = this.value.trim() || '💵';
+                    previewLogoContainer.innerHTML = `<span style="font-size: 1.5rem;">${emoji}</span>`;
+                }
+            });
+        }
+        
+        // Update preview when logo URL changes
+        if (appLogoUrlInput) {
+            appLogoUrlInput.addEventListener('input', function() {
+                const url = this.value.trim();
+                if (url) {
+                    // Use image
+                    previewLogoContainer.innerHTML = `<img src="${url}" alt="Logo" height="24" width="24" style="max-height: 24px;">`;
+                } else {
+                    // Fall back to emoji
+                    const emoji = appLogoEmojiInput.value.trim() || '💵';
+                    previewLogoContainer.innerHTML = `<span style="font-size: 1.5rem;">${emoji}</span>`;
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}

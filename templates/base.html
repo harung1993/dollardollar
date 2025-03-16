@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="current-user-id" content="{{ current_user.id }}">
-    <title>Dollar Dollar Bill Y'all 💰</title>
+    <title>{{ get_app_settings().app_title }} {{ get_app_settings().app_logo_emoji }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -21,6 +21,68 @@
             --header-height: 60px;
             --transition-speed: 0.3s;
         }
+
+        /* Custom Scrollbar Styles */
+        /* Custom Scrollbar Styles - Dark Blue-Black Theme */
+
+        /* For WebKit browsers (Chrome, Safari, newer versions of Opera) */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111827;  /* Dark blue-black to match your UI background */
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;  /* Slightly lighter dark blue */
+            border-radius: 4px;
+            transition: background 0.3s ease;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2d3748;  /* Even lighter on hover, but still dark */
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: #111827;
+        }
+
+        /* For Firefox */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #111827;
+        }
+
+        /* For Edge and IE */
+        body {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: thin; /* Firefox */
+        }
+
+        /* Alternative styling for containers with scrollable content */
+        .scrollable-container {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #111827;
+        }
+
+        .scrollable-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-track {
+            background: #111827;
+            border-radius: 4px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+
         
         body {
             background: linear-gradient(to bottom right, var(--primary-green), var(--bg-dark), var(--bg-darker));
@@ -71,6 +133,7 @@
             font-size: 1.5rem;
             margin: 0 auto;
             text-align: center;
+            text-decoration: none !important;
         }
         
         /* Auth pages have centered branding */
@@ -99,16 +162,48 @@
             box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
             transform: translateX(-100%);
             
-            /* Add these flex properties */
+            /* New flex layout to arrange the content */
             display: flex;
             flex-direction: column;
-            
-            /* Ensure it takes full height */
-            height: calc(100vh - var(--header-height));
         }
         
         .sidebar.show {
             transform: translateX(0);
+        }
+        
+        /* Content area that can scroll if needed */
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Footer area that stays at the bottom */
+        .sidebar-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            margin-top: auto;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Make sure the logout link has the same style as other navigation items */
+        .sidebar-footer .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.6rem 1.25rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        
+        .sidebar-footer .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-left-color: var(--accent-gold);
         }
         
         /* Mini Sidebar Styles */
@@ -154,6 +249,23 @@
         }
         
         .sidebar.mini .nav-link {
+            padding: 0.75rem 0;
+            justify-content: center;
+        }
+        
+        /* Mini Sidebar styles for the footer */
+        .sidebar.mini .sidebar-footer .nav-text {
+            display: none;
+        }
+        
+        .sidebar.mini .sidebar-footer .nav-icon {
+            margin-right: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 1.25rem;
+        }
+        
+        .sidebar.mini .sidebar-footer .nav-link {
             padding: 0.75rem 0;
             justify-content: center;
         }
@@ -327,19 +439,7 @@
             letter-spacing: 1px;
         }
         
-        .sidebar-logout {
-            /* Remove margin-top: auto */
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            padding-top: 0.5rem;
-            
-            /* Add these properties */
-            position: relative; /* Not using sticky to ensure it's always at the bottom */
-            margin-top: auto; /* Push it to the bottom of the flex container */
-            background-color: rgba(17, 24, 39, 0.95);
-            box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
-            z-index: 5;
-        }
-
+        /* Remove the old sidebar-logout class as it's replaced by sidebar-footer */
         
         /* Toggle button */
         .sidebar-toggle {
@@ -562,7 +662,7 @@
         {% endfor %}
     </div>
     
-    <!-- Header -->
+    <!-- Header with custom branding support -->
     <header class="app-header">
         {% if current_user.is_authenticated %}
         <button class="sidebar-toggle" id="sidebarToggle">
@@ -570,7 +670,15 @@
             <i class="fas fa-times"></i>
         </button>
         {% endif %}
-        <a class="header-brand" href="/">💵 Dollar Dollar Bill Y'all</a>
+        <a class="header-brand" href="/">
+            {% set app_settings = get_app_settings() %}
+            {% if app_settings.app_logo_url and app_settings.app_logo_url != "/static/images/dollar-logo.png" %}
+                <img src="{{ app_settings.app_logo_url }}" alt="Logo" style="height: 1.8rem; margin-right: 0.5rem;">
+            {% else %}
+                {{ app_settings.app_logo_emoji }}
+            {% endif %}
+            {{ app_settings.app_title }}
+        </a>
     </header>
     
     {% if current_user.is_authenticated %}
@@ -584,144 +692,135 @@
             </button>
         </div>
         
-        <ul class="sidebar-nav">
-            <!-- Main Dashboard -->
-            <li class="nav-item">
-                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.path == url_for('dashboard') %}active{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span>
-                    <span class="nav-text">Dashboard</span>
-                </a>
-            </li>
-            
-            <!-- Expenses Section (Collapsible) -->
-            <li class="nav-item nav-section">
-                <a href="#expensesSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'transactions' in request.path or 'recurring' in request.path %}{% else %}collapsed{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-file-invoice-dollar"></i></span>
-                    <span class="nav-text">Expenses</span>
-                    <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
-                </a>
-                <ul class="collapse nav-submenu {% if 'transactions' in request.path or 'recurring' in request.path %}show{% endif %}" id="expensesSubmenu">
-                    <li class="nav-item">
-                        <a href="{{ url_for('transactions') }}" class="nav-link {% if request.path == url_for('transactions') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
-                            <span class="nav-text">Transactions</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('recurring') }}" class="nav-link {% if request.path == url_for('recurring') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-calendar-alt"></i></span>
-                            <span class="nav-text">Recurring</span>
-                        </a>
-                    </li>
-                </ul>
-            </li>
-            
-            <!-- Groups & Social -->
-            <li class="nav-item nav-section">
-                <a href="#socialSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'groups' in request.path or 'settlements' in request.path %}{% else %}collapsed{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-users"></i></span>
-                    <span class="nav-text">Social</span>
-                    <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
-                </a>
-                <ul class="collapse nav-submenu {% if 'groups' in request.path or 'settlements' in request.path %}show{% endif %}" id="socialSubmenu">
-                    <li class="nav-item">
-                        <a href="{{ url_for('groups') }}" class="nav-link {% if 'groups' in request.path %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-user-friends"></i></span>
-                            <span class="nav-text">Groups</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('settlements') }}" class="nav-link {% if request.path == url_for('settlements') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span>
-                            <span class="nav-text">Settle Up</span>
-                        </a>
-                    </li>
-                </ul>
-            </li>
-            
-            <!-- Analysis -->
-            <li class="nav-item">
-                <a href="{{ url_for('stats') }}" class="nav-link {% if request.path == url_for('stats') %}active{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
-                    <span class="nav-text">Statistics</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a href="{{ url_for('budgets') }}" class="nav-link {% if request.path == url_for('budgets') %}active{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-chart-pie"></i></span>
-                    <span class="nav-text">Budgets</span>
-                </a>
-            </li>
-            
-            <div class="sidebar-section-divider"></div>
-            
-            <!-- Settings Section -->
-            <li class="nav-item nav-section">
-                <a href="#settingsSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}{% else %}collapsed{% endif %}">
-                    <span class="nav-icon"><i class="fas fa-cog"></i></span>
-                    <span class="nav-text">Settings</span>
-                    <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
-                </a>
-                <ul class="collapse nav-submenu {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}show{% endif %}" id="settingsSubmenu">
-                    <li class="nav-item">
-                        <a href="{{ url_for('manage_categories') }}" class="nav-link {% if 'categories' in request.path %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-sitemap"></i></span>
-                            <span class="nav-text">Categories</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-tags"></i></span>
-                            <span class="nav-text">Tags</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>
-                            <span class="nav-text">Currencies</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('profile') }}" class="nav-link {% if request.path == url_for('profile') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-user-circle"></i></span>
-                            <span class="nav-text">Profile</span>
-                        </a>
-                    </li>
-                    {% if current_user.is_admin %}
-                    <li class="nav-item">
-                        <a href="{{ url_for('admin') }}" class="nav-link {% if request.path == url_for('admin') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
-                            <span class="nav-text">Admin</span>
-                        </a>
-                    </li>
-                    {% endif %}
-                </ul>
-            </li>
-    
-
-            
-            <!-- Logout option at the bottom of sidebar -->
-            <div class="sidebar-logout">
-                <div class="sidebar-user mb-2">
-                    <div class="user-avatar" style="background-color: {{ current_user.user_color }};">
-                        {{ current_user.name[0] | upper }}
-                    </div>
-                    <div class="user-details">
-                        <div class="user-name">{{ current_user.name }}</div>
-                        <div class="user-email">{{ current_user.id }}</div>
-                    </div>
-                    <button id="collapseSidebar" class="btn btn-sm btn-outline-light ms-auto sidebar-collapse-btn">
-                        <i class="fas fa-angles-left"></i>
-                    </button>
-                </div>
-                <li class="nav-item">
+        <!-- Main navigation section - wrap in a div with flex properties -->
+        <div class="sidebar-content">
+            <ul class="sidebar-nav">
+                <!-- Main Dashboard -->
+                <li class="nav-item" data-title="Dashboard">
+                    <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.path == url_for('dashboard') %}active{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span>
+                        <span class="nav-text">Dashboard</span>
+                    </a>
+                </li>
+                
+                <!-- Expenses Section (Collapsible) -->
+                <li class="nav-item nav-section" data-title="Expenses">
+                    <a href="#expensesSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'transactions' in request.path or 'recurring' in request.path %}{% else %}collapsed{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-file-invoice-dollar"></i></span>
+                        <span class="nav-text">Expenses</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
+                    </a>
+                    <ul class="collapse nav-submenu {% if 'transactions' in request.path or 'recurring' in request.path %}show{% endif %}" id="expensesSubmenu">
+                        <li class="nav-item" data-title="Transactions">
+                            <a href="{{ url_for('transactions') }}" class="nav-link {% if request.path == url_for('transactions') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
+                                <span class="nav-text">Transactions</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Recurring">
+                            <a href="{{ url_for('recurring') }}" class="nav-link {% if request.path == url_for('recurring') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-calendar-alt"></i></span>
+                                <span class="nav-text">Recurring</span>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                
+                <!-- Groups & Social -->
+                <li class="nav-item nav-section" data-title="Social">
+                    <a href="#socialSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'groups' in request.path or 'settlements' in request.path %}{% else %}collapsed{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-users"></i></span>
+                        <span class="nav-text">Social</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
+                    </a>
+                    <ul class="collapse nav-submenu {% if 'groups' in request.path or 'settlements' in request.path %}show{% endif %}" id="socialSubmenu">
+                        <li class="nav-item" data-title="Groups">
+                            <a href="{{ url_for('groups') }}" class="nav-link {% if 'groups' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-friends"></i></span>
+                                <span class="nav-text">Groups</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Settle Up">
+                            <a href="{{ url_for('settlements') }}" class="nav-link {% if request.path == url_for('settlements') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span>
+                                <span class="nav-text">Settle Up</span>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                
+                <!-- Analysis -->
+                <li class="nav-item" data-title="Statistics">
+                    <a href="{{ url_for('stats') }}" class="nav-link {% if request.path == url_for('stats') %}active{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
+                        <span class="nav-text">Statistics</span>
+                    </a>
+                </li>
+                <li class="nav-item" data-title="Budgets">
+                    <a href="{{ url_for('budgets') }}" class="nav-link {% if request.path == url_for('budgets') %}active{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-chart-pie"></i></span>
+                        <span class="nav-text">Budgets</span>
+                    </a>
+                </li>
+                
+                <div class="sidebar-section-divider"></div>
+                
+                <!-- Settings Section -->
+                <li class="nav-item nav-section" data-title="Settings">
+                    <a href="#settingsSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}{% else %}collapsed{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-cog"></i></span>
+                        <span class="nav-text">Settings</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
+                    </a>
+                    <ul class="collapse nav-submenu {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}show{% endif %}" id="settingsSubmenu">
+                        <li class="nav-item" data-title="Categories">
+                            <a href="{{ url_for('manage_categories') }}" class="nav-link {% if 'categories' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-sitemap"></i></span>
+                                <span class="nav-text">Categories</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Tags">
+                            <a href="{{ url_for('manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-tags"></i></span>
+                                <span class="nav-text">Tags</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Currencies">
+                            <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>
+                                <span class="nav-text">Currencies</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Profile">
+                            <a href="{{ url_for('profile') }}" class="nav-link {% if request.path == url_for('profile') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-circle"></i></span>
+                                <span class="nav-text">Profile</span>
+                            </a>
+                        </li>
+                        {% if current_user.is_admin %}
+                        <li class="nav-item" data-title="Admin">
+                            <a href="{{ url_for('admin') }}" class="nav-link {% if request.path == url_for('admin') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
+                                <span class="nav-text">Admin</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Logout option at the bottom of sidebar -->
+        <div class="sidebar-footer">
+            <ul class="sidebar-nav mb-0">
+                <li class="nav-item" data-title="Logout">
                     <a href="{{ url_for('logout') }}" class="nav-link">
                         <span class="nav-icon"><i class="fas fa-sign-out-alt"></i></span>
                         <span class="nav-text">Logout</span>
                     </a>
                 </li>
-            </div>
-        </ul>
+            </ul>
+        </div>
     </div>
     
     <!-- Backdrop for mobile -->
