@@ -1,7 +1,66 @@
 {% extends "base.html" %}
 
-    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
+<!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
+<!-- Special styling to fix modal issues -->
+<style>
+    /* Fix for modals and interactive elements */
+    .modal, .modal-dialog, .modal-content {
+        pointer-events: all !important;
+    }
+    
+    .modal-backdrop {
+        z-index: 1050 !important;
+    }
+    
+    .modal {
+        z-index: 1055 !important;
+    }
+    
+    .modal-dialog {
+        z-index: 1060 !important;
+    }
+    
+    .modal-content {
+        z-index: 1065 !important;
+    }
+    
+    /* Make sure form controls are above other elements */
+    .modal input,
+    .modal select,
+    .modal textarea,
+    .modal button {
+        position: relative;
+        z-index: 1070 !important;
+    }
+    
+    .modal .form-control:focus,
+    .modal .form-select:focus,
+    .modal button:focus {
+        box-shadow: 0 0 0 0.25rem rgba(255, 215, 0, 0.25) !important;
+        outline: none !important;
+    }
+    
+    /* Fix dropdown menu in modal */
+    .modal .dropdown-menu {
+        z-index: 1075 !important;
+    }
+    
+    /* Improve accessibility */
+    .dropdown-item:focus {
+        outline: 2px solid #fbbf24 !important;
+    }
+    
+    /* Cursor helpers */
+    .cursor-pointer {
+        cursor: pointer;
+    }
+    
+    .cursor-pointer:hover {
+        text-decoration: underline;
+    }
+</style>
+
 <div class="container">
     <div class="row mb-4">
         <div class="col-md-12">
@@ -66,6 +125,37 @@
         </form>
     </div>
 
+    <!-- Category Management Card -->
+    <div class="card mt-4 mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Category Management</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Manage your default categories and reset options.</p>
+            
+            <div class="d-flex flex-wrap gap-3">
+                <form action="{{ url_for('restore_default_categories') }}" method="POST">
+                    <button type="submit" class="btn btn-outline-light" 
+                          onclick="return confirm('Restore default categories? This will not affect your existing categories or restore ones you explicitly deleted.')">
+                        <i class="fas fa-undo me-2"></i>Restore Default Categories
+                    </button>
+                </form>
+                
+                <form action="{{ url_for('clear_category_deletion_history') }}" method="POST">
+                    <button type="submit" class="btn btn-outline-warning" 
+                          onclick="return confirm('Are you sure? This will allow previously deleted default categories to be restored next time you use the restore function.')">
+                        <i class="fas fa-eraser me-2"></i>Clear Deletion History
+                    </button>
+                </form>
+            </div>
+            
+            <p class="text-muted small mt-2">
+                <strong>Restore Default Categories:</strong> Adds back any missing default categories that you haven't explicitly deleted.<br>
+                <strong>Clear Deletion History:</strong> Forgets which categories you've deleted, allowing them to be restored again.
+            </p>
+        </div>
+    </div>
+
     <!-- Categories Display -->
     <div class="row">
         {% for category in categories %}
@@ -82,7 +172,7 @@
                             <i class="fas fa-ellipsis-v"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end bg-dark" aria-labelledby="categoryActions{{ category.id }}">
-                            <li><a class="dropdown-item text-light" href="#" onclick="editCategory({{ category.id }}, '{{ category.name }}', '{{ category.icon }}', '{{ category.color }}')">
+                            <li><a class="dropdown-item text-light" href="#" onclick="openEditCategory({{ category.id }}, '{{ category.name }}', '{{ category.icon }}', '{{ category.color }}'); return false;">
                                 <i class="fas fa-edit me-2"></i>Edit
                             </a></li>
                             <li><hr class="dropdown-divider border-secondary"></li>
@@ -115,7 +205,7 @@
                                             <i class="fas fa-ellipsis-v"></i>
                                         </button>
                                         <ul class="dropdown-menu dropdown-menu-end bg-dark" aria-labelledby="subcategoryActions{{ subcategory.id }}">
-                                            <li><a class="dropdown-item text-light" href="#" onclick="editCategory({{ subcategory.id }}, '{{ subcategory.name }}', '{{ subcategory.icon }}', '{{ subcategory.color }}')">
+                                            <li><a class="dropdown-item text-light" href="#" onclick="openEditCategory({{ subcategory.id }}, '{{ subcategory.name }}', '{{ subcategory.icon }}', '{{ subcategory.color }}'); return false;">
                                                 <i class="fas fa-edit me-2"></i>Edit
                                             </a></li>
                                             <li><hr class="dropdown-divider border-secondary"></li>
@@ -191,16 +281,16 @@
     </div>
 </div>
 
-<!-- Edit Category Modal -->
-<div class="modal fade" id="editCategoryModal" tabindex="-1" aria-labelledby="editCategoryModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content bg-dark text-light">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editCategoryModalLabel">Edit Category</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+<!-- Use a custom edit form instead of a modal to avoid Bootstrap modal issues -->
+<div id="editCategoryOverlay" class="position-fixed top-0 start-0 w-100 h-100" style="background-color: rgba(0,0,0,0.7); z-index: 2000; display: none;">
+    <div class="position-absolute top-50 start-50 translate-middle" style="width: 90%; max-width: 500px;">
+        <div class="card bg-dark text-light">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Edit Category</h5>
+                <button type="button" class="btn-close btn-close-white" onclick="closeEditOverlay()"></button>
             </div>
             <form id="editCategoryForm" method="POST">
-                <div class="modal-body">
+                <div class="card-body">
                     <div class="mb-3">
                         <label for="edit_name" class="form-label">Category Name</label>
                         <input type="text" class="form-control bg-dark text-light" id="edit_name" name="name" required>
@@ -226,9 +316,11 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-secondary me-2" onclick="closeEditOverlay()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
                 </div>
             </form>
         </div>
@@ -264,6 +356,9 @@
             const previewId = select.dataset.previewId;
             setupIconPreview(select.id, previewId);
         });
+        
+        // Setup keyboard trap for the overlay
+        setupKeyboardTrap();
     });
 
     function toggleCategoryForm() {
@@ -328,7 +423,8 @@
         }
     }
 
-    function editCategory(categoryId, name, icon, color) {
+    // Using custom overlay instead of Bootstrap modal
+    function openEditCategory(categoryId, name, icon, color) {
         // Set the form action URL
         const form = document.getElementById('editCategoryForm');
         form.action = `/categories/edit/${categoryId}`;
@@ -341,11 +437,48 @@
 
         // Update the icon preview
         const iconPreview = document.getElementById('edit-selected-icon-preview');
-        iconPreview.innerHTML = `<i class="fas ${icon}"></i>`;
+        iconPreview.innerHTML = `<i class="fas ${icon}" style="color: ${color};"></i>`;
 
-        // Show the modal
-        const modal = new bootstrap.Modal(document.getElementById('editCategoryModal'));
-        modal.show();
+        // Show the overlay
+        document.getElementById('editCategoryOverlay').style.display = 'block';
+        document.body.style.overflow = 'hidden'; // Prevent scrolling
+        
+        // Focus first field for accessibility
+        setTimeout(() => {
+            document.getElementById('edit_name').focus();
+        }, 50);
+    }
+
+    function closeEditOverlay() {
+        document.getElementById('editCategoryOverlay').style.display = 'none';
+        document.body.style.overflow = ''; // Restore scrolling
+    }
+    
+    function setupKeyboardTrap() {
+        // Handle ESC key to close the overlay
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('editCategoryOverlay').style.display === 'block') {
+                closeEditOverlay();
+            }
+        });
+        
+        // Add keyboard trap for tabbing in the overlay
+        const overlay = document.getElementById('editCategoryOverlay');
+        overlay.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                const focusableElements = overlay.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                const firstElement = focusableElements[0];
+                const lastElement = focusableElements[focusableElements.length - 1];
+                
+                if (e.shiftKey && document.activeElement === firstElement) {
+                    e.preventDefault();
+                    lastElement.focus();
+                } else if (!e.shiftKey && document.activeElement === lastElement) {
+                    e.preventDefault();
+                    firstElement.focus();
+                }
+            }
+        });
     }
 </script>
 {% endblock %}

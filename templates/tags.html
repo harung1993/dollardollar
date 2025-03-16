@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -16,7 +17,7 @@
     <!-- Add Tag Form (Hidden by default) -->
     <div id="tagFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Create New Tag</h4>
-        <form action="{{ url_for('add_tag') }}" method="POST" id="addTagForm">
+        <form action="{{ url_for('add_tag') }}" method="POST">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="name" class="form-label">Tag Name</label>
@@ -40,16 +41,17 @@
     <!-- Tags Grid -->
     <div class="row">
         {% for tag in tags %}
-        <div class="col-md-4 mb-4" id="tag-card-{{ tag.id }}">
+        <div class="col-md-4 mb-4">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center" style="background-color: {{ tag.color }}20;">
                     <h5 class="card-title mb-0">
                         <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
                     </h5>
-                    <button type="button" class="btn btn-sm btn-danger" 
-                           onclick="deleteTag({{ tag.id }}, '{{ tag.name }}')">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
+                    <form action="{{ url_for('delete_tag', tag_id=tag.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this tag?');">
+                        <button type="submit" class="btn btn-sm btn-danger">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </form>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">
@@ -74,7 +76,6 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Toggle form visibility
         document.getElementById('toggleTagForm').addEventListener('click', toggleTagForm);
         
         // Update color hex value when the color picker changes
@@ -84,71 +85,6 @@
         if (colorPicker && colorHex) {
             colorPicker.addEventListener('input', function() {
                 colorHex.value = this.value;
-            });
-        }
-        
-        // Handle form submission with AJAX
-        const addTagForm = document.getElementById('addTagForm');
-        if (addTagForm) {
-            addTagForm.addEventListener('submit', function(e) {
-                e.preventDefault();
-                submitFormWithAjax(this, function(data) {
-                    // Create a new tag card and add it to the grid
-                    if (data.tag) {
-                        // Check if we need to remove the "no tags" message
-                        const noTagsAlert = document.querySelector('.alert.alert-info');
-                        if (noTagsAlert) {
-                            noTagsAlert.remove();
-                        }
-                        
-                        const tagsRow = document.querySelector('.row:not(.mb-4)');
-                        
-                        // Create new tag card
-                        const newCard = document.createElement('div');
-                        newCard.className = 'col-md-4 mb-4';
-                        newCard.id = `tag-card-${data.tag.id}`;
-                        
-                        // Add animation class
-                        newCard.style.opacity = '0';
-                        newCard.style.transform = 'translateY(20px)';
-                        newCard.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-                        
-                        const today = new Date().toISOString().split('T')[0];
-                        
-                        newCard.innerHTML = `
-                            <div class="card h-100">
-                                <div class="card-header d-flex justify-content-between align-items-center" style="background-color: ${data.tag.color}20;">
-                                    <h5 class="card-title mb-0">
-                                        <span class="badge" style="background-color: ${data.tag.color};">${data.tag.name}</span>
-                                    </h5>
-                                    <button type="button" class="btn btn-sm btn-danger" 
-                                           onclick="deleteTag(${data.tag.id}, '${data.tag.name}')">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </button>
-                                </div>
-                                <div class="card-body">
-                                    <p class="text-muted">
-                                        <small>Created: ${today}</small><br>
-                                        <small>Color: ${data.tag.color}</small>
-                                    </p>
-                                    <p>Used in 0 expenses</p>
-                                </div>
-                            </div>
-                        `;
-                        
-                        // Add to the DOM
-                        tagsRow.appendChild(newCard);
-                        
-                        // Trigger animation after a short delay
-                        setTimeout(() => {
-                            newCard.style.opacity = '1';
-                            newCard.style.transform = 'translateY(0)';
-                        }, 10);
-                        
-                        // Reset form and hide it
-                        toggleTagForm();
-                    }
-                });
             });
         }
     });
@@ -161,72 +97,11 @@
             form.style.display = 'block';
             button.innerHTML = '<i class="fas fa-times me-2"></i>Cancel';
             button.classList.replace('btn-primary', 'btn-secondary');
-            
-            // Reset form fields
-            document.getElementById('name').value = '';
-            document.getElementById('color').value = '#6c757d';
-            document.getElementById('colorHex').value = '#6c757d';
         } else {
             form.style.display = 'none';
             button.innerHTML = '<i class="fas fa-plus me-2"></i>Add New Tag';
             button.classList.replace('btn-secondary', 'btn-primary');
         }
-    }
-    
-    function deleteTag(tagId, tagName) {
-        showConfirmDialog(
-            'Delete Tag',
-            `Are you sure you want to delete the tag "${tagName}"? It will be removed from all associated expenses.`,
-            function() {
-                // User confirmed, send DELETE request
-                fetch(`/tags/delete/${tagId}`, {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Show success message
-                        showToast(data.message || 'Tag deleted successfully', 'success');
-                        
-                        // Remove tag from the UI with animation
-                        const tagCard = document.getElementById(`tag-card-${tagId}`);
-                        if (tagCard) {
-                            tagCard.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-                            tagCard.style.opacity = '0';
-                            tagCard.style.transform = 'translateY(-20px)';
-                            
-                            // Remove from DOM after animation completes
-                            setTimeout(() => {
-                                tagCard.remove();
-                                
-                                // Check if there are no more tags
-                                const tagsRow = document.querySelector('.row:not(.mb-4)');
-                                if (tagsRow && tagsRow.children.length === 0) {
-                                    // Add the "no tags" message
-                                    tagsRow.innerHTML = `
-                                        <div class="col-12">
-                                            <div class="alert alert-info">
-                                                You haven't created any tags yet. Create one to categorize your expenses!
-                                            </div>
-                                        </div>
-                                    `;
-                                }
-                            }, 500);
-                        }
-                    } else {
-                        // Show error message
-                        showToast(data.message || 'Failed to delete tag', 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showToast(`Error deleting tag: ${error.message}`, 'error');
-                });
-            }
-        );
     }
 </script>
 {% endblock %}

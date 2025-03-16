@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -121,7 +122,28 @@
                 <!-- Hidden input to store the split details as JSON -->
                 <input type="hidden" id="split_details" name="split_details">
             </div>
-            
+            <div class="mb-3">
+                <label for="category_id" class="form-label">Category</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark text-light" id="category-icon-preview">
+                        <i class="fas fa-tag"></i>
+                    </span>
+                    <select class="form-select bg-dark text-light" id="category_id" name="category_id">
+                        <option value="">Select a category</option>
+                        {% for top_category in current_user.categories if not top_category.parent_id %}
+                            <optgroup label="{{ top_category.name }}">
+                                {% for subcat in top_category.subcategories %}
+                                    <option value="{{ subcat.id }}" 
+                                            data-icon="{{ subcat.icon }}" 
+                                            data-color="{{ subcat.color }}">
+                                        {{ subcat.name }}
+                                    </option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
             <!-- Group Selection -->
             <div class="row">
                 <div class="col-md-6 mb-3">
@@ -222,7 +244,33 @@
                         <label class="form-label">Description</label>
                         <input type="text" class="form-control bg-dark text-light" id="descriptionSearch" name="description" placeholder="Search description...">
                     </div>
-                    <div class="col-md-6 mb-3 d-flex align-items-end">
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Category</label>
+                        <select class="form-select bg-dark text-light" id="categoryFilter" name="categoryId">
+                            <option value="all">All Categories</option>
+                            <option value="none">Uncategorized</option>
+                            {% for top_category in current_user.categories if not top_category.parent_id %}
+                                <optgroup label="{{ top_category.name }}">
+                                    {% for subcat in top_category.subcategories %}
+                                        <option value="{{ subcat.id }}">{{ subcat.name }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <label class="form-label">Tags</label>
+                        <select class="form-select bg-dark text-light" id="tagFilter" name="tagId">
+                            <option value="all">All Tags</option>
+                            <option value="none">No Tags</option>
+                            {% for tag in current_user.tags %}
+                                <option value="{{ tag.id }}" style="color: {{ tag.color }}">{{ tag.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-12 mb-3 d-flex justify-content-end align-items-end">
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-primary" id="applyFilters">
                                 <i class="fas fa-filter me-2"></i>Apply Filters
@@ -259,6 +307,7 @@
                             <th>Amount <i class="fas fa-sort"></i></th>
                             <th>Card Used <i class="fas fa-sort"></i></th>
                             <th>Group <i class="fas fa-sort"></i></th>
+                            <th>Category <i class="fas fa-sort"></i></th>
                             <th>Split Details</th>
                             <th>Actions</th>
                         </tr>
@@ -267,12 +316,34 @@
                         {% if expenses %}
                         {% for expense in expenses %}
                         {% set splits = expense_splits[expense.id] %}
-                        <tr data-expense-id="{{ expense.id }}" data-paid-by="{{ expense.paid_by }}">
+                        <tr data-expense-id="{{ expense.id }}" data-paid-by="{{ expense.paid_by }}" 
+                            data-category-id="{{ expense.category_id if expense.category_id else 'none' }}"
+                            data-group-id="{{ expense.group_id if expense.group_id else 'none' }}"
+                            data-tags="{{ expense.tags|map(attribute='id')|join(',') }}">
                             <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
                             <td>{{ expense.description }}</td>
                             <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.amount) }}</td>
                             <td>{{ expense.card_used }}</td>
                             <td>{{ expense.group.name if expense.group else "-" }}</td>
+                            <td>
+                                {% if expense.category %}
+                                    <span class="badge" style="background-color: {{ expense.category.color }};">
+                                        <i class="fas {{ expense.category.icon }}"></i>
+                                        {{ expense.category.name }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if expense.tags %}
+                                    {% for tag in expense.tags %}
+                                        <span class="badge mb-1" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 <button class="btn btn-sm btn-outline-light" type="button" 
                                         data-bs-toggle="collapse" data-bs-target="#split{{ expense.id }}" 
@@ -317,7 +388,7 @@
                         {% endfor %}
                         {% else %}
                             <tr>
-                                <td colspan="7" class="text-center">No transactions found</td>
+                                <td colspan="9" class="text-center">No transactions found</td>
                             </tr>
                         {% endif %}
                     </tbody>
@@ -344,10 +415,26 @@
     </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
 <script>
-const baseCurrencySymbol = "{{ base_currency.symbol }}";    
+const categorySelect = document.getElementById('category_id');
+const categoryIconPreview = document.getElementById('category-icon-preview');
+
+if (categorySelect && categoryIconPreview) {
+    categorySelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        if (selectedOption.value) {
+            const icon = selectedOption.getAttribute('data-icon');
+            const color = selectedOption.getAttribute('data-color');
+            categoryIconPreview.innerHTML = `<i class="fas ${icon}" style="color: ${color};"></i>`;
+        } else {
+            categoryIconPreview.innerHTML = `<i class="fas fa-tag"></i>`;
+        }
+    });
+}
+
+const baseCurrencySymbol = "{{ base_currency.symbol }}";
+
 // Document ready - initialize all components and event handlers
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize today's date
@@ -482,6 +569,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Initialize split options based on current value
         toggleSplitOptions();
     }
+
+    // Apply filters on page load to initialize the view
+    applyFilters();
 });
 
 // Function to handle editing an expense
@@ -601,6 +691,16 @@ function populateEditForm(expense) {
                 groupSelect.value = expense.group_id || '';
             }
             
+            // Set category if applicable
+            const categorySelect = formElement.querySelector('#category_id');
+            if (categorySelect && expense.category_id) {
+                categorySelect.value = expense.category_id;
+                // Update icon preview
+                if (typeof categorySelect.onchange === 'function') {
+                    categorySelect.dispatchEvent(new Event('change'));
+                }
+            }
+            
             // Set tags if applicable
             if (expense.tag_ids && expense.tag_ids.length > 0) {
                 expense.tag_ids.forEach(tagId => {
@@ -630,6 +730,294 @@ function populateEditForm(expense) {
             form.scrollIntoView({ behavior: 'smooth' });
         }
     }
+}
+
+// Update split_with options when paid_by changes
+function updateSplitWithOptions() {
+    const paidById = document.getElementById('paid_by').value;
+    const splitWithSelect = document.getElementById('split_with');
+    
+    if (!splitWithSelect) return;
+    
+    // Store currently selected options (excluding the payer)
+    const selectedOptions = Array.from(splitWithSelect.selectedOptions)
+        .filter(opt => opt.value !== paidById)
+        .map(opt => opt.value);
+    
+    // Update selection - deselect payer
+    for (let i = 0; i < splitWithSelect.options.length; i++) {
+        const option = splitWithSelect.options[i];
+        // If this is the payer, deselect it
+        if (option.value === paidById) {
+            option.selected = false;
+        }
+    }
+    
+    // If the multiselect has been initialized
+    const multiselectWrapper = document.querySelector('.multiselect-wrapper');
+    if (multiselectWrapper) {
+        // Need to rebuild the dropdown options to reflect the new state
+        initializeMultiSelect(true);
+    }
+}
+
+// Tag checkboxes styling
+function initializeTagCheckboxes() {
+    const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
+    
+    tagCheckboxes.forEach(checkbox => {
+        const originalColor = checkbox.style.backgroundColor;
+        
+        // Adjust checked style
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                this.style.backgroundColor = this.style.borderColor || originalColor;
+            } else {
+                this.style.backgroundColor = 'transparent';
+            }
+        });
+    });
+}
+
+// Function to handle deleting an expense
+function deleteExpense(expenseId) {
+    if (confirm('Are you sure you want to delete this expense?')) {
+        fetch(`/delete_expense/${expenseId}`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to delete expense');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Find and remove the row from the table
+                const row = document.querySelector(`tr[data-expense-id="${expenseId}"]`);
+                if (row) {
+                    row.remove();
+                } else {
+                    // Try finding the row by looping through all rows and checking cells
+                    const rows = document.querySelectorAll('#expensesTable tbody tr');
+                    for (const row of rows) {
+                        if (row.querySelector(`#actionDropdown${expenseId}`)) {
+                            row.remove();
+                            break;
+                        }
+                    }
+                }
+                
+                // Update the result count
+                const resultCountEl = document.getElementById('resultCount');
+                if (resultCountEl) {
+                    const currentCount = parseInt(resultCountEl.textContent.split(' ')[0]) - 1;
+                    resultCountEl.textContent = `${currentCount} transaction${currentCount !== 1 ? 's' : ''}`;
+                }
+                
+                // Show success message
+                alert('Expense deleted successfully');
+            } else {
+                alert(data.message || 'Failed to delete expense');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(`Error deleting expense: ${error.message}`);
+        });
+    }
+}
+
+// Implement the improved multiselect dropdown
+function initializeMultiSelect(rebuild = false) {
+    // Get the select element
+    const selectElement = document.getElementById('split_with');
+    const paidBySelect = document.getElementById('paid_by');
+    
+    if (!selectElement || !paidBySelect) return;
+    
+    // If rebuilding, remove previous wrapper
+    if (rebuild) {
+        const existingWrapper = selectElement.closest('.multiselect-wrapper');
+        if (existingWrapper) {
+            // Move select element back to its original position
+            existingWrapper.parentNode.insertBefore(selectElement, existingWrapper);
+            existingWrapper.remove();
+            
+            // Reset display
+            selectElement.style.display = '';
+        }
+    }
+    
+    // Check if already initialized and not rebuilding
+    if (!rebuild && selectElement.parentNode.classList.contains('multiselect-wrapper')) {
+        return; // Already initialized
+    }
+    
+    // Create a wrapper div
+    const wrapper = document.createElement('div');
+    wrapper.className = 'multiselect-wrapper position-relative';
+    selectElement.parentNode.insertBefore(wrapper, selectElement);
+    wrapper.appendChild(selectElement);
+    
+    // Create the custom dropdown
+    const customSelect = document.createElement('div');
+    customSelect.className = 'form-control bg-dark text-light d-flex flex-wrap align-items-center';
+    customSelect.style.minHeight = '38px';
+    customSelect.style.cursor = 'pointer';
+    wrapper.appendChild(customSelect);
+    
+    // Create dropdown content
+    const dropdownContent = document.createElement('div');
+    dropdownContent.className = 'position-absolute w-100 bg-dark border border-secondary rounded mt-1 p-2';
+    dropdownContent.style.zIndex = '100';
+    dropdownContent.style.maxHeight = '200px';
+    dropdownContent.style.overflowY = 'auto';
+    dropdownContent.style.display = 'none';
+    wrapper.appendChild(dropdownContent);
+    
+    // Hide the original select
+    selectElement.style.display = 'none';
+    
+    // Function to update options based on paid_by
+    function updateOptions() {
+        const paidById = paidBySelect.value;
+        
+        // Clear existing dropdown content
+        dropdownContent.innerHTML = '';
+        
+        // Store currently selected options (excluding the payer)
+        const selectedOptions = Array.from(selectElement.selectedOptions)
+            .filter(opt => opt.value !== paidById)
+            .map(opt => opt.value);
+        
+        // Repopulate dropdown options
+        for (let i = 0; i < selectElement.options.length; i++) {
+            const option = selectElement.options[i];
+            
+            // Skip the payer (the paid_by person shouldn't be in the split_with list)
+            if (option.value === paidById) {
+                option.selected = false; // Ensure the payer isn't selected
+                continue;
+            }
+            
+            const checkboxContainer = document.createElement('div');
+            checkboxContainer.className = 'form-check mb-2';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'form-check-input';
+            checkbox.value = option.value;
+            checkbox.id = 'multiselect-' + option.value;
+            checkbox.checked = selectedOptions.includes(option.value);
+            option.selected = checkbox.checked; // Update the actual select element
+            
+            const label = document.createElement('label');
+            label.htmlFor = 'multiselect-' + option.value;
+            label.className = 'form-check-label text-light ms-2';
+            label.textContent = option.textContent;
+            
+            checkboxContainer.appendChild(checkbox);
+            checkboxContainer.appendChild(label);
+            dropdownContent.appendChild(checkboxContainer);
+            
+            // Handle checkbox change
+            checkbox.addEventListener('change', function() {
+                option.selected = checkbox.checked;
+                updateCustomSelectDisplay();
+                
+                // Trigger change event on original select
+                const event = new Event('change', { bubbles: true });
+                selectElement.dispatchEvent(event);
+            });
+        }
+        
+        // Update display
+        updateCustomSelectDisplay();
+    }
+    
+    // Toggle dropdown on click
+    customSelect.addEventListener('click', function(e) {
+        dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
+        e.stopPropagation();
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function() {
+        dropdownContent.style.display = 'none';
+    });
+    
+    // Prevent dropdown from closing when clicking inside it
+    dropdownContent.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+    
+    // Update the custom select display
+    function updateCustomSelectDisplay() {
+        customSelect.innerHTML = '';
+        let selectedCount = 0;
+        
+        // Check if personal expense is checked
+        const personalExpenseCheck = document.getElementById('personal_expense_check');
+        if (personalExpenseCheck && personalExpenseCheck.checked) {
+            const placeholder = document.createElement('span');
+            placeholder.className = 'text-muted';
+            placeholder.textContent = 'Personal expense - no split';
+            customSelect.appendChild(placeholder);
+            return;
+        }
+        
+        for (let i = 0; i < selectElement.options.length; i++) {
+            if (selectElement.options[i].selected) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-primary me-1 mb-1';
+                badge.textContent = selectElement.options[i].text.split(' (')[0]; // Just show the name
+                
+                const removeBtn = document.createElement('span');
+                removeBtn.className = 'ms-1';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.style.cursor = 'pointer';
+                
+                badge.appendChild(removeBtn);
+                customSelect.appendChild(badge);
+                selectedCount++;
+                
+                // Handle remove button with closure to capture current i value
+                (function(optionIndex) {
+                    removeBtn.addEventListener('click', function(e) {
+                        selectElement.options[optionIndex].selected = false;
+                        const cb = document.getElementById('multiselect-' + selectElement.options[optionIndex].value);
+                        if (cb) cb.checked = false;
+                        updateCustomSelectDisplay();
+                        
+                        // Trigger change event
+                        selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+                        e.stopPropagation();
+                    });
+                })(i);
+            }
+        }
+        
+        // If nothing selected, show placeholder
+        if (selectedCount === 0) {
+            const placeholder = document.createElement('span');
+            placeholder.className = 'text-muted';
+            placeholder.textContent = 'Select people to split with';
+            customSelect.appendChild(placeholder);
+        }
+    }
+    
+    // Add event listener to paid_by select to update options
+    if (paidBySelect) {
+        paidBySelect.addEventListener('change', updateOptions);
+    }
+    
+    // Initial setup
+    updateOptions();
 }
 
 
@@ -696,6 +1084,12 @@ function resetFormUI() {
         checkbox.checked = false;
         checkbox.style.backgroundColor = 'transparent';
     });
+    
+    // Reset category icon preview
+    const categoryIconPreview = document.getElementById('category-icon-preview');
+    if (categoryIconPreview) {
+        categoryIconPreview.innerHTML = '<i class="fas fa-tag"></i>';
+    }
 }
 
 // Toggle personal expense mode
@@ -810,6 +1204,9 @@ function sortTable(header) {
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     
     rows.sort((a, b) => {
+        // Skip the "no results" row
+        if (a.cells.length === 1 || b.cells.length === 1) return 0;
+        
         if (!a.cells[index] || !b.cells[index]) return 0;
         
         let aValue = a.cells[index].textContent.trim();
@@ -824,9 +1221,24 @@ function sortTable(header) {
         
         // Handle amount sorting
         if (index === 2) {
-            aValue = parseFloat(aValue.replace('$', '').replace(',', ''));
-            bValue = parseFloat(bValue.replace('$', '').replace(',', ''));
+            aValue = parseFloat(aValue.replace(/[^\d.-]/g, ''));
+            bValue = parseFloat(bValue.replace(/[^\d.-]/g, ''));
             return isAscending ? bValue - aValue : aValue - bValue;
+        }
+        
+        // Categories and Tags (special treatment for badges)
+        if (index === 5 || index === 6) {
+            // Extract text content but handle cases with no category/tags
+            aValue = a.cells[index].textContent.trim();
+            bValue = b.cells[index].textContent.trim();
+            
+            // Consider "-" at the bottom when sorting ascending
+            if (aValue === "-" && bValue !== "-") {
+                return isAscending ? 1 : -1;
+            }
+            if (bValue === "-" && aValue !== "-") {
+                return isAscending ? -1 : 1;
+            }
         }
         
         // Default string comparison
@@ -847,6 +1259,8 @@ function applyFilters() {
     const paidBy = document.getElementById('paidByFilter')?.value;
     const cardUsed = document.getElementById('cardFilter')?.value;
     const groupId = document.getElementById('groupFilter')?.value;
+    const categoryId = document.getElementById('categoryFilter')?.value;
+    const tagId = document.getElementById('tagFilter')?.value;
     const minAmount = document.getElementById('minAmount')?.value;
     const maxAmount = document.getElementById('maxAmount')?.value;
     const description = document.getElementById('descriptionSearch')?.value?.toLowerCase() || '';
@@ -859,13 +1273,19 @@ function applyFilters() {
     
     rows.forEach(row => {
         // Only process rows that aren't the "No transactions found" row
-        if (row.cells.length < 7) return;
+        if (row.cells.length < 9) return;
         
         const rowDate = row.cells[0].textContent.trim();
         const rowDescription = row.cells[1].textContent.trim().toLowerCase();
-        const rowAmount = parseFloat(row.cells[2].textContent.trim().replace('$', '').replace(',', ''));
+        const rowAmount = parseFloat(row.cells[2].textContent.trim().replace(/[^\d.-]/g, ''));
         const rowCard = row.cells[3].textContent.trim();
         const rowGroup = row.cells[4].textContent.trim();
+        
+        // Get data attributes for filtering
+        const rowPaidBy = row.getAttribute('data-paid-by');
+        const rowCategoryId = row.getAttribute('data-category-id');
+        const rowGroupId = row.getAttribute('data-group-id');
+        const rowTags = row.getAttribute('data-tags') || '';
         
         let visible = true;
         
@@ -874,17 +1294,25 @@ function applyFilters() {
         if (endDate && new Date(rowDate) > new Date(endDate)) visible = false;
         
         // Paid by filter - using data attribute for proper filtering
-        if (paidBy && paidBy !== 'all') {
-            const paidByValue = row.getAttribute('data-paid-by');
-            if (paidByValue !== paidBy) visible = false;
-        }
+        if (paidBy && paidBy !== 'all' && rowPaidBy !== paidBy) visible = false;
         
         // Card filter
         if (cardUsed && cardUsed !== 'all' && rowCard !== cardUsed) visible = false;
         
         // Group filter
-        if (groupId === 'none' && rowGroup !== '-') visible = false;
-        if (groupId && groupId !== 'all' && groupId !== 'none' && !rowGroup.includes(groupId)) visible = false;
+        if (groupId === 'none' && rowGroupId !== 'none') visible = false;
+        if (groupId && groupId !== 'all' && groupId !== 'none' && rowGroupId !== groupId) visible = false;
+        
+        // Category filter
+        if (categoryId === 'none' && rowCategoryId !== 'none') visible = false;
+        if (categoryId && categoryId !== 'all' && categoryId !== 'none' && rowCategoryId !== categoryId) visible = false;
+        
+        // Tag filter
+        if (tagId === 'none' && rowTags !== '') visible = false;
+        if (tagId && tagId !== 'all' && tagId !== 'none') {
+            const tagsList = rowTags.split(',');
+            if (!tagsList.includes(tagId)) visible = false;
+        }
         
         // Amount filter
         if (minAmount && !isNaN(parseFloat(minAmount)) && rowAmount < parseFloat(minAmount)) visible = false;
@@ -905,7 +1333,7 @@ function applyFilters() {
     }
     
     // Show/hide the "no results" message
-    const noResultsRow = document.querySelector('#expensesTable tbody tr td[colspan="7"]');
+    const noResultsRow = document.querySelector('#expensesTable tbody tr td[colspan="9"]');
     if (noResultsRow) {
         const parentRow = noResultsRow.parentElement;
         if (visibleCount === 0 && rows.length > 1) {
@@ -944,7 +1372,7 @@ function clearFilters() {
     
     rows.forEach(row => {
         // Skip the "no results" row
-        if (row.cells.length === 1 && row.cells[0].getAttribute('colspan') === '7') {
+        if (row.cells.length === 1 && row.cells[0].getAttribute('colspan') === '9') {
             row.style.display = 'none';
         } else {
             row.style.display = '';
@@ -959,7 +1387,7 @@ function clearFilters() {
     }
     
     // Restore original "No transactions found" message if there are no transactions
-    const noResultsRow = document.querySelector('#expensesTable tbody tr td[colspan="7"]');
+    const noResultsRow = document.querySelector('#expensesTable tbody tr td[colspan="9"]');
     if (noResultsRow && actualRowCount === 0) {
         noResultsRow.parentElement.style.display = '';
         noResultsRow.textContent = 'No transactions found';
@@ -975,6 +1403,8 @@ function exportTransactions() {
         paidBy: document.getElementById('paidByFilter')?.value,
         cardUsed: document.getElementById('cardFilter')?.value,
         groupId: document.getElementById('groupFilter')?.value,
+        categoryId: document.getElementById('categoryFilter')?.value,
+        tagId: document.getElementById('tagFilter')?.value,
         minAmount: document.getElementById('minAmount')?.value,
         maxAmount: document.getElementById('maxAmount')?.value,
         description: document.getElementById('descriptionSearch')?.value
@@ -1180,7 +1610,7 @@ function updateSplitValues() {
                     </div>
                     <div class="col-md-6">
                         <div class="input-group">
-                            <span class="input-group-text bg-dark text-light">$</span>
+                            <span class="input-group-text bg-dark text-light">${baseCurrencySymbol}</span>
                             <input type="number" class="form-control bg-dark text-light split-value-input"
                                 data-user-id="${userId}" step="0.01" min="0" 
                                 value="${equalAmount.toFixed(2)}">
@@ -1279,12 +1709,65 @@ function initializeTagCheckboxes() {
         // Adjust checked style
         checkbox.addEventListener('change', function() {
             if (this.checked) {
-                this.style.backgroundColor = originalColor;
+                this.style.backgroundColor = this.style.borderColor || originalColor;
             } else {
                 this.style.backgroundColor = 'transparent';
             }
         });
     });
+}
+
+// Function to handle deleting an expense
+function deleteExpense(expenseId) {
+    if (confirm('Are you sure you want to delete this expense?')) {
+        fetch(`/delete_expense/${expenseId}`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to delete expense');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Find and remove the row from the table
+                const row = document.querySelector(`tr[data-expense-id="${expenseId}"]`);
+                if (row) {
+                    row.remove();
+                } else {
+                    // Try finding the row by looping through all rows and checking cells
+                    const rows = document.querySelectorAll('#expensesTable tbody tr');
+                    for (const row of rows) {
+                        if (row.querySelector(`#actionDropdown${expenseId}`)) {
+                            row.remove();
+                            break;
+                        }
+                    }
+                }
+                
+                // Update the result count
+                const resultCountEl = document.getElementById('resultCount');
+                if (resultCountEl) {
+                    const currentCount = parseInt(resultCountEl.textContent.split(' ')[0]) - 1;
+                    resultCountEl.textContent = `${currentCount} transaction${currentCount !== 1 ? 's' : ''}`;
+                }
+                
+                // Show success message
+                alert('Expense deleted successfully');
+            } else {
+                alert(data.message || 'Failed to delete expense');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert(`Error deleting expense: ${error.message}`);
+        });
+    }
 }
 
 // Implement the improved multiselect dropdown
@@ -1474,6 +1957,5 @@ function initializeMultiSelect(rebuild = false) {
     // Initial setup
     updateOptions();
 }
-
 </script>
-{% endblock scripts %}
+{% endblock %}

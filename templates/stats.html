@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -43,6 +44,7 @@
                             <option value="all">Show All</option>
                             <option value="spending">Spending Patterns</option>
                             <option value="categories">Category Breakdown</option>
+                            <option value="tags">Tag Analysis</option>
                             <option value="balance">Balance Trends</option>
                             <option value="paymentMethod">Payment Methods</option>
                         </select>
@@ -114,7 +116,128 @@
             </div>
         </div>
     </div>
-
+<!-- Time Frame Comparison Section -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center" style="background: rgba(15, 23, 42, 0.7);">
+                <h5 class="mb-0"><i class="fas fa-balance-scale-right me-2" style="color: #06b6d4;"></i>Time Frame Comparison</h5>
+                <div>
+                    <span class="badge" style="background: linear-gradient(135deg, #0ea5e9, #3b82f6);">
+                        <i class="fas fa-sync-alt me-1"></i>Compare Periods
+                    </span>
+                </div>
+            </div>
+            <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <label class="form-label" style="color: #94a3b8;"><i class="far fa-calendar-alt me-2" style="color: #38bdf8;"></i>Primary Period</label>
+                        <div class="input-group">
+                            <input type="date" class="form-control bg-dark text-light" id="primaryPeriodStart" name="primaryPeriodStart" style="border-color: #475569;">
+                            <span class="input-group-text bg-dark text-light" style="border-color: #475569; color: #94a3b8;">to</span>
+                            <input type="date" class="form-control bg-dark text-light" id="primaryPeriodEnd" name="primaryPeriodEnd" style="border-color: #475569;">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" style="color: #94a3b8;"><i class="far fa-calendar-alt me-2" style="color: #f87171;"></i>Comparison Period</label>
+                        <div class="input-group">
+                            <input type="date" class="form-control bg-dark text-light" id="comparisonPeriodStart" name="comparisonPeriodStart" style="border-color: #475569;">
+                            <span class="input-group-text bg-dark text-light" style="border-color: #475569; color: #94a3b8;">to</span>
+                            <input type="date" class="form-control bg-dark text-light" id="comparisonPeriodEnd" name="comparisonPeriodEnd" style="border-color: #475569;">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label" style="color: #94a3b8;"><i class="fas fa-layer-group me-2" style="color: #a855f7;"></i>Compare By</label>
+                        <select class="form-select bg-dark text-light" id="comparisonMetric" style="border-color: #475569;">
+                            <option value="spending">Total Spending</option>
+                            <option value="categories">Categories</option>
+                            <option value="tags">Tags</option>
+                            <option value="payment">Payment Methods</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="button" class="btn w-100" id="compareTimeframes" style="background: linear-gradient(135deg, #0ea5e9, #3b82f6); border: none; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);">
+                            <i class="fas fa-sync-alt me-2"></i>Compare
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Comparison summary cards -->
+                <div class="row mb-4" id="comparisonSummary" style="display: none;">
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-gradient-to-r from-sky-800 to-indigo-800 shadow-lg">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-sky-300 mb-1">Total Spending</h6>
+                                        <h4 class="mb-0 text-white" id="totalSpendingDiff">-</h4>
+                                    </div>
+                                    <div>
+                                        <span id="spendingDiffIcon" class="fs-3"></span>
+                                    </div>
+                                </div>
+                                <p class="text-sky-200 mt-2 small" id="spendingDiffDetails">Compare primary vs comparison period</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-gradient-to-r from-purple-800 to-pink-800 shadow-lg">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-purple-300 mb-1">Transactions</h6>
+                                        <h4 class="mb-0 text-white" id="transactionDiff">-</h4>
+                                    </div>
+                                    <div>
+                                        <span id="transactionDiffIcon" class="fs-3"></span>
+                                    </div>
+                                </div>
+                                <p class="text-purple-200 mt-2 small" id="transactionDiffDetails">Compare transaction counts</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-gradient-to-r from-emerald-800 to-teal-800 shadow-lg">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-emerald-300 mb-1">Top Category</h6>
+                                        <h4 class="mb-0 text-white" id="topCategoryDiff">-</h4>
+                                    </div>
+                                    <div>
+                                        <span id="categoryDiffIcon" class="fs-3"></span>
+                                    </div>
+                                </div>
+                                <p class="text-emerald-200 mt-2 small" id="categoryDiffDetails">Compare category spending</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-gradient-to-r from-amber-800 to-orange-800 shadow-lg">
+                            <div class="card-body py-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-amber-300 mb-1">Daily Average</h6>
+                                        <h4 class="mb-0 text-white" id="dailyAvgDiff">-</h4>
+                                    </div>
+                                    <div>
+                                        <span id="dailyAvgDiffIcon" class="fs-3"></span>
+                                    </div>
+                                </div>
+                                <p class="text-amber-200 mt-2 small" id="dailyAvgDiffDetails">Compare daily spending</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Main comparison chart -->
+                <div class="chart-container" style="position: relative; height:380px;">
+                    <canvas id="timeComparisonChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- Monthly Spending Chart -->
     <div class="row mb-4">
         <div class="col-md-12">
@@ -125,6 +248,50 @@
                 <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
                     <div class="chart-container" style="position: relative; height:300px;">
                         <canvas id="monthlySpendingChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW SECTION: Category Visualization -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header" style="background: rgba(15, 23, 42, 0.7);">
+                    <h5 class="mb-0"><i class="fas fa-layer-group me-2" style="color: #ec4899;"></i>Spending by Category</h5>
+                </div>
+                <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
+                    <div class="chart-container" style="position: relative; height:300px;">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-header" style="background: rgba(15, 23, 42, 0.7);">
+                    <h5 class="mb-0"><i class="fas fa-tags me-2" style="color: #f43f5e;"></i>Top Tags Analysis</h5>
+                </div>
+                <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
+                    <div class="chart-container" style="position: relative; height:300px;">
+                        <canvas id="tagChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW SECTION: Category Trends Over Time -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header" style="background: rgba(15, 23, 42, 0.7);">
+                    <h5 class="mb-0"><i class="fas fa-stream me-2" style="color: #a855f7;"></i>Category Spending Over Time</h5>
+                </div>
+                <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
+                    <div class="chart-container" style="position: relative; height:360px;">
+                        <canvas id="categoryTrendChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -192,62 +359,72 @@
     </div>
 
     <!-- Top Expenses Table -->
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center" style="background: rgba(15, 23, 42, 0.7);">
-                <h5 class="mb-0"><i class="fas fa-star me-2" style="color: #facc15;"></i>Your Top Expenses</h5>
-                <div>
-                    <span class="badge" style="background: linear-gradient(135deg, #f97316, #facc15);">Top {{ top_expenses|length }} transactions</span>
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center" style="background: rgba(15, 23, 42, 0.7);">
+                    <h5 class="mb-0"><i class="fas fa-star me-2" style="color: #facc15;"></i>Your Top Expenses</h5>
+                    <div>
+                        <span class="badge" style="background: linear-gradient(135deg, #f97316, #facc15);">Top {{ top_expenses|length }} transactions</span>
+                    </div>
                 </div>
-            </div>
-            <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
-                <div class="table-responsive">
-                    <table class="table table-borderless">
-                        <thead>
-                            <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
-                                <th style="color: #94a3b8;"><i class="far fa-calendar-alt me-2"></i>Date</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-tag me-2"></i>Description</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-dollar-sign me-2"></i>Your Portion</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-dollar-sign me-2"></i>Total Amount</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-user me-2"></i>Paid By</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-credit-card me-2"></i>Card Used</th>
-                                <th style="color: #94a3b8;"><i class="fas fa-users me-2"></i>Group</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for expense in top_expenses %}
-                            <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
-                                <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
-                                <td>{{ expense.description }}</td>
-                                <td style="color: #38bdf8; font-weight: bold;">{{ base_currency.symbol }}{{ "%.2f"|format(expense.user_portion) }}</td>
-                                <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.total_amount) }}</td>
-                                <td>
-                                    {% if expense.paid_by == current_user.id %}
-                                    <span class="badge" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">You</span>
-                                    {% else %}
-                                    {{ expense.paid_by_name }}
-                                    {% endif %}
-                                </td>
-                                <td><span class="badge bg-dark text-light">{{ expense.card_used }}</span></td>
-                                <td>
-                                    {% if expense.group_name %}
-                                    <span class="badge" style="background: linear-gradient(135deg, #10b981, #34d399);">{{ expense.group_name }}</span>
-                                    {% else %}
-                                    <span class="badge bg-secondary">-</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                <div class="card-body" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.8));">
+                    <div class="table-responsive">
+                        <table class="table table-borderless">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
+                                    <th style="color: #94a3b8;"><i class="far fa-calendar-alt me-2"></i>Date</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-tag me-2"></i>Description</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-dollar-sign me-2"></i>Your Portion</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-dollar-sign me-2"></i>Total Amount</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-user me-2"></i>Paid By</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-credit-card me-2"></i>Card Used</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-layer-group me-2"></i>Category</th>
+                                    <th style="color: #94a3b8;"><i class="fas fa-users me-2"></i>Group</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for expense in top_expenses %}
+                                <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                                    <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>{{ expense.description }}</td>
+                                    <td style="color: #38bdf8; font-weight: bold;">{{ base_currency.symbol }}{{ "%.2f"|format(expense.user_portion) }}</td>
+                                    <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.total_amount) }}</td>
+                                    <td>
+                                        {% if expense.paid_by == current_user.id %}
+                                        <span class="badge" style="background: linear-gradient(135deg, #8b5cf6, #6366f1);">You</span>
+                                        {% else %}
+                                        {{ expense.paid_by_name }}
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-dark text-light">{{ expense.card_used }}</span></td>
+                                    <td>
+                                        {% if expense.category_name %}
+                                        <span class="badge" style="background-color: {{ expense.category_color|default('#6c757d') }};">
+                                            <i class="fas {{ expense.category_icon|default('fa-tag') }} me-1"></i> {{ expense.category_name }}
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Uncategorized</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if expense.group_name %}
+                                        <span class="badge" style="background: linear-gradient(135deg, #10b981, #34d399);">{{ expense.group_name }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
-
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -385,7 +562,192 @@
             }
         });
         
-        // Payment Methods Pie Chart (cards used)
+        // NEW: Category Chart
+        const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+        const categoryChart = new Chart(categoryCtx, {
+            type: 'pie',
+            data: {
+                labels: {{ category_names|default(['Food', 'Housing', 'Transport', 'Entertainment', 'Shopping', 'Others'])|tojson }},
+                datasets: [{
+                    data: {{ category_totals|default([350, 1200, 250, 180, 320, 150])|tojson }},
+                    backgroundColor: [
+                        '#ec4899', '#d946ef', '#a855f7', '#8b5cf6', 
+                        '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4',
+                        '#14b8a6', '#10b981', '#22c55e', '#84cc16'
+                    ],
+                    borderColor: 'rgba(30, 41, 59, 0.7)',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            font: {
+                                size: 11
+                            },
+                            padding: 20,
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return `${context.label}: ${baseCurrencySymbol}${value.toFixed(2)} (${percentage}%)`;
+                            }
+                        },
+                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                        titleColor: '#ec4899',
+                        bodyColor: '#f8fafc',
+                        borderColor: '#1e40af',
+                        borderWidth: 1,
+                        padding: 10
+                    }
+                },
+                animation: chartAnimations
+            }
+        });
+        
+        // NEW: Tag Chart
+        const tagCtx = document.getElementById('tagChart').getContext('2d');
+        const tagChart = new Chart(tagCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ tag_names|default(['Groceries', 'Dining', 'Bills', 'Rent', 'Gas', 'Coffee'])|tojson }},
+                datasets: [{
+                    label: 'Spending by Tag',
+                    data: {{ tag_totals|default([280, 320, 150, 950, 120, 75])|tojson }},
+                    backgroundColor: {{ tag_colors|default(['#f43f5e', '#fb7185', '#f97316', '#fb923c', '#f59e0b', '#fbbf24'])|tojson }},
+                    borderColor: 'rgba(30, 41, 59, 0.7)',
+                    borderWidth: 2,
+                    borderRadius: 6,
+                    maxBarThickness: 35
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                            }
+                        },
+                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                        titleColor: '#f43f5e',
+                        bodyColor: '#f8fafc',
+                        borderColor: '#1e40af',
+                        borderWidth: 1,
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return baseCurrencySymbol + value;
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                },
+                animation: chartAnimations
+            }
+        });
+        
+        // NEW: Category Trend Chart
+        const categoryTrendCtx = document.getElementById('categoryTrendChart').getContext('2d');
+        const categoryTrendChart = new Chart(categoryTrendCtx, {
+            type: 'line',
+            data: {
+                labels: {{ monthly_labels|default(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'])|tojson }},
+                datasets: [
+                        // Generate datasets for each major category
+                        {% for category in category_trend_data if category_trend_data is defined and category_trend_data %}
+                        {
+                            label: '{{ category.name }}',
+                            data: {{ category.data|default([])|tojson }},
+                            borderColor: '{{ category.color }}',
+                            backgroundColor: '{{ category.color }}20',
+                            borderWidth: 2,
+                            tension: 0.3,
+                            fill: false,
+                            pointRadius: 3,
+                            pointHoverRadius: 5
+                        }{% if not loop.last %},{% endif %}
+                        {% endfor %}
+                    ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            boxWidth: 12,
+                            usePointStyle: true,
+                            pointStyle: 'circle'
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                            }
+                        },
+                        backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                        titleColor: '#a855f7',
+                        bodyColor: '#f8fafc',
+                        borderColor: '#1e40af',
+                        borderWidth: 1,
+                        padding: 10
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return baseCurrencySymbol + value;
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        }
+                    }
+                },
+                animation: chartAnimations
+            }
+        });
+
+        // Payment Methods (cards used) chart
         const paymentMethodCtx = document.getElementById('paymentMethodChart').getContext('2d');
         const paymentMethodChart = new Chart(paymentMethodCtx, {
             type: 'doughnut',
@@ -639,5 +1001,551 @@
             }
         });
     }
+    // Time comparison chart instance
+let timeComparisonChart;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Add Time Comparison button handler
+    document.getElementById('compareTimeframes').addEventListener('click', compareTimeframes);
+    
+    // Initialize date fields for comparison with sensible defaults
+    const today = new Date();
+    const endDate = today.toISOString().split('T')[0];
+    
+    // Primary period - last 3 months
+    const primaryStart = new Date();
+    primaryStart.setMonth(today.getMonth() - 3);
+    document.getElementById('primaryPeriodStart').value = primaryStart.toISOString().split('T')[0];
+    document.getElementById('primaryPeriodEnd').value = endDate;
+    
+    // Comparison period - 3 months before that
+    const comparisonEnd = new Date(primaryStart);
+    comparisonEnd.setDate(comparisonEnd.getDate() - 1);
+    const comparisonStart = new Date(comparisonEnd);
+    comparisonStart.setMonth(comparisonEnd.getMonth() - 3);
+    
+    document.getElementById('comparisonPeriodStart').value = comparisonStart.toISOString().split('T')[0];
+    document.getElementById('comparisonPeriodEnd').value = comparisonEnd.toISOString().split('T')[0];
+    
+    // Add hover effects to comparison button
+    const compareBtn = document.getElementById('compareTimeframes');
+    compareBtn.addEventListener('mouseenter', function() {
+        this.style.transform = 'translateY(-2px)';
+        this.style.boxShadow = '0 6px 10px -1px rgba(59, 130, 246, 0.3)';
+    });
+    compareBtn.addEventListener('mouseleave', function() {
+        this.style.transform = 'translateY(0)';
+        this.style.boxShadow = '0 4px 6px -1px rgba(59, 130, 246, 0.2)';
+    });
+});
+
+function compareTimeframes() {
+    // Get the selected date ranges and comparison metric
+    const primaryStart = document.getElementById('primaryPeriodStart').value;
+    const primaryEnd = document.getElementById('primaryPeriodEnd').value;
+    const comparisonStart = document.getElementById('comparisonPeriodStart').value;
+    const comparisonEnd = document.getElementById('comparisonPeriodEnd').value;
+    const metric = document.getElementById('comparisonMetric').value;
+    
+    // Validate date inputs
+    if (!primaryStart || !primaryEnd || !comparisonStart || !comparisonEnd) {
+        alert('Please select both date ranges to compare');
+        return;
+    }
+    
+    // Calculate date ranges for display
+    const primaryDays = daysBetween(new Date(primaryStart), new Date(primaryEnd));
+    const comparisonDays = daysBetween(new Date(comparisonStart), new Date(comparisonEnd));
+    
+    // Make AJAX request to the stats route but with comparison flag
+    fetch(`/stats?compare=true&primaryStart=${primaryStart}&primaryEnd=${primaryEnd}&comparisonStart=${comparisonStart}&comparisonEnd=${comparisonEnd}&metric=${metric}`)
+        .then(response => response.json())
+        .then(data => {
+            // Show the summary section
+            document.getElementById('comparisonSummary').style.display = 'flex';
+            
+            // Update summary cards with comparison data
+            updateComparisonSummary(data, primaryDays, comparisonDays);
+            
+            // Update the comparison chart
+            updateComparisonChart(data, metric);
+        })
+        .catch(error => {
+            console.error('Error fetching comparison data:', error);
+            
+            // For demo/development, populate with sample data
+            const sampleData = generateSampleComparisonData(metric);
+            document.getElementById('comparisonSummary').style.display = 'flex';
+            updateComparisonSummary(sampleData, primaryDays, comparisonDays);
+            updateComparisonChart(sampleData, metric);
+        });
+}
+
+function updateComparisonSummary(data, primaryDays, comparisonDays) {
+    // Calculate percentage differences
+    const spendingDiff = calculatePercentageDiff(data.primary.totalSpending, data.comparison.totalSpending);
+    const transactionDiff = calculatePercentageDiff(data.primary.transactionCount, data.comparison.transactionCount);
+    const categoryDiff = data.primary.topCategory !== data.comparison.topCategory ? 
+        `Changed from ${data.comparison.topCategory} to ${data.primary.topCategory}` : 
+        `${data.primary.topCategory} (no change)`;
+    
+    // Calculate daily averages to account for different period lengths
+    const primaryDailyAvg = data.primary.totalSpending / primaryDays;
+    const comparisonDailyAvg = data.comparison.totalSpending / comparisonDays;
+    const dailyAvgDiff = calculatePercentageDiff(primaryDailyAvg, comparisonDailyAvg);
+    
+    // Update the summary cards
+    // Total Spending
+    document.getElementById('totalSpendingDiff').textContent = `${spendingDiff > 0 ? '+' : ''}${spendingDiff.toFixed(1)}%`;
+    document.getElementById('spendingDiffIcon').innerHTML = getComparisonIcon(spendingDiff, false);
+    document.getElementById('spendingDiffDetails').textContent = 
+        `${baseCurrencySymbol}${data.primary.totalSpending.toFixed(2)} vs ${baseCurrencySymbol}${data.comparison.totalSpending.toFixed(2)}`;
+    
+    // Transaction Count
+    document.getElementById('transactionDiff').textContent = `${transactionDiff > 0 ? '+' : ''}${transactionDiff.toFixed(1)}%`;
+    document.getElementById('transactionDiffIcon').innerHTML = getComparisonIcon(transactionDiff, false);
+    document.getElementById('transactionDiffDetails').textContent = 
+        `${data.primary.transactionCount} vs ${data.comparison.transactionCount} transactions`;
+    
+    // Top Category
+    document.getElementById('topCategoryDiff').textContent = data.primary.topCategory;
+    document.getElementById('categoryDiffIcon').innerHTML = data.primary.topCategory !== data.comparison.topCategory ? 
+        '<i class="fas fa-exchange-alt" style="color: #14b8a6;"></i>' : 
+        '<i class="fas fa-equals" style="color: #a3e635;"></i>';
+    document.getElementById('categoryDiffDetails').textContent = 
+        data.primary.topCategory !== data.comparison.topCategory ? 
+        `Changed from ${data.comparison.topCategory}` : 
+        `No change from comparison`;
+    
+    // Daily Average
+    document.getElementById('dailyAvgDiff').textContent = `${dailyAvgDiff > 0 ? '+' : ''}${dailyAvgDiff.toFixed(1)}%`;
+    document.getElementById('dailyAvgDiffIcon').innerHTML = getComparisonIcon(dailyAvgDiff, false);
+    document.getElementById('dailyAvgDiffDetails').textContent = 
+        `${baseCurrencySymbol}${primaryDailyAvg.toFixed(2)}/day vs ${baseCurrencySymbol}${comparisonDailyAvg.toFixed(2)}/day`;
+}
+
+function updateComparisonChart(data, metric) {
+    // Get the chart context
+    const ctx = document.getElementById('timeComparisonChart').getContext('2d');
+    
+    // Destroy previous chart instance if it exists
+    if (timeComparisonChart) {
+        timeComparisonChart.destroy();
+    }
+    
+    // Chart configuration depends on the selected metric
+    let chartConfig;
+    
+    switch(metric) {
+        case 'categories':
+            // Category comparison (bar chart)
+            chartConfig = createCategoryComparisonConfig(data);
+            break;
+        case 'tags':
+            // Tags comparison (horizontal bar chart)
+            chartConfig = createTagComparisonConfig(data);
+            break;
+        case 'payment':
+            // Payment method comparison (doughnut chart)
+            chartConfig = createPaymentComparisonConfig(data);
+            break;
+        case 'spending':
+        default:
+            // Default total spending comparison (line chart)
+            chartConfig = createSpendingComparisonConfig(data);
+            break;
+    }
+    
+    // Create the new chart
+    timeComparisonChart = new Chart(ctx, chartConfig);
+}
+
+function createSpendingComparisonConfig(data) {
+    // For the spending comparison, we'll use a line chart showing daily spending
+    return {
+        type: 'line',
+        data: {
+            labels: data.dateLabels || ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+            datasets: [
+                {
+                    label: 'Primary Period',
+                    data: data.primary.dailyAmounts || [120, 190, 30, 150, 80, 65, 30],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                    borderWidth: 3,
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'Comparison Period',
+                    data: data.comparison.dailyAmounts || [100, 150, 25, 190, 67, 75, 50],
+                    borderColor: '#f87171',
+                    backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                    borderWidth: 3,
+                    borderDash: [5, 5],
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                        }
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: '#1e40af',
+                    borderWidth: 1,
+                    padding: 10
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return baseCurrencySymbol + value;
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                x: {
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                }
+            },
+            animation: {
+                duration: 2000,
+                easing: 'easeOutQuart'
+            }
+        }
+    };
+}
+
+function createCategoryComparisonConfig(data) {
+    // For category comparison, we'll use a grouped bar chart
+    return {
+        type: 'bar',
+        data: {
+            labels: data.categoryLabels || ['Food', 'Housing', 'Transport', 'Entertainment', 'Shopping'],
+            datasets: [
+                {
+                    label: 'Primary Period',
+                    data: data.primary.categoryAmounts || [350, 1200, 250, 180, 320],
+                    backgroundColor: '#3b82f6',
+                    borderColor: '#2563eb',
+                    borderWidth: 1,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Comparison Period',
+                    data: data.comparison.categoryAmounts || [310, 1150, 290, 210, 280],
+                    backgroundColor: '#f87171',
+                    borderColor: '#ef4444',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                        }
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: '#1e40af',
+                    borderWidth: 1,
+                    padding: 10
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return baseCurrencySymbol + value;
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                x: {
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                }
+            },
+            animation: {
+                duration: 2000,
+                easing: 'easeOutQuart'
+            }
+        }
+    };
+}
+
+function createTagComparisonConfig(data) {
+    // For tag comparison, we'll use a horizontal bar chart
+    return {
+        type: 'bar',
+        data: {
+            labels: data.tagLabels || ['Groceries', 'Dining', 'Bills', 'Rent', 'Gas'],
+            datasets: [
+                {
+                    label: 'Primary Period',
+                    data: data.primary.tagAmounts || [280, 320, 150, 950, 120],
+                    backgroundColor: '#a855f7',
+                    borderColor: '#9333ea',
+                    borderWidth: 1,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Comparison Period',
+                    data: data.comparison.tagAmounts || [250, 290, 145, 950, 110],
+                    backgroundColor: '#fb7185',
+                    borderColor: '#f43f5e',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                        }
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: '#1e40af',
+                    borderWidth: 1,
+                    padding: 10
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return baseCurrencySymbol + value;
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                y: {
+                    grid: {
+                        display: false
+                    }
+                }
+            },
+            animation: {
+                duration: 2000,
+                easing: 'easeOutQuart'
+            }
+        }
+    };
+}
+
+function createPaymentComparisonConfig(data) {
+    // For payment method comparison, we'll use radar chart to show distribution differences
+    return {
+        type: 'radar',
+        data: {
+            labels: data.paymentLabels || ['Credit Card', 'Debit Card', 'Cash', 'Bank Transfer', 'Mobile Payment'],
+            datasets: [
+                {
+                    label: 'Primary Period',
+                    data: data.primary.paymentAmounts || [350, 250, 100, 200, 150],
+                    backgroundColor: 'rgba(14, 165, 233, 0.2)',
+                    borderColor: '#0ea5e9',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#0284c7',
+                    pointBorderColor: '#f0f9ff',
+                    pointHoverBackgroundColor: '#0284c7',
+                    pointHoverBorderColor: '#f0f9ff',
+                    pointRadius: 4
+                },
+                {
+                    label: 'Comparison Period',
+                    data: data.comparison.paymentAmounts || [300, 280, 150, 180, 120],
+                    backgroundColor: 'rgba(248, 113, 113, 0.2)',
+                    borderColor: '#f87171',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#ef4444',
+                    pointBorderColor: '#fef2f2',
+                    pointHoverBackgroundColor: '#ef4444',
+                    pointHoverBorderColor: '#fef2f2',
+                    pointRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${baseCurrencySymbol}${context.raw.toFixed(2)}`;
+                        }
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: '#1e40af',
+                    borderWidth: 1,
+                    padding: 10
+                }
+            },
+            scales: {
+                r: {
+                    angleLines: {
+                        color: 'rgba(148, 163, 184, 0.2)'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.2)'
+                    },
+                    pointLabels: {
+                        color: '#f8fafc'
+                    },
+                    ticks: {
+                        color: '#94a3b8',
+                        backdropColor: 'transparent'
+                    }
+                }
+            },
+            animation: {
+                duration: 2000,
+                easing: 'easeOutQuart'
+            }
+        }
+    };
+}
+
+// Helper functions
+function calculatePercentageDiff(current, previous) {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous) * 100;
+}
+
+function getComparisonIcon(percentage, lowerIsBetter = true) {
+    let iconClass, color;
+    
+    if (Math.abs(percentage) < 2) {
+        // Essentially unchanged
+        iconClass = 'fas fa-equals';
+        color = '#a3e635'; // Lime
+    } else if ((percentage < 0 && lowerIsBetter) || (percentage > 0 && !lowerIsBetter)) {
+        // Positive change
+        iconClass = 'fas fa-arrow-down';
+        color = '#10b981'; // Emerald
+    } else {
+        // Negative change
+        iconClass = 'fas fa-arrow-up';
+        color = '#ef4444'; // Red
+    }
+    
+    return `<i class="${iconClass}" style="color: ${color};"></i>`;
+}
+
+function daysBetween(date1, date2) {
+    const oneDay = 24 * 60 * 60 * 1000; // milliseconds in a day
+    const diffDays = Math.round(Math.abs((date2 - date1) / oneDay));
+    return diffDays + 1; // Include both start and end dates
+}
+
+function generateSampleComparisonData(metric) {
+    // Sample data for development/demo purposes
+    const data = {
+        primary: {
+            totalSpending: 2450.75,
+            transactionCount: 42,
+            topCategory: 'Food & Dining',
+            dailyAmounts: [120, 190, 30, 150, 80, 65, 30, 90, 110, 45]
+        },
+        comparison: {
+            totalSpending: 2200.50,
+            transactionCount: 38,
+            topCategory: 'Housing',
+            dailyAmounts: [100, 150, 25, 190, 67, 75, 50, 85, 95, 40]
+        },
+        dateLabels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7', 'Day 8', 'Day 9', 'Day 10']
+    };
+    
+    // Add metric-specific data
+    switch(metric) {
+        case 'categories':
+            data.categoryLabels = ['Food & Dining', 'Housing', 'Transport', 'Entertainment', 'Shopping'];
+            data.primary.categoryAmounts = [850, 900, 250, 180, 270];
+            data.comparison.categoryAmounts = [700, 950, 230, 160, 160];
+            break;
+        case 'tags':
+            data.tagLabels = ['Groceries', 'Dining Out', 'Bills', 'Rent', 'Gas'];
+            data.primary.tagAmounts = [320, 390, 450, 750, 120];
+            data.comparison.tagAmounts = [280, 330, 430, 750, 140];
+            break;
+        case 'payment':
+            data.paymentLabels = ['Credit Card', 'Debit Card', 'Cash', 'Bank Transfer', 'Mobile Payment'];
+            data.primary.paymentAmounts = [1200, 650, 150, 350, 100];
+            data.comparison.paymentAmounts = [1050, 700, 220, 130, 100];
+            break;
+    }
+    
+    return data;
+}
+
 </script>
 {% endblock %}

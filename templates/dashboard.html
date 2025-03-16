@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 
+    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <!-- Add Expense Button -->
@@ -117,6 +118,28 @@
                 <!-- Hidden input to store the split details as JSON -->
                 <input type="hidden" id="split_details" name="split_details">
             </div>
+            <div class="mb-3">
+                <label for="category_id" class="form-label">Category</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-dark text-light" id="category-icon-preview">
+                        <i class="fas fa-tag"></i>
+                    </span>
+                    <select class="form-select bg-dark text-light" id="category_id" name="category_id">
+                        <option value="">Select a category</option>
+                        {% for top_category in current_user.categories if not top_category.parent_id %}
+                            <optgroup label="{{ top_category.name }}">
+                                {% for subcat in top_category.subcategories %}
+                                    <option value="{{ subcat.id }}" 
+                                            data-icon="{{ subcat.icon }}" 
+                                            data-color="{{ subcat.color }}">
+                                        {{ subcat.name }}
+                                    </option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
             
             <!-- Group Selection -->
             <div class="mb-3">
@@ -152,8 +175,6 @@
         </form>
     </div>
 
-
-    <!-- Summary Cards -->
 <!-- Summary Cards -->
 <div class="row mb-4">
     <div class="col-md-4">
@@ -167,8 +188,46 @@
     <div class="col-md-4">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title text-muted mb-3">This Month</h5>
-                <h2 class="mb-0">{{ base_currency.symbol }}{{ "%.2f"|format(current_month_total) }}</h2>
+                <h5 class="card-title text-muted mb-3">Monthly Budget</h5>
+                {% set monthly_budgets = [] %}
+                {% for budget in current_user.budgets if budget.period == 'monthly' and budget.active %}
+                    {% set _ = monthly_budgets.append(budget) %}
+                {% endfor %}
+                
+                {% if monthly_budgets %}
+                    {% set total_monthly_budget = namespace(value=0) %}
+                    {% set total_spent = namespace(value=0) %}
+                    
+                    {% for budget in monthly_budgets %}
+                        {% set total_monthly_budget.value = total_monthly_budget.value + budget.amount %}
+                        {% set total_spent.value = total_spent.value + budget.calculate_spent_amount() %}
+                    {% endfor %}
+                    
+                    {% set percentage = (total_spent.value / total_monthly_budget.value * 100)|round(1) if total_monthly_budget.value > 0 else 0 %}
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h2 class="mb-0">{{ base_currency.symbol }}{{ "%.2f"|format(total_spent.value) }}</h2>
+                        <span class="text-muted">/ {{ base_currency.symbol }}{{ "%.2f"|format(total_monthly_budget.value) }}</span>
+                    </div>
+                    
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar {% if percentage > 100 %}bg-danger{% elif percentage > 85 %}bg-warning{% else %}bg-success{% endif %}" 
+                             role="progressbar" 
+                             style="width: {{ percentage if percentage <= 100 else 100 }}%;" 
+                             aria-valuenow="{{ percentage }}" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100"></div>
+                    </div>
+                    <small class="d-block mt-1 text-end">{{ percentage }}% used</small>
+                {% else %}
+                    <div class="d-flex align-items-center justify-content-between">
+                        <h2 class="mb-0">{{ base_currency.symbol }}{{ "%.2f"|format(current_month_total) }}</h2>
+                        <a href="{{ url_for('budgets') }}" class="btn btn-sm btn-outline-light">
+                            <i class="fas fa-plus me-1"></i>Set Budget
+                        </a>
+                    </div>
+                    <p class="text-muted mt-2 small">No monthly budget set</p>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -321,6 +380,7 @@
         </div>
     </form>
 </div>
+
     <!-- Monthly Breakdown -->
     <div class="row mb-4">
         <div class="col-md-12">
@@ -360,6 +420,7 @@
                                             </div>
                                         {% endfor %}
                                     </td>
+                                    <td>
                                         <!-- Cards used this month -->
                                         {% for card, amount in data.by_card.items() %}
                                             <div class="mb-1">
@@ -426,7 +487,7 @@
                                                                                 {{ base_currency.symbol }}{{ "%.2f"|format(split.amount) }}
                                                                                 </small>
                                                                             {% endfor %}
-                                                                                                                                                    </td>
+                                                                        </td>
                                                                     </tr>
                                                                 {% endif %}
                                                             {% endfor %}
@@ -450,548 +511,147 @@
 {% endblock %}
 {% block scripts %}
 
-<script>
-    const baseCurrencySymbol = "{{ base_currency.symbol }}";
-
-    function initializeTagCheckboxes() {
-    const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
-    
-    tagCheckboxes.forEach(checkbox => {
-        const originalColor = checkbox.style.backgroundColor;
-        
-        // Adjust checked style
-        checkbox.addEventListener('change', function() {
-            if (this.checked) {
-                this.style.backgroundColor = originalColor;
-            } else {
-                this.style.backgroundColor = 'transparent';
-            }
+    <script>
+        // Expense Form Toggle
+        document.getElementById('toggleExpenseForm').addEventListener('click', function() {
+            var form = document.getElementById('expenseFormContainer');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
         });
-    });
-}
-// Toggle personal expense mode
-function togglePersonalExpense() {
-    const personalExpenseCheck = document.getElementById('personal_expense_check');
-    const splitWithContainer = document.querySelector('.multiselect-wrapper');
-    const splitWithSelect = document.getElementById('split_with');
-    const splitMethodSelect = document.getElementById('split_method');
-    const splitMethodContainer = document.getElementById('split_method').parentNode;
-    const customSplitContainer = document.getElementById('custom_split_container');
-    
-    if (personalExpenseCheck.checked) {
-        // This is a personal expense - simplify the form
-        if (splitWithContainer) splitWithContainer.style.opacity = '0.5';
-        if (splitMethodContainer) splitMethodContainer.style.opacity = '0.5';
-        if (customSplitContainer) customSplitContainer.style.display = 'none';
-        
-        // Clear any existing split_with selections
-        if (splitWithSelect) {
-            for (let i = 0; i < splitWithSelect.options.length; i++) {
-                splitWithSelect.options[i].selected = false;
+
+        // Settlement Form Toggle
+        function toggleSettlementForm() {
+            var form = document.getElementById('settlementFormContainer');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Prepare Settlement Function
+        function prepareSettlement(userId, userName, amount, iOwe) {
+            var payerSelect = document.getElementById('payer_id');
+            var receiverSelect = document.getElementById('receiver_id');
+            var amountInput = document.getElementById('settlement_amount');
+            var dateInput = document.getElementById('settlement_date');
+
+            // Logic to set payer and receiver based on iOwe
+            if (iOwe) {
+                payerSelect.value = "{{ current_user.id }}";
+                receiverSelect.value = userId;
+            } else {
+                payerSelect.value = userId;
+                receiverSelect.value = "{{ current_user.id }}";
             }
-            
-            // Update the visual of multiselect if it exists
-            const customSelect = document.querySelector('.multiselect-wrapper .form-control');
-            if (customSelect) {
-                customSelect.innerHTML = '<span class="text-muted">Personal expense - no split</span>';
-            }
+            amountInput.value = amount;
+            dateInput.value = new Date().toISOString().split('T')[0];
+
+            toggleSettlementForm();
         }
-    } else {
-        // This is a shared expense - enable the split options
-        if (splitWithContainer) splitWithContainer.style.opacity = '1';
-        if (splitMethodContainer) splitMethodContainer.style.opacity = '1';
-        
-        // Reset the multiselect display
-        const customSelect = document.querySelector('.multiselect-wrapper .form-control');
-        if (customSelect) {
-            customSelect.innerHTML = '<span class="text-muted">Select people to split with</span>';
-        }
-        
-        // Show custom split container if needed
-        if (splitMethodSelect && splitMethodSelect.value !== 'equal') {
-            if (customSplitContainer) customSplitContainer.style.display = 'block';
-        }
-    }
-    
-    // Update split values if needed
-    if (typeof updateSplitValues === 'function') {
-        updateSplitValues();
-    }
-}
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize today's date
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('date').value = today;
-        
-        // Initialize settlement date if it exists
-        const settlementDateInput = document.getElementById('settlement_date');
-        if (settlementDateInput) {
-            settlementDateInput.value = today;
-        }
-        
-        // Toggle expense form visibility
-        document.getElementById('toggleExpenseForm').addEventListener('click', toggleExpenseForm);
-        
-        // Initialize multiselect dropdown for split_with
-        initializeMultiSelect();
-        // Initialize tag checkboxes (add this line)
-        initializeTagCheckboxes();
-        // Handle amount field changes
-        document.getElementById('amount').addEventListener('input', updateSplitValues);
-        
-        // Handle paid_by changes
-        document.getElementById('paid_by').addEventListener('change', updateSplitValues);
-        
-        // Listen for split_with changes from the multiselect
-        document.getElementById('split_with').addEventListener('change', updateSplitValues);
-        
-        // Handle form submission to ensure split values are calculated and included
-        
-        document.querySelector('form[action*="add_expense"]').addEventListener('submit', function(e) {
-    const splitWithSelect = document.getElementById('split_with');
-    const personalExpenseCheck = document.getElementById('personal_expense_check');
-    
-    // If personal expense is checked, we don't need to validate split_with
-    if (personalExpenseCheck && personalExpenseCheck.checked) {
-        // No validation needed for split_with
-        return true;
-    }
-    
-    // For shared expenses, ensure at least one person is selected in split_with
-    if (splitWithSelect && splitWithSelect.selectedOptions.length === 0) {
-        e.preventDefault();
-        alert('Please select at least one person to split with or check "Personal expense"');
-        return false;
-    }
-    
-    // For non-personal expenses, ensure the split details are valid
-    const splitMethod = document.getElementById('split_method').value;
-    if (splitMethod !== 'equal') {
-        // Trigger input event on the first split value input to update the hidden field
-        const firstInput = document.querySelector('.split-value-input');
-        if (firstInput) {
-            firstInput.dispatchEvent(new Event('input'));
-        }
-        
-        // Validate totals
-        const splitStatus = document.getElementById('split_status').textContent;
-        if (splitStatus !== 'Balanced') {
-            e.preventDefault();
-            alert('Your split values must balance with the expense amount before saving.');
-            return false;
-        }
-    }
-    return true;
-});
-    });
-    
-    // Handle split method changes
-    function toggleSplitOptions() {
-        const splitMethod = document.getElementById('split_method').value;
-        const splitValueContainer = document.getElementById('split_value_container');
-        const customSplitContainer = document.getElementById('custom_split_container');
-        const splitValue = document.getElementById('split_value');
-        const splitInstruction = document.getElementById('split_instruction');
-        
-        // Hide legacy split value field
-        splitValueContainer.style.display = 'none';
-        splitValue.removeAttribute('required');
-        
-        if (splitMethod === 'equal') {
-            customSplitContainer.style.display = 'none';
-        } else {
-            customSplitContainer.style.display = 'block';
-            
-            if (splitMethod === 'percentage') {
-                splitInstruction.textContent = 'Set what percentage each person pays (total must be 100%)';
-            } else { // custom amounts
-                splitInstruction.textContent = 'Set how much each person pays (total must match expense amount)';
-            }
-            
-            // Update the split values UI
-            updateSplitValues();
-        }
-    }
-    
-    function toggleExpenseForm() {
-        const form = document.getElementById('expenseFormContainer');
-        const button = document.getElementById('toggleExpenseForm');
-        
-        if (form.style.display === 'none') {
-            form.style.display = 'block';
-            button.innerHTML = '<i class="fas fa-times me-2"></i>Cancel';
-            button.classList.replace('btn-primary', 'btn-secondary');
-        } else {
-            form.style.display = 'none';
-            button.innerHTML = '<i class="fas fa-plus me-2"></i>Add New Expense';
-            button.classList.replace('btn-secondary', 'btn-primary');
-        }
-    }
-    
-    function toggleSettlementForm() {
-        const form = document.getElementById('settlementFormContainer');
-        
-        if (form.style.display === 'none') {
-            form.style.display = 'block';
-        } else {
-            form.style.display = 'none';
-        }
-    }
-    
-    // Function to prepare settlement form
-    function prepareSettlement(userId, userName, amount, youArePaying) {
-        // Show the settlement form
-        const form = document.getElementById('settlementFormContainer');
-        form.style.display = 'block';
-        
-        // Pre-fill the settlement form
-        if (youArePaying) {
-            // You are paying them
-            document.getElementById('payer_id').value = '{{ current_user.id }}';
-            document.getElementById('receiver_id').value = userId;
-        } else {
-            // They are paying you
-            document.getElementById('payer_id').value = userId;
-            document.getElementById('receiver_id').value = '{{ current_user.id }}';
-        }
-        
-        document.getElementById('settlement_amount').value = amount.toFixed(2);
-        document.getElementById('settlement_description').value = 'Settlement with ' + userName;
-        
-        // Set today's date
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('settlement_date').value = today;
-        
-        // Scroll to the form
-        form.scrollIntoView({ behavior: 'smooth' });
-    }
-    
-    // Function to update split values UI
-    function updateSplitValues() {
-        const splitMethod = document.getElementById('split_method').value;
-        if (splitMethod === 'equal') return;
-        
-        const totalAmount = parseFloat(document.getElementById('amount').value) || 0;
-        const paidById = document.getElementById('paid_by').value;
-        const splitWithIds = Array.from(document.getElementById('split_with').selectedOptions).map(opt => opt.value);
-        
-        // Display current amount in the UI
-        document.getElementById('expense_amount').textContent = totalAmount.toFixed(2);
-        
-        // Get all participant IDs (payer + split_with)
-        let allParticipantIds = [...splitWithIds];
-        // Add payer if they're not already in the split_with list
-        if (!allParticipantIds.includes(paidById)) {
-            allParticipantIds.unshift(paidById);
-        }
-        
-        // Generate split values UI
-        const container = document.getElementById('split_values_container');
-        container.innerHTML = '';
-        
-        let splitValues = {};
-        
-        if (splitMethod === 'percentage') {
-            // Start with equal percentages
-            const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const user = Array.from(document.getElementById('paid_by').options)
-                    .find(opt => opt.value === userId);
-                
-                if (user) {
-                    const userName = user.text.split(' (')[0];
-                    const isPayerId = userId === paidById;
-                    
-                    // Create row for this user
-                    const row = document.createElement('div');
-                    row.className = 'row mb-2 align-items-center';
-                    const userColor = user.getAttribute('data-color') || '#15803d';
-                    row.innerHTML = `
-                        <div class="col-md-6">
-                            <span class="badge me-1" style="background-color: ${userColor}">
-                                ${isPayerId ? '💰' : ''} ${userName}
-                            </span>
-                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <input type="number" class="form-control bg-dark text-light split-value-input"
-                                    data-user-id="${userId}" step="0.1" min="0" max="100" 
-                                    value="${equalPercentage.toFixed(1)}">
-                                <span class="input-group-text bg-dark text-light">%</span>
-                            </div>
-                        </div>
-                    `;
-                    container.appendChild(row);
-                    
-                    // Save the initial value
-                    splitValues[userId] = equalPercentage;
-                }
-            });
-            
-            // Add event listeners to percentage inputs
-            container.querySelectorAll('.split-value-input').forEach(input => {
-                input.addEventListener('input', function() {
-                    const userId = this.getAttribute('data-user-id');
-                    const percentage = parseFloat(this.value) || 0;
-                    splitValues[userId] = percentage;
-                    
-                    // Calculate total percentage
-                    const totalPercentage = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                    document.getElementById('split_total').textContent = totalPercentage.toFixed(1) + '%';
-                    
-                    // Update status
-                    const statusBadge = document.getElementById('split_status');
-                    if (Math.abs(totalPercentage - 100) < 0.1) {
-                        statusBadge.textContent = 'Balanced';
-                        statusBadge.className = 'badge bg-success';
-                    } else if (totalPercentage < 100) {
-                        statusBadge.textContent = 'Underfunded';
-                        statusBadge.className = 'badge bg-warning';
-                    } else {
-                        statusBadge.textContent = 'Overfunded';
-                        statusBadge.className = 'badge bg-danger';
-                    }
-                    
-                    // Update hidden split details field
-                    document.getElementById('split_details').value = JSON.stringify({
-                        type: 'percentage',
-                        values: splitValues
-                    });
-                });
-                
-                // Trigger input event to initialize values
-                input.dispatchEvent(new Event('input'));
-            });
-            
-        } else { // Custom amount
-            // Start with equal amounts
-            const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const user = Array.from(document.getElementById('paid_by').options)
-                    .find(opt => opt.value === userId);
-                
-                if (user) {
-                    const userName = user.text.split(' (')[0];
-                    const isPayerId = userId === paidById;
-                    
-                    // Create row for this user
-                    const row = document.createElement('div');
-                    row.className = 'row mb-2 align-items-center';
-                    const userColor = user.getAttribute('data-color') || '#15803d';
-                    row.innerHTML = `
-                        <div class="col-md-6">
-                            <span class="badge me-1" style="background-color: ${userColor}">
-                                ${isPayerId ? '💰' : ''} ${userName}
-                            </span>
-                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark text-light">$</span>
-                                <input type="number" class="form-control bg-dark text-light split-value-input"
-                                    data-user-id="${userId}" step="0.01" min="0" 
-                                    value="${equalAmount.toFixed(2)}">
-                            </div>
-                        </div>
-                    `;
-                    container.appendChild(row);
-                    
-                    // Save the initial value
-                    splitValues[userId] = equalAmount;
-                }
-            });
-            
-            // Add event listeners to amount inputs
-            container.querySelectorAll('.split-value-input').forEach(input => {
-                input.addEventListener('input', function() {
-                    const userId = this.getAttribute('data-user-id');
-                    const amount = parseFloat(this.value) || 0;
-                    splitValues[userId] = amount;
-                    
-                    // Calculate total amount
-                    const totalSplit = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                    document.getElementById('split_total').textContent = totalSplit.toFixed(2);
-                    
-                    // Update status
-                    const statusBadge = document.getElementById('split_status');
-                    if (Math.abs(totalSplit - totalAmount) < 0.01) {
-                        statusBadge.textContent = 'Balanced';
-                        statusBadge.className = 'badge bg-success';
-                    } else if (totalSplit < totalAmount) {
-                        statusBadge.textContent = 'Underfunded';
-                        statusBadge.className = 'badge bg-warning';
-                    } else {
-                        statusBadge.textContent = 'Overfunded';
-                        statusBadge.className = 'badge bg-danger';
-                    }
-                    
-                    // Update hidden split details field
-                    document.getElementById('split_details').value = JSON.stringify({
-                        type: 'amount',
-                        values: splitValues
-                    });
-                });
-                
-                // Trigger input event to initialize values
-                input.dispatchEvent(new Event('input'));
-            });
-        }
-    }
-    
-    function initializeMultiSelect() {
-    // Get the select element
-    const selectElement = document.getElementById('split_with');
-    const paidBySelect = document.getElementById('paid_by');
-    
-    // Create a wrapper div
-    const wrapper = document.createElement('div');
-    wrapper.className = 'multiselect-wrapper position-relative';
-    selectElement.parentNode.insertBefore(wrapper, selectElement);
-    wrapper.appendChild(selectElement);
-    
-    // Create the custom dropdown
-    const customSelect = document.createElement('div');
-    customSelect.className = 'form-control bg-dark text-light d-flex flex-wrap align-items-center';
-    customSelect.style.minHeight = '38px';
-    customSelect.style.cursor = 'pointer';
-    wrapper.appendChild(customSelect);
-    
-    // Create dropdown content
-    const dropdownContent = document.createElement('div');
-    dropdownContent.className = 'position-absolute w-100 bg-dark border border-secondary rounded mt-1 p-2';
-    dropdownContent.style.zIndex = '100';
-    dropdownContent.style.maxHeight = '200px';
-    dropdownContent.style.overflowY = 'auto';
-    dropdownContent.style.display = 'none';
-    wrapper.appendChild(dropdownContent);
-    
-    // Hide the original select
-    selectElement.style.display = 'none';
-    
-    // Function to update options based on paid_by
-    function updateOptions() {
-        const paidById = paidBySelect.value;
-        
-        // Clear existing dropdown content
-        dropdownContent.innerHTML = '';
-        
-        // When payer changes, unselect them from split_with if they were selected
-        for (let i = 0; i < selectElement.options.length; i++) {
-            if (selectElement.options[i].value === paidById && selectElement.options[i].selected) {
-                selectElement.options[i].selected = false;
+
+        // Toggle Personal Expense
+        function togglePersonalExpense() {
+            var splitSelect = document.getElementById('split_with');
+            var isPersonal = document.getElementById('personal_expense_check').checked;
+
+            splitSelect.disabled = isPersonal;
+            if (isPersonal) {
+                splitSelect.value = []; // Clear selection
             }
         }
-        
-        // Repopulate dropdown options
-        for (let i = 0; i < selectElement.options.length; i++) {
-            const option = selectElement.options[i];
-            
-            // Skip adding the current payer to the dropdown options
-            if (option.value === paidById) continue;
-            
-            const checkboxContainer = document.createElement('div');
-            checkboxContainer.className = 'form-check mb-2';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'form-check-input';
-            checkbox.value = option.value;
-            checkbox.id = 'multiselect-' + option.value;
-            checkbox.checked = option.selected;
-            
-            const label = document.createElement('label');
-            label.htmlFor = 'multiselect-' + option.value;
-            label.className = 'form-check-label text-light ms-2';
-            label.textContent = option.textContent;
-            
-            checkboxContainer.appendChild(checkbox);
-            checkboxContainer.appendChild(label);
-            dropdownContent.appendChild(checkboxContainer);
-            
-            // Handle checkbox change
-            checkbox.addEventListener('change', function() {
-                option.selected = checkbox.checked;
-                updateCustomSelectDisplay();
-                
-                // Trigger change event on original select
-                const event = new Event('change', { bubbles: true });
-                selectElement.dispatchEvent(event);
-            });
-        }
-        
-        // Update display
-        updateCustomSelectDisplay();
-    }
-    
-    // Toggle dropdown on click
-    customSelect.addEventListener('click', function(e) {
-        dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
-        e.stopPropagation();
-    });
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function() {
-        dropdownContent.style.display = 'none';
-    });
-    
-    // Prevent dropdown from closing when clicking inside it
-    dropdownContent.addEventListener('click', function(e) {
-        e.stopPropagation();
-    });
-    
-    // Update the custom select display
-    function updateCustomSelectDisplay() {
-        customSelect.innerHTML = '';
-        let selectedCount = 0;
-        
-        for (let i = 0; i < selectElement.options.length; i++) {
-            // Don't show the current payer in the display even if somehow selected
-            if (selectElement.options[i].selected && selectElement.options[i].value !== paidBySelect.value) {
-                const badge = document.createElement('span');
-                badge.className = 'badge me-1 mb-1';
-                const userColor = selectElement.options[i].getAttribute('data-color') || '#15803d';
-                badge.style.backgroundColor = userColor;
-                badge.textContent = selectElement.options[i].text.split(' (')[0]; // Just show the name
-                
-                const removeBtn = document.createElement('span');
-                removeBtn.className = 'ms-1';
-                removeBtn.innerHTML = '&times;';
-                removeBtn.style.cursor = 'pointer';
-                
-                badge.appendChild(removeBtn);
-                customSelect.appendChild(badge);
-                selectedCount++;
-                
-                // Handle remove button
-                removeBtn.addEventListener('click', function(e) {
-                    selectElement.options[i].selected = false;
-                    const checkbox = document.getElementById('multiselect-' + selectElement.options[i].value);
-                    if (checkbox) checkbox.checked = false;
-                    updateCustomSelectDisplay();
-                    e.stopPropagation();
-                });
+
+        // Toggle Split Options
+        function toggleSplitOptions() {
+            var splitMethod = document.getElementById('split_method').value;
+            var customSplitContainer = document.getElementById('custom_split_container');
+            var splitValueContainer = document.getElementById('split_value_container');
+
+            if (splitMethod === 'custom' || splitMethod === 'percentage') {
+                customSplitContainer.style.display = 'block';
+                splitValueContainer.style.display = 'none';
+                generateSplitInputs(); // Generate split inputs based on selected users
+            } else if (splitMethod === 'equal') {
+                customSplitContainer.style.display = 'none';
+                splitValueContainer.style.display = 'none';
+            } else {
+                splitValueContainer.style.display = 'block';
+                customSplitContainer.style.display = 'none';
             }
         }
-        
-        // If nothing selected, show placeholder
-        if (selectedCount === 0) {
-            const placeholder = document.createElement('span');
-            placeholder.className = 'text-muted';
-            placeholder.textContent = 'Select people to split with';
-            customSelect.appendChild(placeholder);
+
+        // Generate Split Inputs
+        function generateSplitInputs() {
+            var splitSelect = document.getElementById('split_with');
+            var splitValuesContainer = document.getElementById('split_values_container');
+            var splitMethod = document.getElementById('split_method').value;
+            var expenseAmount = parseFloat(document.getElementById('amount').value) || 0;
+            var selectedUsers = Array.from(splitSelect.selectedOptions).map(option => ({
+                id: option.value,
+                name: option.text.split(' (')[0],
+                color: option.dataset.color
+            }));
+
+            splitValuesContainer.innerHTML = ''; // Clear previous inputs
+            selectedUsers.forEach(user => {
+                var input = document.createElement('div');
+                input.className = 'mb-2';
+                input.innerHTML = `
+                    <label class="form-label">${user.name} (${user.id})</label>
+                    <div class="input-group">
+                        <span class="input-group-text" style="background-color: ${user.color};"></span>
+                        <input type="number" class="form-control split-input" data-user-id="${user.id}" value="0">
+                    </div>
+                `;
+                splitValuesContainer.appendChild(input);
+            });
+
+            // Add event listeners to split inputs
+            var splitInputs = document.querySelectorAll('.split-input');
+            splitInputs.forEach(input => {
+                input.addEventListener('input', updateSplitTotals);
+            });
+
+            // Update totals initially
+            updateSplitTotals();
+            document.getElementById('expense_amount').textContent = expenseAmount.toFixed(2);
         }
-    }
-    
-    // Add event listener to paid_by select to update options
-    if (paidBySelect) {
-        paidBySelect.addEventListener('change', updateOptions);
-    }
-    
-    // Initial setup
-    updateOptions();
-}
-</script>
+
+        // Update Split Totals
+        function updateSplitTotals() {
+            var splitInputs = document.querySelectorAll('.split-input');
+            var total = 0;
+            var expenseAmount = parseFloat(document.getElementById('amount').value) || 0;
+
+            splitInputs.forEach(input => {
+                total += parseFloat(input.value) || 0;
+            });
+
+            document.getElementById('split_total').textContent = total.toFixed(2);
+            document.getElementById('expense_amount').textContent = expenseAmount.toFixed(2);
+
+            // Update split status and details
+            var statusBadge = document.getElementById('split_status');
+            if (total === expenseAmount) {
+                statusBadge.className = 'badge bg-success';
+                statusBadge.textContent = 'Balanced';
+            } else if (total < expenseAmount) {
+                statusBadge.className = 'badge bg-warning';
+                statusBadge.textContent = 'Under';
+            } else {
+                statusBadge.className = 'badge bg-danger';
+                statusBadge.textContent = 'Over';
+            }
+
+            // Store split details as JSON
+            var splitDetails = Array.from(splitInputs).map(input => ({
+                user_id: input.dataset.userId,
+                amount: parseFloat(input.value) || 0
+            }));
+            document.getElementById('split_details').value = JSON.stringify(splitDetails);
+        }
+
+        // Category Icon Update
+        document.getElementById('category_id').addEventListener('change', function() {
+            var selectedOption = this.options[this.selectedIndex];
+            var icon = selectedOption.dataset.icon || 'fas fa-tag';
+            var color = selectedOption.dataset.color || '#000';
+            document.getElementById('category-icon-preview').innerHTML = `<i class="${icon}" style="color: ${color};"></i>`;
+        });
+    </script>
 {% endblock %}

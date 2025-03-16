@@ -1,14 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+    <meta name="dev-signature" content="29a41de6a866d56c36aba5159f45257c">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="current-user-id" content="{{ current_user.id }}">
-    
-    {% with settings = get_app_settings() %}
-    <title>{{ settings.app_title }}</title>
-    {% endwith %}
-    
+    <title>{{ get_app_settings().app_title }} {{ get_app_settings().app_logo_emoji }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -20,10 +17,72 @@
             --bg-dark: #111827;
             --bg-darker: #030712;
             --sidebar-width: 250px;
-            --sidebar-collapsed-width: 70px;
+            --sidebar-mini-width: 70px;
             --header-height: 60px;
             --transition-speed: 0.3s;
         }
+
+        /* Custom Scrollbar Styles */
+        /* Custom Scrollbar Styles - Dark Blue-Black Theme */
+
+        /* For WebKit browsers (Chrome, Safari, newer versions of Opera) */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111827;  /* Dark blue-black to match your UI background */
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;  /* Slightly lighter dark blue */
+            border-radius: 4px;
+            transition: background 0.3s ease;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2d3748;  /* Even lighter on hover, but still dark */
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: #111827;
+        }
+
+        /* For Firefox */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #111827;
+        }
+
+        /* For Edge and IE */
+        body {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: thin; /* Firefox */
+        }
+
+        /* Alternative styling for containers with scrollable content */
+        .scrollable-container {
+            scrollbar-width: thin;
+            scrollbar-color: #1e293b #111827;
+        }
+
+        .scrollable-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-track {
+            background: #111827;
+            border-radius: 4px;
+        }
+
+        .scrollable-container::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 4px;
+        }
+
         
         body {
             background: linear-gradient(to bottom right, var(--primary-green), var(--bg-dark), var(--bg-darker));
@@ -97,169 +156,232 @@
             width: var(--sidebar-width);
             background-color: rgba(17, 24, 39, 0.95);
             backdrop-filter: blur(8px);
-            transition: transform var(--transition-speed);
+            transition: transform var(--transition-speed), width var(--transition-speed);
             z-index: 1020;
-            overflow: hidden;
+            overflow-x: hidden;
             box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
             transform: translateX(-100%);
+            
+            /* New flex layout to arrange the content */
             display: flex;
             flex-direction: column;
         }
-
+        
         .sidebar.show {
             transform: translateX(0);
         }
-
+        
+        /* Content area that can scroll if needed */
         .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
-            height: calc(100% - 71px); /* Subtract height of user profile section */
+        }
+        
+        /* Footer area that stays at the bottom */
+        .sidebar-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+            padding-top: 0.5rem;
+            padding-bottom: 0.5rem;
+            margin-top: auto;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Make sure the logout link has the same style as other navigation items */
+        .sidebar-footer .nav-link {
+            display: flex;
+            align-items: center;
+            padding: 0.6rem 1.25rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        
+        .sidebar-footer .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-left-color: var(--accent-gold);
+        }
+        
+        /* Mini Sidebar Styles */
+        .sidebar.mini {
+            width: var(--sidebar-mini-width);
             overflow: hidden;
         }
-
+        
+        .sidebar.mini .sidebar-user {
+            padding: 1rem 0;
+            justify-content: center;
+        }
+        
+        .sidebar.mini .user-details {
+            display: none;
+        }
+        
+        .sidebar.mini .sidebar-collapse-btn {
+            display: none;
+        }
+        
+        .sidebar-mini-toggle {
+            display: none;
+            text-align: center;
+            padding: 10px 0;
+        }
+        
+        .sidebar.mini .sidebar-mini-toggle {
+            display: block;
+        }
+        
+        /* Navigation items in mini mode */
+        .sidebar.mini .nav-text,
+        .sidebar.mini .nav-caret {
+            display: none;
+        }
+        
+        .sidebar.mini .nav-icon {
+            margin-right: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 1.25rem;
+        }
+        
+        .sidebar.mini .nav-link {
+            padding: 0.75rem 0;
+            justify-content: center;
+        }
+        
+        /* Mini Sidebar styles for the footer */
+        .sidebar.mini .sidebar-footer .nav-text {
+            display: none;
+        }
+        
+        .sidebar.mini .sidebar-footer .nav-icon {
+            margin-right: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 1.25rem;
+        }
+        
+        .sidebar.mini .sidebar-footer .nav-link {
+            padding: 0.75rem 0;
+            justify-content: center;
+        }
+        
+        /* Main navigation */
         .sidebar-nav {
             list-style: none;
             padding: 0;
             margin: 1rem 0;
             display: flex;
             flex-direction: column;
-            overflow-y: auto; /* Allow scrolling for nav items only */
-            flex-grow: 1;
         }
-
+        
         .sidebar-nav .nav-item {
-            margin-bottom: 0.2rem;
+            margin-bottom: 0;
         }
-
+        
         .sidebar-nav .nav-link {
             display: flex;
             align-items: center;
-            padding: 0.75rem 1.5rem;
+            padding: 0.6rem 1.25rem;
             color: rgba(255, 255, 255, 0.8);
             text-decoration: none;
             transition: all 0.2s;
             border-left: 3px solid transparent;
         }
-
+        
         .sidebar-nav .nav-link:hover {
             background-color: rgba(255, 255, 255, 0.1);
             color: white;
             border-left-color: var(--accent-gold);
         }
-
+        
         .sidebar-nav .nav-link.active {
             background-color: rgba(21, 128, 61, 0.3);
             color: var(--accent-gold);
             border-left-color: var(--accent-gold);
         }
-
+        
         .sidebar-nav .nav-icon {
             font-size: 1.1rem;
             width: 25px;
             text-align: center;
             margin-right: 1rem;
         }
-
+        
         .sidebar-nav .nav-text {
             opacity: 1;
             transition: opacity var(--transition-speed);
         }
-
-        .sidebar-section {
-            margin-top: 1.5rem;
+        
+        /* Submenu styling */
+        .nav-section > a {
+            position: relative;
         }
-
-        .sidebar-section-title {
-            padding: 0.5rem 1.5rem;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.5);
-            letter-spacing: 1px;
+        
+        .nav-caret {
+            position: absolute;
+            right: 15px;
+            transition: transform 0.3s;
         }
-
-        .sidebar-logout {
-            margin-top: auto;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            padding-top: 0.5rem;
-            padding-bottom: 0.5rem;
-            position: sticky;
-            bottom: 0;
-            background-color: rgba(17, 24, 39, 0.95);
+        
+        .nav-link:not(.collapsed) .nav-caret i {
+            transform: rotate(180deg);
         }
-
-        .sidebar-logout .nav-link {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 1.5rem;
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            transition: all 0.2s;
-            border-left: 3px solid transparent;
+        
+        .nav-submenu {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+            background-color: rgba(0, 0, 0, 0.15);
+            border-left: 3px solid rgba(255, 255, 255, 0.1);
         }
-
-        .sidebar-logout .nav-link:hover {
+        
+        .nav-submenu .nav-link {
+            padding-left: 3.25rem;
+            font-size: 0.95rem;
+        }
+        
+        .sidebar.mini .nav-submenu {
+            display: none !important;
+        }
+        
+        /* Hover tooltips for mini sidebar */
+        .sidebar.mini .nav-item {
+            position: relative;
+        }
+        
+        .sidebar.mini .nav-item:hover::after {
+            content: attr(data-title);
+            position: absolute;
+            left: 100%;
+            top: 0;
+            z-index: 1100;
+            margin-left: 5px;
+            padding: 5px 8px;
+            background-color: #333;
+            color: white;
+            border-radius: 4px;
+            white-space: nowrap;
+            font-size: 0.8rem;
+            opacity: 0.9;
+        }
+        
+        /* More compact vertical spacing */
+        .sidebar-section-divider {
+            height: 1px;
+            margin: 0.5rem 1rem;
             background-color: rgba(255, 255, 255, 0.1);
-            color: white;
-            border-left-color: var(--accent-gold);
-        }
-
-        .sidebar-logout .nav-icon {
-            font-size: 1.1rem;
-            width: 25px;
-            text-align: center;
-            margin-right: 1rem;
-        }
-
-        .sidebar-logout .nav-text {
-            opacity: 1;
-            transition: opacity var(--transition-speed);
-        }
-
-
-        .sidebar-user {
-            display: flex;
-            align-items: center;
-            padding: 1.5rem;
-            margin-bottom: 0.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        /* Toggle button */
-        .sidebar-toggle {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 1.5rem;
-            cursor: pointer;
-            padding: 0.5rem;
-            transition: all 0.3s;
-        }
-        
-        .sidebar-toggle:hover {
-            transform: scale(1.1);
-        }
-        
-        .sidebar-toggle .fa-bars {
-            display: block;
-        }
-        
-        .sidebar-toggle .fa-times {
-            display: none;
-        }
-        
-        .sidebar-toggle.active .fa-bars {
-            display: none;
-        }
-        
-        .sidebar-toggle.active .fa-times {
-            display: block;
         }
         
         /* User profile in sidebar */
         .sidebar-user {
             display: flex;
             align-items: center;
-            padding: 1.5rem;
+            padding: 1.25rem;
             margin-bottom: 0.5rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
@@ -297,6 +419,52 @@
             max-width: 170px;
         }
         
+        /* Sidebar sections */
+        .sidebar-section {
+            margin-top: 1rem;
+        }
+        
+        .sidebar-section-title {
+            padding: 0.5rem 1.5rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.5);
+            letter-spacing: 1px;
+        }
+        
+        /* Remove the old sidebar-logout class as it's replaced by sidebar-footer */
+        
+        /* Toggle button */
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.5rem;
+            transition: all 0.3s;
+        }
+        
+        .sidebar-toggle:hover {
+            transform: scale(1.1);
+        }
+        
+        .sidebar-toggle .fa-bars {
+            display: block;
+        }
+        
+        .sidebar-toggle .fa-times {
+            display: none;
+        }
+        
+        .sidebar-toggle.active .fa-bars {
+            display: none;
+        }
+        
+        .sidebar-toggle.active .fa-times {
+            display: block;
+        }
+        
         /* Main content area */
         .main-content {
             margin-top: var(--header-height);
@@ -308,6 +476,10 @@
         
         .main-content.sidebar-open {
             margin-left: var(--sidebar-width);
+        }
+        
+        .main-content.sidebar-mini-open {
+            margin-left: var(--sidebar-mini-width);
         }
         
         /* Center content for auth pages */
@@ -341,6 +513,7 @@
         .oidc-divider-text:after {
             left: 100%;
         }            
+
         
         /* Media queries for responsive behavior */
         @media (min-width: 992px) {
@@ -463,273 +636,6 @@
             position: relative;
             z-index: 1;
         }
-
-        /* Toast notification styles */
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1100;
-            max-width: 350px;
-        }
-
-        .toast {
-            transition: transform 0.3s ease, opacity 0.3s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            overflow: hidden;
-            margin-bottom: 0.75rem;
-            animation: toast-in 0.3s ease forwards;
-        }
-
-        .toast.hide {
-            animation: toast-out 0.3s ease forwards;
-        }
-
-        @keyframes toast-in {
-            0% {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            100% {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes toast-out {
-            0% {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            100% {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-        }
-
-        /* Style different types of toasts */
-        .toast.bg-success {
-            border-left: 4px solid #10b981;
-        }
-
-        .toast.bg-danger {
-            border-left: 4px solid #ef4444;
-        }
-
-        .toast.bg-warning {
-            border-left: 4px solid #f59e0b;
-        }
-
-        .toast.bg-info {
-            border-left: 4px solid #3b82f6;
-        }
-
-        /* Custom confirmation modal styling */
-        .modal.fade.show {
-            background-color: rgba(0, 0, 0, 0.5);
-            animation: fade-in 0.2s ease;
-        }
-
-        .modal-dialog {
-            transform: scale(0.9);
-            opacity: 0;
-            transition: transform 0.3s ease, opacity 0.3s ease;
-        }
-
-        .modal.show .modal-dialog {
-            transform: scale(1);
-            opacity: 1;
-        }
-
-        @keyframes fade-in {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
-
-        /* Adding some visual enhancements to form feedback */
-        .form-control.is-invalid {
-            animation: shake 0.5s ease;
-        }
-
-        @keyframes shake {
-            0%, 100% {transform: translateX(0);}
-            20%, 60% {transform: translateX(-5px);}
-            40%, 80% {transform: translateX(5px);}
-        }
-
-        /* Form submission visual feedback */
-        .form-submitting {
-            position: relative;
-        }
-
-        .form-submitting::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 3px;
-            background: linear-gradient(90deg, #15803d, #fbbf24);
-            animation: loading-bar 2s infinite linear;
-        }
-
-        @keyframes loading-bar {
-            0% {
-                transform: translateX(-100%);
-            }
-            100% {
-                transform: translateX(100%);
-            }
-        }
-
-        /* Add a subtle hover effect to interactive elements */
-        .btn, .nav-link, .form-control, .dropdown-item {
-            transition: all 0.2s ease;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Improve table row actions */
-        tr .action-buttons {
-            opacity: 0.4;
-            transition: opacity 0.2s ease;
-        }
-
-        tr:hover .action-buttons {
-            opacity: 1;
-        }
-
-        /* Form success */
-        @keyframes form-success-pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-            }
-            70% {
-                box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-            }
-        }
-
-        .form-success {
-            animation: form-success-pulse 1s ease;
-        }
-
-        /* Custom Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 10px;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(21, 128, 61, 0.6);
-            border-radius: 10px;
-            border: 2px solid rgba(15, 23, 42, 0.6);
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(21, 128, 61, 0.8);
-        }
-
-        /* Firefox scrollbar styling */
-        * {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(21, 128, 61, 0.6) rgba(15, 23, 42, 0.6);
-        }
-
-        /* Make scrollbar less prominent in dropdowns and short content areas */
-        .dropdown-menu::-webkit-scrollbar,
-        .card-body::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-
-        .multiselect-wrapper .position-absolute::-webkit-scrollbar {
-            width: 5px;
-            height: 5px;
-        }
-        
-        /* Dropdown styling */
-        .dropdown-menu .dropdown-item {
-            padding: 0.5rem 1rem;
-            display: flex;
-            align-items: center;
-        }
-
-        .dropdown-menu .dropdown-item:hover,
-        .dropdown-menu .dropdown-item:focus {
-            background-color: rgba(21, 128, 61, 0.2);
-            color: white;
-        }
-
-        .dropdown-menu .dropdown-item.text-danger:hover,
-        .dropdown-menu .dropdown-item.text-danger:focus {
-            background-color: rgba(220, 53, 69, 0.2);
-            color: #ff6b6b;
-        }
-
-        .dropdown-menu .dropdown-item i {
-            margin-right: 0.5rem;
-            width: 1rem;
-            text-align: center;
-        }
-
-        /* Make dropdown more consistent */
-        .dropdown-menu {
-            background-color: rgba(17, 24, 39, 0.95);
-            border-color: rgba(255, 255, 255, 0.1);
-            padding: 0.5rem 0;
-            min-width: 10rem;
-        }
-        
-        /* Group page header improvements */
-        .breadcrumb {
-            background-color: transparent;
-            padding: 0.75rem 0;
-            margin-bottom: 1rem;
-        }
-
-        .breadcrumb-item a {
-            color: rgba(146, 230, 146, 0.9);
-            text-decoration: none;
-        }
-
-        .breadcrumb-item a:hover {
-            color: #ffffff;
-            text-decoration: underline;
-        }
-
-        .breadcrumb-item.active {
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .breadcrumb-item+.breadcrumb-item::before {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        /* Page title styling */
-        h2 {
-            margin-bottom: 1.5rem;
-            font-weight: 600;
-        }
-
-        .card-header h5 {
-            margin-bottom: 0;
-            font-weight: 500;
-        }        
     </style>
 </head>
 <body class="{% if request.endpoint in ['login', 'signup', 'reset_password_request', 'reset_password'] %}auth-page{% else %}app-page{% endif %}">
@@ -740,7 +646,7 @@
         {% endfor %}
     </div>
     
-    <!-- Header -->
+    <!-- Header with custom branding support -->
     <header class="app-header">
         {% if current_user.is_authenticated %}
         <button class="sidebar-toggle" id="sidebarToggle">
@@ -749,110 +655,168 @@
         </button>
         {% endif %}
         <a class="header-brand" href="/">
-            {% with settings = get_app_settings() %}
-                {% if settings.app_logo_url and settings.app_logo_url != "/static/images/dollar-logo.png" %}
-                    <img src="{{ settings.app_logo_url }}" alt="Logo" height="30" class="d-inline-block align-top me-2">
-                {% else %}
-                    {{ settings.app_logo_emoji }} 
-                {% endif %}
-                {{ settings.app_title }}
-            {% endwith %}
+            {% set app_settings = get_app_settings() %}
+            {% if app_settings.app_logo_url and app_settings.app_logo_url != "/static/images/dollar-logo.png" %}
+                <img src="{{ app_settings.app_logo_url }}" alt="Logo" style="height: 1.8rem; margin-right: 0.5rem;">
+            {% else %}
+                {{ app_settings.app_logo_emoji }}
+            {% endif %}
+            {{ app_settings.app_title }}
         </a>
     </header>
     
     {% if current_user.is_authenticated %}
-    <!-- Sidebar -->
+    <!-- Sidebar with Improved Navigation Structure -->
     <div class="sidebar" id="sidebar">
         <!-- User profile at the top of sidebar -->
         <div class="sidebar-user">
-            <div class="user-avatar">
+            <div class="user-avatar" style="background-color: {{ current_user.user_color }};">
                 {{ current_user.name[0] | upper }}
             </div>
             <div class="user-details">
                 <div class="user-name">{{ current_user.name }}</div>
                 <div class="user-email">{{ current_user.id }}</div>
             </div>
+            <button id="collapseSidebar" class="btn btn-sm btn-outline-light ms-auto sidebar-collapse-btn">
+                <i class="fas fa-angles-left"></i>
+            </button>
         </div>
         
-        <!-- Make the sidebar structure use flexbox with proper height -->
-        <div class="sidebar-content d-flex flex-column" style="height: calc(100% - 71px);">
-            <ul class="sidebar-nav flex-grow-1">
-                <!-- Add this as the first item in the sidebar-nav list, right after the <ul class="sidebar-nav"> opening tag -->
-                <li class="nav-item">
+        <!-- Toggle full/mini sidebar for mini mode -->
+        <div class="sidebar-mini-toggle">
+            <button id="expandSidebar" class="btn btn-outline-light btn-sm sidebar-expand-btn">
+                <i class="fas fa-angles-right"></i>
+            </button>
+        </div>
+        
+        <!-- Main navigation section - wrap in a div with flex properties -->
+        <div class="sidebar-content">
+            <ul class="sidebar-nav">
+                <!-- Main Dashboard -->
+                <li class="nav-item" data-title="Dashboard">
                     <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.path == url_for('dashboard') %}active{% endif %}">
                         <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span>
                         <span class="nav-text">Dashboard</span>
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="{{ url_for('transactions') }}" class="nav-link {% if request.path == url_for('transactions') %}active{% endif %}">
-                        <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
-                        <span class="nav-text">Transactions</span>
+                
+                <!-- Expenses Section (Collapsible) -->
+                <li class="nav-item nav-section" data-title="Expenses">
+                    <a href="#expensesSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'transactions' in request.path or 'recurring' in request.path %}{% else %}collapsed{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-file-invoice-dollar"></i></span>
+                        <span class="nav-text">Expenses</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
                     </a>
+                    <ul class="collapse nav-submenu {% if 'transactions' in request.path or 'recurring' in request.path %}show{% endif %}" id="expensesSubmenu">
+                        <li class="nav-item" data-title="Transactions">
+                            <a href="{{ url_for('transactions') }}" class="nav-link {% if request.path == url_for('transactions') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
+                                <span class="nav-text">Transactions</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Recurring">
+                            <a href="{{ url_for('recurring') }}" class="nav-link {% if request.path == url_for('recurring') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-calendar-alt"></i></span>
+                                <span class="nav-text">Recurring</span>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
-                <li class="nav-item">
-                    <a href="{{ url_for('settlements') }}" class="nav-link {% if request.path == url_for('settlements') %}active{% endif %}">
-                        <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span>
-                        <span class="nav-text">Settle Up</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="{{ url_for('groups') }}" class="nav-link {% if request.path == url_for('groups') %}active{% endif %}">
+                
+                <!-- Groups & Social -->
+                <li class="nav-item nav-section" data-title="Social">
+                    <a href="#socialSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'groups' in request.path or 'settlements' in request.path %}{% else %}collapsed{% endif %}">
                         <span class="nav-icon"><i class="fas fa-users"></i></span>
-                        <span class="nav-text">Groups</span>
+                        <span class="nav-text">Social</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
                     </a>
+                    <ul class="collapse nav-submenu {% if 'groups' in request.path or 'settlements' in request.path %}show{% endif %}" id="socialSubmenu">
+                        <li class="nav-item" data-title="Groups">
+                            <a href="{{ url_for('groups') }}" class="nav-link {% if 'groups' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-friends"></i></span>
+                                <span class="nav-text">Groups</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Settle Up">
+                            <a href="{{ url_for('settlements') }}" class="nav-link {% if request.path == url_for('settlements') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span>
+                                <span class="nav-text">Settle Up</span>
+                            </a>
+                        </li>
+                    </ul>
                 </li>
-                <li class="nav-item">
-                    <a href="{{ url_for('recurring') }}" class="nav-link {% if request.path == url_for('recurring') %}active{% endif %}">
-                        <span class="nav-icon"><i class="fas fa-calendar-alt"></i></span>
-                        <span class="nav-text">Recurring Expenses</span>
-                    </a>
-                </li>
-                <li class="nav-item">
+                
+                <!-- Analysis -->
+                <li class="nav-item" data-title="Statistics">
                     <a href="{{ url_for('stats') }}" class="nav-link {% if request.path == url_for('stats') %}active{% endif %}">
                         <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
                         <span class="nav-text">Statistics</span>
                     </a>
                 </li>
+                <li class="nav-item" data-title="Budgets">
+                    <a href="{{ url_for('budgets') }}" class="nav-link {% if request.path == url_for('budgets') %}active{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-chart-pie"></i></span>
+                        <span class="nav-text">Budgets</span>
+                    </a>
+                </li>
                 
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Settings</div>
-                    <li class="nav-item">
-                        <a href="{{ url_for('manage_tags') }}" class="nav-link {% if request.path == url_for('manage_tags') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-tags"></i></span>
-                            <span class="nav-text">Manage Tags</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if request.path == url_for('manage_currencies') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>
-                            <span class="nav-text">Currencies</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="{{ url_for('profile') }}" class="nav-link {% if request.path == url_for('profile') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-user-circle"></i></span>
-                            <span class="nav-text">Profile</span>
-                        </a>
-                    </li>
-                    {% if current_user.is_admin %}
-                    <li class="nav-item">
-                        <a href="{{ url_for('admin') }}" class="nav-link {% if request.path == url_for('admin') %}active{% endif %}">
-                            <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
-                            <span class="nav-text">Admin</span>
-                        </a>
-                    </li>
-                    {% endif %}
-                </div>
+                <div class="sidebar-section-divider"></div>
+                
+                <!-- Settings Section -->
+                <li class="nav-item nav-section" data-title="Settings">
+                    <a href="#settingsSubmenu" data-bs-toggle="collapse" class="nav-link {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}{% else %}collapsed{% endif %}">
+                        <span class="nav-icon"><i class="fas fa-cog"></i></span>
+                        <span class="nav-text">Settings</span>
+                        <span class="nav-caret"><i class="fas fa-angle-down ms-auto"></i></span>
+                    </a>
+                    <ul class="collapse nav-submenu {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}show{% endif %}" id="settingsSubmenu">
+                        <li class="nav-item" data-title="Categories">
+                            <a href="{{ url_for('manage_categories') }}" class="nav-link {% if 'categories' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-sitemap"></i></span>
+                                <span class="nav-text">Categories</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Tags">
+                            <a href="{{ url_for('manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-tags"></i></span>
+                                <span class="nav-text">Tags</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Currencies">
+                            <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>
+                                <span class="nav-text">Currencies</span>
+                            </a>
+                        </li>
+                        <li class="nav-item" data-title="Profile">
+                            <a href="{{ url_for('profile') }}" class="nav-link {% if request.path == url_for('profile') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-circle"></i></span>
+                                <span class="nav-text">Profile</span>
+                            </a>
+                        </li>
+                        {% if current_user.is_admin %}
+                        <li class="nav-item" data-title="Admin">
+                            <a href="{{ url_for('admin') }}" class="nav-link {% if request.path == url_for('admin') %}active{% endif %}">
+                                <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
+                                <span class="nav-text">Admin</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </li>
             </ul>
-            
-            <!-- Logout option at the bottom, not part of scrollable area -->
-            <div class="sidebar-logout mt-auto">
-                <a href="{{ url_for('logout') }}" class="nav-link">
-                    <span class="nav-icon"><i class="fas fa-sign-out-alt"></i></span>
-                    <span class="nav-text">Logout</span>
-                </a>
-            </div>
+        </div>
+        
+        <!-- Logout option at the bottom of sidebar -->
+        <div class="sidebar-footer">
+            <ul class="sidebar-nav mb-0">
+                <li class="nav-item" data-title="Logout">
+                    <a href="{{ url_for('logout') }}" class="nav-link">
+                        <span class="nav-icon"><i class="fas fa-sign-out-alt"></i></span>
+                        <span class="nav-text">Logout</span>
+                    </a>
+                </li>
+            </ul>
         </div>
     </div>
     
@@ -862,26 +826,18 @@
     
     <!-- Main Content -->
     <main class="main-content">
-        <!-- Hidden container for flash messages that will be converted to toasts -->
-        <div class="flash-messages-container" style="display: none;">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-        </div>
-
-        <div class="container mb-4">
-            <div id="inline-alerts">
-                <!-- Important system messages can still appear here if needed -->
-            </div>
-        </div>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-success bg-green-800 text-white border-0">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
         
         {% block content %}
         <!-- Page content will go here -->
         {% endblock %}
+
         
         <!-- Footer -->
         <footer>
@@ -889,449 +845,300 @@
         </footer>
     </main>
 
-    <!-- Toast container -->
-    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100">
-        <!-- Toasts will be added here dynamically -->
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Only initialize sidebar functionality if user is authenticated
-            {% if current_user.is_authenticated %}
-            
-            // Get DOM elements
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const sidebar = document.getElementById('sidebar');
-            const mainContent = document.querySelector('.main-content');
-            const sidebarBackdrop = document.getElementById('sidebarBackdrop');
-            
-            // Toggle sidebar visibility
-            function toggleSidebar() {
-                // Toggle classes for visibility
-                sidebar.classList.toggle('show');
-                sidebarBackdrop.classList.toggle('show');
-                sidebarToggle.classList.toggle('active');
-                
-                // Toggle main content margin
-                mainContent.classList.toggle('sidebar-open', sidebar.classList.contains('show'));
-                
-                // Store sidebar state
-                sessionStorage.setItem('sidebarState', 
-                    sidebar.classList.contains('show') ? 'open' : 'closed');
+   document.addEventListener('DOMContentLoaded', function() {
+    // Only initialize sidebar functionality if user is authenticated
+    if (!document.querySelector('.sidebar')) return;
+    
+    // Get DOM elements
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.querySelector('.main-content');
+    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    const collapseSidebarBtn = document.getElementById('collapseSidebar');
+    const expandSidebarBtn = document.getElementById('expandSidebar');
+    
+    // Make the username/avatar clickable to go to profile
+    const userSection = document.querySelector('.sidebar-user');
+    const userDetails = document.querySelector('.sidebar-user .user-details');
+    const userAvatar = document.querySelector('.sidebar-user .user-avatar');
+    
+    // Set up submenu data-title attributes for mini-mode tooltips
+    const navItems = document.querySelectorAll('.sidebar-nav .nav-item');
+    navItems.forEach(item => {
+        const navLink = item.querySelector('.nav-link');
+        if (navLink) {
+            const navText = navLink.querySelector('.nav-text');
+            if (navText) {
+                item.setAttribute('data-title', navText.textContent.trim());
             }
-            
-            // Close sidebar function
-            function closeSidebar() {
-                if (sidebar.classList.contains('show')) {
-                    sidebar.classList.remove('show');
-                    sidebarBackdrop.classList.remove('show');
-                    sidebarToggle.classList.remove('active');
-                    mainContent.classList.remove('sidebar-open');
-                    
-                    // Update stored state
-                    sessionStorage.setItem('sidebarState', 'closed');
-                }
-            }
-            
-            // Add event listeners
-            if (sidebarToggle && sidebar) {
-                sidebarToggle.addEventListener('click', toggleSidebar);
-            }
-            
-            // Close sidebar when clicking backdrop
-            if (sidebarBackdrop) {
-                sidebarBackdrop.addEventListener('click', closeSidebar);
-            }
-            
-            // Close sidebar when clicking anywhere in the main content
-            mainContent.addEventListener('click', function(e) {
-                // Close sidebar regardless of screen size
-                closeSidebar();
-            });
-            
-            // Handle resize events
-            window.addEventListener('resize', function() {
-                const savedState = sessionStorage.getItem('sidebarState');
-                
-                if (window.innerWidth >= 992) {
-                    // For desktop, respect saved state if it exists
-                    if (savedState === 'open') {
-                        sidebar.classList.add('show');
-                        mainContent.classList.add('sidebar-open');
-                        sidebarToggle.classList.add('active');
-                    } else if (savedState === 'closed') {
-                        sidebar.classList.remove('show');
-                        mainContent.classList.remove('sidebar-open');
-                        sidebarToggle.classList.remove('active');
-                    } else {
-                        // Default to open on first load
-                        sidebar.classList.add('show');
-                        mainContent.classList.add('sidebar-open');
-                        sidebarToggle.classList.add('active');
-                        sessionStorage.setItem('sidebarState', 'open');
-                    }
-                    sidebarBackdrop.classList.remove('show');
-                } else {
-                    // On mobile, always hide sidebar
-                    sidebar.classList.remove('show');
-                    mainContent.classList.remove('sidebar-open');
-                    sidebarBackdrop.classList.remove('show');
-                    sidebarToggle.classList.remove('active');
-                }
-            });
-            
-            // Trigger resize event once to set initial state
-            window.dispatchEvent(new Event('resize'));
-            
-            {% endif %}
-
-            // Function to create and display a toast notification
-            function showToast(message, type = 'success', duration = 5000) {
-                // Generate a unique ID for the toast
-                const toastId = 'toast-' + Date.now();
-                
-                // Map type to Bootstrap colors and icons
-                let bgColor, iconClass;
-                switch(type) {
-                case 'error':
-                    bgColor = 'bg-danger';
-                    iconClass = 'fas fa-exclamation-circle';
-                    break;
-                case 'warning':
-                    bgColor = 'bg-warning';
-                    iconClass = 'fas fa-exclamation-triangle';
-                    break;
-                case 'info':
-                    bgColor = 'bg-info';
-                    iconClass = 'fas fa-info-circle';
-                    break;
-                case 'success':
-                default:
-                    bgColor = 'bg-success';
-                    iconClass = 'fas fa-check-circle';
-                }
-                
-                // Create toast element
-                const toastHtml = `
-                <div id="${toastId}" class="toast align-items-center ${bgColor} text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
-                    <div class="d-flex">
-                    <div class="toast-body">
-                        <i class="${iconClass} me-2"></i> ${message}
-                    </div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                    </div>
-                </div>
-                `;
-                
-                // Add toast to container
-                const toastContainer = document.querySelector('.toast-container');
-                toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-                
-                // Initialize and show the toast
-                const toastElement = document.getElementById(toastId);
-                const toast = new bootstrap.Toast(toastElement, {
-                autohide: true,
-                delay: duration
-                });
-                
-                toast.show();
-                
-                // Remove toast from DOM after it's hidden
-                toastElement.addEventListener('hidden.bs.toast', function() {
-                toastElement.remove();
-                });
-            }
-            
-            // Handle flash messages when the page loads
-            // Process Flask flash messages
-            const flashMessages = document.querySelectorAll('.flash-messages-container .alert');
-            
-            flashMessages.forEach((alert, index) => {
-                // Extract message and determine type
-                const message = alert.textContent.trim();
-                let type = 'success';
-                
-                if (alert.classList.contains('alert-danger')) type = 'error';
-                else if (alert.classList.contains('alert-warning')) type = 'warning';
-                else if (alert.classList.contains('alert-info')) type = 'info';
-                
-                // Hide the original alert
-                alert.style.display = 'none';
-                
-                // Show as toast with slight delay for each subsequent toast
-                setTimeout(() => {
-                    showToast(message, type);
-                }, index * 200);
-            });
-            
-            // Utility for showing confirmation dialogs
-            function showConfirmDialog(title, message, confirmCallback, cancelCallback = null) {
-                // Create a backdrop
-                const backdrop = document.createElement('div');
-                backdrop.className = 'modal-backdrop fade show';
-                document.body.appendChild(backdrop);
-                
-                // Create modal HTML
-                const modalId = 'confirm-modal-' + Date.now();
-                const modalHtml = `
-                <div class="modal fade show" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}-label" style="display: block;">
-                    <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content bg-dark text-light border-secondary">
-                        <div class="modal-header border-secondary">
-                        <h5 class="modal-title" id="${modalId}-label">${title}</h5>
-                        <button type="button" class="btn-close btn-close-white" data-action="cancel" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body">
-                        ${message}
-                        </div>
-                        <div class="modal-footer border-secondary">
-                        <button type="button" class="btn btn-secondary" data-action="cancel">Cancel</button>
-                        <button type="button" class="btn btn-primary" data-action="confirm">Confirm</button>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                `;
-                
-                // Add modal to body
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
-                
-                // Get modal element
-                const modal = document.getElementById(modalId);
-                
-                // Add event listeners
-                const closeModal = () => {
-                    modal.remove();
-                    backdrop.remove();
-                    document.body.classList.remove('modal-open');
-                };
-                
-                // Handle clicks
-                modal.addEventListener('click', (e) => {
-                    const target = e.target;
-                    
-                    if (target.dataset.action === 'confirm') {
-                        closeModal();
-                        if (confirmCallback) confirmCallback();
-                    } else if (target.dataset.action === 'cancel' || target.classList.contains('modal')) {
-                        closeModal();
-                        if (cancelCallback) cancelCallback();
-                    }
-                });
-                
-                // Handle escape key
-                document.addEventListener('keydown', function escHandler(e) {
-                    if (e.key === 'Escape') {
-                        document.removeEventListener('keydown', escHandler);
-                        closeModal();
-                        if (cancelCallback) cancelCallback();
-                    }
-                });
-                
-                // Add modal-open class to body
-                document.body.classList.add('modal-open');
-            }
-
-            // Generic form submission handler with AJAX
-            function submitFormWithAjax(form, successCallback, options = {}) {
-                const defaults = {
-                    showSuccessToast: true,
-                    successMessage: 'Operation completed successfully',
-                    redirectUrl: null,
-                    resetForm: true
-                };
-                
-                const settings = {...defaults, ...options};
-                
-                // Get form data
-                const formData = new FormData(form);
-                
-                // Show loading indicator
-                const submitBtn = form.querySelector('button[type="submit"]');
-                const originalBtnText = submitBtn.innerHTML;
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
-                
-                // Add form-submitting class for progress indicator
-                form.classList.add('form-submitting');
-                
-                // Send the request
-                fetch(form.action, {
-                    method: form.method || 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Request failed');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Reset button and form state
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalBtnText;
-                    form.classList.remove('form-submitting');
-                    
-                    // Add success styling briefly
-                    form.classList.add('form-success');
-                    setTimeout(() => form.classList.remove('form-success'), 1000);
-                    
-                    // Show success message
-                    if (settings.showSuccessToast) {
-                        showToast(data.message || settings.successMessage, 'success');
-                    }
-                    
-                    // Reset form if needed
-                    if (settings.resetForm) {
-                        form.reset();
-                    }
-                    
-                    // Execute success callback if provided
-                    if (successCallback) {
-                        successCallback(data);
-                    }
-                    
-                    // Redirect if needed
-                    if (settings.redirectUrl) {
-                        window.location.href = settings.redirectUrl;
-                    }
-                })
-                .catch(error => {
-                    // Reset button and form state
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalBtnText;
-                    form.classList.remove('form-submitting');
-                    
-                    // Show error message
-                    showToast(`Error: ${error.message}`, 'error');
-                    console.error('Form submission error:', error);
-                });
-                
-                // Prevent default form submission
-                return false;
-            }
-
-            // Function to handle multiple delete buttons with confirmation
-            function setupDeleteButtons() {
-                document.querySelectorAll('[data-delete-url]').forEach(button => {
-                    button.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        
-                        const url = this.dataset.deleteUrl;
-                        const message = this.dataset.confirmMessage || 'Are you sure you want to delete this item?';
-                        const itemId = this.dataset.itemId;
-                        const successCallback = this.dataset.successCallback;
-                        
-                        showConfirmDialog('Confirm Deletion', message, function() {
-                            fetch(url, {
-                                method: 'POST',
-                                headers: {
-                                    'X-Requested-With': 'XMLHttpRequest',
-                                }
-                            })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.success) {
-                                    showToast(data.message || 'Item deleted successfully', 'success');
-                                    
-                                    if (itemId) {
-                                        const item = document.getElementById(itemId);
-                                        if (item) {
-                                            // Add fade-out animation
-                                            item.style.transition = 'opacity 0.5s ease, max-height 0.5s ease';
-                                            item.style.opacity = '0';
-                                            item.style.maxHeight = '0';
-                                            setTimeout(() => item.remove(), 500);
-                                        }
-                                    }
-                                    
-                                    // Execute optional callback
-                                    if (successCallback && typeof window[successCallback] === 'function') {
-                                        window[successCallback](data);
-                                    }
-                                } else {
-                                    showToast(data.message || 'Failed to delete item', 'error');
-                                }
-                            })
-                            .catch(error => {
-                                showToast(`Error: ${error.message}`, 'error');
-                            });
-                        });
-                    });
-                });
-            }
-
-            // Initialize delete buttons
-            setupDeleteButtons();
-
-            // Make window.showToast available globally
-            window.showToast = showToast;
-            window.showConfirmDialog = showConfirmDialog;
-            window.submitFormWithAjax = submitFormWithAjax;
-        });
-
-        // Improved version of deleteExpense function
-        function deleteExpense(expenseId) {
-            showConfirmDialog(
-                'Delete Expense',
-                'Are you sure you want to delete this expense? This action cannot be undone.',
-                function() {
-                    // User confirmed
-                    fetch(`/delete_expense/${expenseId}`, {
-                        method: 'POST',
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Failed to delete expense');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            showToast('Expense deleted successfully', 'success');
-                            
-                            // Find and remove the row from the table
-                            const row = document.querySelector(`tr[data-expense-id="${expenseId}"]`);
-                            if (row) {
-                                // Add a fade-out animation
-                                row.style.transition = 'opacity 0.5s ease, max-height 0.5s ease';
-                                row.style.opacity = '0';
-                                row.style.maxHeight = '0';
-                                row.style.overflow = 'hidden';
-                                
-                                // Remove after animation completes
-                                setTimeout(() => {
-                                    row.remove();
-                                    
-                                    // Check if table is now empty
-                                    const tbody = document.querySelector('#expensesTable tbody');
-                                    if (tbody && tbody.children.length === 0) {
-                                        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No transactions found</td></tr>';
-                                    }
-                                }, 500);
-                            } else {
-                                // Fallback - reload the page
-                                location.reload();
-                            }
-                        } else {
-                            showToast(data.message || 'Failed to delete expense', 'error');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        showToast(`Error deleting expense: ${error.message}`, 'error');
-                    });
-                }
-            );
         }
+    });
+    
+    // Toggle sidebar visibility (show/hide)
+    function toggleSidebar() {
+        // Toggle classes for visibility
+        sidebar.classList.toggle('show');
+        sidebarBackdrop.classList.toggle('show');
+        if (sidebarToggle) sidebarToggle.classList.toggle('active');
+        
+        // Toggle main content margin
+        mainContent.classList.toggle('sidebar-open', sidebar.classList.contains('show') && !sidebar.classList.contains('mini'));
+        mainContent.classList.toggle('sidebar-mini-open', sidebar.classList.contains('show') && sidebar.classList.contains('mini'));
+        
+        // Store sidebar state
+        sessionStorage.setItem('sidebarState', sidebar.classList.contains('show') ? 'open' : 'closed');
+    }
+    
+    // Toggle mini sidebar (full/collapsed)
+    function toggleMiniSidebar() {
+        sidebar.classList.toggle('mini');
+        
+        // Toggle main content margin
+        if (sidebar.classList.contains('show')) {
+            mainContent.classList.toggle('sidebar-mini-open', sidebar.classList.contains('mini'));
+            mainContent.classList.toggle('sidebar-open', !sidebar.classList.contains('mini'));
+        }
+        
+        // Store sidebar mode
+        sessionStorage.setItem('sidebarMode', sidebar.classList.contains('mini') ? 'mini' : 'full');
+    }
+    
+    // Close sidebar function
+    function closeSidebar() {
+        if (sidebar.classList.contains('show')) {
+            sidebar.classList.remove('show');
+            sidebarBackdrop.classList.remove('show');
+            if (sidebarToggle) sidebarToggle.classList.remove('active');
+            mainContent.classList.remove('sidebar-open');
+            mainContent.classList.remove('sidebar-mini-open');
+            
+            // Update stored state
+            sessionStorage.setItem('sidebarState', 'closed');
+        }
+    }
+    
+    // Collapse sidebar to mini mode
+    function collapseToMini() {
+        if (!sidebar.classList.contains('mini')) {
+            sidebar.classList.add('mini');
+            
+            // Update margin classes
+            if (sidebar.classList.contains('show')) {
+                mainContent.classList.add('sidebar-mini-open');
+                mainContent.classList.remove('sidebar-open');
+            }
+            
+            // Store mode
+            sessionStorage.setItem('sidebarMode', 'mini');
+        }
+    }
+    
+    // Expand sidebar from mini mode
+    function expandFromMini() {
+        if (sidebar.classList.contains('mini')) {
+            sidebar.classList.remove('mini');
+            
+            // Update margin classes
+            if (sidebar.classList.contains('show')) {
+                mainContent.classList.remove('sidebar-mini-open');
+                mainContent.classList.add('sidebar-open');
+            }
+            
+            // Store mode
+            sessionStorage.setItem('sidebarMode', 'full');
+        }
+    }
+    
+    // Handle sidebar submenu toggles in mini mode
+    function setupMiniModeSubmenuHandlers() {
+        const submenuToggles = document.querySelectorAll('.sidebar .nav-section > a');
+        
+        submenuToggles.forEach(toggle => {
+            toggle.addEventListener('click', function(e) {
+                // If in mini mode and this is a submenu toggle link
+                if (sidebar.classList.contains('mini') && toggle.getAttribute('data-bs-toggle') === 'collapse') {
+                    e.preventDefault(); // Prevent default Bootstrap behavior
+                    e.stopPropagation(); // Stop event propagation
+                    expandFromMini(); // Expand sidebar
+                    
+                    // After expanding, trigger the submenu toggle
+                    setTimeout(() => {
+                        const targetId = toggle.getAttribute('href');
+                        const target = document.querySelector(targetId);
+                        if (target) {
+                            // Bootstrap 5 collapse functionality
+                            new bootstrap.Collapse(target, { toggle: true });
+                        }
+                    }, 300); // Wait for transition to complete
+                    
+                    return false;
+                }
+            });
+        });
+    }
+    
+    // Add click handler to main content area to collapse sidebar to mini mode
+    function setupContentClickHandler() {
+        mainContent.addEventListener('click', function(e) {
+            // Don't trigger if clicking within a form, dropdown or modal
+            if (e.target.closest('form') || e.target.closest('.dropdown-menu') || e.target.closest('.modal')) {
+                return;
+            }
+            
+            // Ensure sidebar is open and not already in mini mode
+            if (sidebar.classList.contains('show') && !sidebar.classList.contains('mini')) {
+                collapseToMini();
+            }
+        });
+    }
+    
+    // Add visual hover effect to user section
+    function setupUserSectionHoverEffects() {
+        if (!userDetails || !userAvatar) return;
+        
+        function addHoverEffect() {
+            userDetails.classList.add('user-hover');
+            // Apply subtle highlight effect
+            userDetails.style.transition = 'background-color 0.2s';
+            
+            userDetails.addEventListener('mouseenter', function() {
+                this.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                this.style.borderRadius = '4px';
+            });
+            
+            userDetails.addEventListener('mouseleave', function() {
+                this.style.backgroundColor = 'transparent';
+            });
+            
+            // Also add hover for avatar for consistency
+            userAvatar.style.transition = 'transform 0.2s';
+            
+            userAvatar.addEventListener('mouseenter', function() {
+                this.style.transform = 'scale(1.1)';
+            });
+            
+            userAvatar.addEventListener('mouseleave', function() {
+                this.style.transform = 'scale(1)';
+            });
+        }
+        
+        addHoverEffect();
+    }
+    
+    // Add event listeners
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', toggleSidebar);
+    }
+    
+    // Collapse sidebar to mini mode
+    if (collapseSidebarBtn) {
+        collapseSidebarBtn.addEventListener('click', collapseToMini);
+    }
+    
+    // Expand sidebar from mini mode
+    if (expandSidebarBtn) {
+        expandSidebarBtn.addEventListener('click', expandFromMini);
+    }
+    
+    // Close sidebar when clicking backdrop
+    if (sidebarBackdrop) {
+        sidebarBackdrop.addEventListener('click', closeSidebar);
+    }
+    
+    // Set up mini mode menu behavior
+    setupMiniModeSubmenuHandlers();
+    
+    // Set up main content click handler
+    setupContentClickHandler();
+    
+    // Set up user section hover effects
+    setupUserSectionHoverEffects();
+    
+    // Make user details section clickable for profile
+    if (userDetails) {
+        userDetails.style.cursor = 'pointer';
+        userDetails.title = 'Go to Profile';
+        userDetails.addEventListener('click', function(e) {
+            // Get the profile URL - assuming there's a profile link in the sidebar we can reference
+            const profileLink = document.querySelector('a[href*="profile"]');
+            if (profileLink) {
+                window.location.href = profileLink.getAttribute('href');
+            }
+        });
+    }
+    
+    // Make avatar clickable too
+    if (userAvatar) {
+        userAvatar.style.cursor = 'pointer';
+        userAvatar.title = 'Go to Profile';
+        userAvatar.addEventListener('click', function(e) {
+            // Get the profile URL
+            const profileLink = document.querySelector('a[href*="profile"]');
+            if (profileLink) {
+                window.location.href = profileLink.getAttribute('href');
+            }
+        });
+    }
+    
+    // Handle resize events
+    window.addEventListener('resize', function() {
+        const savedState = sessionStorage.getItem('sidebarState');
+        const savedMode = sessionStorage.getItem('sidebarMode');
+        
+        if (window.innerWidth >= 992) {
+            // For desktop, respect saved state if it exists
+            if (savedState === 'open') {
+                sidebar.classList.add('show');
+                
+                // Apply correct margin based on sidebar mode
+                if (savedMode === 'mini') {
+                    sidebar.classList.add('mini');
+                    mainContent.classList.add('sidebar-mini-open');
+                    mainContent.classList.remove('sidebar-open');
+                } else {
+                    sidebar.classList.remove('mini');
+                    mainContent.classList.add('sidebar-open');
+                    mainContent.classList.remove('sidebar-mini-open');
+                }
+                
+                if (sidebarToggle) sidebarToggle.classList.add('active');
+            } else if (savedState === 'closed') {
+                sidebar.classList.remove('show');
+                mainContent.classList.remove('sidebar-open');
+                mainContent.classList.remove('sidebar-mini-open');
+                if (sidebarToggle) sidebarToggle.classList.remove('active');
+            } else {
+                // Default to open on first load
+                sidebar.classList.add('show');
+                
+                // Apply correct margin based on sidebar mode
+                if (savedMode === 'mini') {
+                    sidebar.classList.add('mini');
+                    mainContent.classList.add('sidebar-mini-open');
+                } else {
+                    mainContent.classList.add('sidebar-open');
+                }
+                
+                if (sidebarToggle) sidebarToggle.classList.add('active');
+                sessionStorage.setItem('sidebarState', 'open');
+            }
+            if (sidebarBackdrop) sidebarBackdrop.classList.remove('show');
+        } else {
+            // On mobile, always hide sidebar
+            sidebar.classList.remove('show');
+            mainContent.classList.remove('sidebar-open');
+            mainContent.classList.remove('sidebar-mini-open');
+            if (sidebarBackdrop) sidebarBackdrop.classList.remove('show');
+            if (sidebarToggle) sidebarToggle.classList.remove('active');
+        }
+    });
+    
+    // Trigger resize event once to set initial state
+    window.dispatchEvent(new Event('resize'));
+});
+
     </script>
     {% block scripts %}{% endblock %}
 </body>

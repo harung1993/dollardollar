@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-
+    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -16,7 +16,7 @@
     <!-- Add Recurring Expense Form (Hidden by default) -->
     <div id="recurringFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Add Recurring Expense</h4>
-        <form id="addRecurringForm" method="POST" action="{{ url_for('add_recurring') }}">
+        <form method="POST" action="{{ url_for('add_recurring') }}">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="description" class="form-label">Description</label>
@@ -38,7 +38,6 @@
                     </select>
                 </div>
             </div>
-            
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="card_used" class="form-label">Card Used</label>
@@ -134,6 +133,25 @@
                 <!-- Hidden input to store the split details as JSON -->
                 <input type="hidden" id="split_details" name="split_details">
             </div>
+            <!-- Category Selection-->
+            <div class="mb-3">
+                <label for="category_id" class="form-label">Category</label>
+                <select class="form-select bg-dark text-light" id="category_id" name="category_id">
+                    <option value="">Select a category (optional)</option>
+                    {% for category in categories %}
+                        {% if not category.parent_id %}
+                        <optgroup label="{{ category.name }}">
+                            <!-- Subcategories -->
+                            {% for subcategory in category.subcategories %}
+                            <option value="{{ subcategory.id }}">{{ subcategory.name }}</option>
+                            {% endfor %}
+                            <!-- Parent category itself -->
+                            <option value="{{ category.id }}">{{ category.name }} (general)</option>
+                        </optgroup>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
             
             <!-- Group Selection -->
             <div class="mb-3">
@@ -144,24 +162,6 @@
                         <option value="{{ group.id }}">{{ group.name }}</option>
                     {% endfor %}
                 </select>
-            </div>
-            
-            <!-- Tag Selection -->
-            <div class="mb-3">
-                <label for="tags" class="form-label">Tags (Optional)</label>
-                <div class="tag-selector">
-                    {% for tag in current_user.tags %}
-                    <div class="form-check form-check-inline">
-                        <input class="form-check-input tag-checkbox" type="checkbox" id="tag{{ tag.id }}" name="tags" value="{{ tag.id }}" 
-                               style="background-color: {{ tag.color }}; border-color: {{ tag.color }};">
-                        <label class="form-check-label" for="tag{{ tag.id }}">{{ tag.name }}</label>
-                    </div>
-                    {% endfor %}
-                    
-                    {% if current_user.tags|length == 0 %}
-                    <p class="text-muted small">No tags created yet. <a href="{{ url_for('manage_tags') }}" class="text-warning">Create tags</a> to categorize expenses.</p>
-                    {% endif %}
-                </div>
             </div>
             
             <div class="d-flex justify-content-end">
@@ -193,7 +193,7 @@
                     <tbody>
                         {% if recurring_expenses %}
                             {% for recurring in recurring_expenses %}
-                            <tr id="recurring-row-{{ recurring.id }}">
+                            <tr>
                                 <td>{{ recurring.description }}</td>
                                 <td>{{ base_currency.symbol }}{{ "%.2f"|format(recurring.amount) }}</td>
                                 <td>{{ recurring.frequency|capitalize }}</td>
@@ -247,18 +247,20 @@
                                 </td>
                                 <td>
                                     <div class="btn-group" role="group">
-                                        <button type="button" class="btn btn-sm {% if recurring.active %}btn-warning{% else %}btn-success{% endif %}" 
-                                                onclick="toggleRecurringActive({{ recurring.id }}, {{ recurring.active|tojson }})">
-                                            {% if recurring.active %}
-                                                <i class="fas fa-pause me-1"></i>Pause
-                                            {% else %}
-                                                <i class="fas fa-play me-1"></i>Activate
-                                            {% endif %}
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-danger ms-1" 
-                                                onclick="deleteRecurring({{ recurring.id }}, '{{ recurring.description }}')">
-                                            <i class="fas fa-trash-alt me-1"></i>Delete
-                                        </button>
+                                        <form action="{{ url_for('toggle_recurring', recurring_id=recurring.id) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm {% if recurring.active %}btn-warning{% else %}btn-success{% endif %}">
+                                                {% if recurring.active %}
+                                                    <i class="fas fa-pause me-1"></i>Pause
+                                                {% else %}
+                                                    <i class="fas fa-play me-1"></i>Activate
+                                                {% endif %}
+                                            </button>
+                                        </form>
+                                        <form action="{{ url_for('delete_recurring', recurring_id=recurring.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this recurring expense?');">
+                                            <button type="submit" class="btn btn-sm btn-danger ms-1">
+                                                <i class="fas fa-trash-alt me-1"></i>Delete
+                                            </button>
+                                        </form>
                                     </div>
                                 </td>
                             </tr>
@@ -328,143 +330,42 @@ function togglePersonalExpense() {
         updateSplitValues();
     }
 }
-
-// Function to initialize tag checkboxes with color support
-function initializeTagCheckboxes() {
-    const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
-    
-    tagCheckboxes.forEach(checkbox => {
-        const originalColor = checkbox.style.backgroundColor;
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize today's date
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('start_date').value = today;
         
-        // Adjust checked style
-        checkbox.addEventListener('change', function() {
-            if (this.checked) {
-                this.style.backgroundColor = originalColor;
-            } else {
-                this.style.backgroundColor = 'transparent';
-            }
-        });
-    });
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize today's date
-    const today = new Date().toISOString().split('T')[0];
-    document.getElementById('start_date').value = today;
-    
-    // Initialize tag checkboxes
-    initializeTagCheckboxes();
-    
-    // Toggle recurring form visibility
-    document.getElementById('toggleRecurringForm').addEventListener('click', toggleRecurringForm);
-    
-    // Initialize multiselect dropdown for split_with
-    initializeMultiSelect();
-    
-    // Handle amount field changes
-    document.getElementById('amount').addEventListener('input', updateSplitValues);
-    
-    // Handle paid_by changes
-    document.getElementById('paid_by').addEventListener('change', function() {
-        // Update split_with options when payer changes
-        updateSplitWithOptions();
-        // Update split values if needed
-        updateSplitValues();
-    });
-    
-    // Listen for split_with changes from the multiselect
-    document.getElementById('split_with').addEventListener('change', updateSplitValues);
-    
-    // Handle form submission with AJAX
-    const recurringForm = document.getElementById('addRecurringForm');
-    if (recurringForm) {
-        recurringForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            // Form validation
-            if (!validateRecurringForm()) {
-                return false;
-            }
-            
-            // Show loading state
-            const submitBtn = this.querySelector('button[type="submit"]');
-            const originalBtnText = submitBtn.innerHTML;
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
-            
-            // Submit form with AJAX
-            const formData = new FormData(this);
-            
-            fetch(this.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Reset button state
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalBtnText;
-                
-                if (data.success) {
-                    // Show success message
-                    showToast(data.message || 'Recurring expense added successfully!', 'success');
-                    
-                    // Reset form
-                    this.reset();
-                    document.getElementById('start_date').value = today;
-                    
-                    // Reset UI elements
-                    const personalExpenseCheck = document.getElementById('personal_expense_check');
-                    if (personalExpenseCheck) {
-                        personalExpenseCheck.checked = false;
-                        togglePersonalExpense();
-                    }
-                    
-                    // Hide form
-                    toggleRecurringForm();
-                    
-                    // Reload the page to show the new recurring expense
-                    // In a more advanced implementation, you would dynamically add the new row
-                    location.reload();
-                } else {
-                    // Show error message
-                    showToast(data.message || 'Failed to add recurring expense', 'error');
-                }
-            })
-            .catch(error => {
-                // Reset button state
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalBtnText;
-                
-                // Show error message
-                console.error('Error:', error);
-                showToast(`Error: ${error.message}`, 'error');
-            });
-        });
-    }
-});
-
-// Form validation function
-function validateRecurringForm() {
+        // Toggle recurring form visibility
+        document.getElementById('toggleRecurringForm').addEventListener('click', toggleRecurringForm);
+        
+        // Initialize multiselect dropdown for split_with
+        initializeMultiSelect();
+        
+        // Handle amount field changes
+        document.getElementById('amount').addEventListener('input', updateSplitValues);
+        
+        // Handle paid_by changes
+        document.getElementById('paid_by').addEventListener('change', updateSplitValues);
+        
+        // Listen for split_with changes from the multiselect
+        document.getElementById('split_with').addEventListener('change', updateSplitValues);
+        
+        // Handle form submission to ensure split values are calculated and included
+        // Handle form submission to ensure split values are calculated and included
+document.querySelector('form[action*="add_recurring"]').addEventListener('submit', function(e) {
     const splitWithSelect = document.getElementById('split_with');
     const personalExpenseCheck = document.getElementById('personal_expense_check');
     
     // If personal expense is checked, we don't need to validate split_with
     if (personalExpenseCheck && personalExpenseCheck.checked) {
+        // No validation needed for split_with
         return true;
     }
     
     // For shared expenses, ensure at least one person is selected in split_with
     if (splitWithSelect && splitWithSelect.selectedOptions.length === 0) {
-        showToast('Please select at least one person to split with or check "Personal expense"', 'error');
+        e.preventDefault();
+        alert('Please select at least one person to split with or check "Personal expense"');
         return false;
     }
     
@@ -478,569 +379,373 @@ function validateRecurringForm() {
         }
         
         // Validate totals
-        const splitStatus = document.getElementById('split_status');
-        if (splitStatus && splitStatus.textContent !== 'Balanced') {
-            showToast('Your split values must balance with the expense amount before saving.', 'error');
+        const splitStatus = document.getElementById('split_status').textContent;
+        if (splitStatus !== 'Balanced') {
+            e.preventDefault();
+            alert('Your split values must balance with the expense amount before saving.');
             return false;
         }
     }
     return true;
-}
-
-// Toggle recurring form visibility
-function toggleRecurringForm() {
-    const form = document.getElementById('recurringFormContainer');
-    const button = document.getElementById('toggleRecurringForm');
+});
+    });
     
-    if (form.style.display === 'none') {
-        form.style.display = 'block';
-        button.innerHTML = '<i class="fas fa-times me-2"></i>Cancel';
-        button.classList.replace('btn-primary', 'btn-secondary');
-    } else {
-        form.style.display = 'none';
-        button.innerHTML = '<i class="fas fa-plus me-2"></i>Add Recurring Expense';
-        button.classList.replace('btn-secondary', 'btn-primary');
+    function toggleRecurringForm() {
+        const form = document.getElementById('recurringFormContainer');
+        const button = document.getElementById('toggleRecurringForm');
         
-        // Reset form when closing
-        const formElement = document.getElementById('addRecurringForm');
-        if (formElement) {
-            formElement.reset();
-            
-            // Reset date input
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('start_date').value = today;
-            
-            // Reset personal expense checkbox state
-            const personalExpenseCheck = document.getElementById('personal_expense_check');
-            if (personalExpenseCheck) {
-                personalExpenseCheck.checked = false;
-                togglePersonalExpense();
-            }
-            
-            // Reset tag checkboxes
-            const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
-            tagCheckboxes.forEach(checkbox => {
-                checkbox.checked = false;
-                checkbox.style.backgroundColor = 'transparent';
-            });
+        if (form.style.display === 'none') {
+            form.style.display = 'block';
+            button.innerHTML = '<i class="fas fa-times me-2"></i>Cancel';
+            button.classList.replace('btn-primary', 'btn-secondary');
+        } else {
+            form.style.display = 'none';
+            button.innerHTML = '<i class="fas fa-plus me-2"></i>Add Recurring Expense';
+            button.classList.replace('btn-secondary', 'btn-primary');
         }
     }
-}
-
-// Function to toggle recurring expense active status
-function toggleRecurringActive(recurringId, isActive) {
-    showConfirmDialog(
-        isActive ? 'Pause Recurring Expense' : 'Activate Recurring Expense',
-        isActive ? 
-            'Are you sure you want to pause this recurring expense? No new expenses will be created until you activate it again.' :
-            'Are you sure you want to activate this recurring expense? New expenses will be created according to the schedule.',
-        function() {
-            // User confirmed, send the request
-            fetch(`/toggle_recurring/${recurringId}`, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to toggle recurring expense status');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Show success message
-                    showToast(data.message || `Recurring expense ${isActive ? 'paused' : 'activated'} successfully`, 'success');
-                    
-                    // Update the UI
-                    const row = document.getElementById(`recurring-row-${recurringId}`);
-                    if (row) {
-                        // Update status badge
-                        const statusCell = row.cells[5];
-                        statusCell.innerHTML = isActive ? 
-                            '<span class="badge bg-secondary">Inactive</span>' : 
-                            '<span class="badge bg-success">Active</span>';
-                        
-                        // Update next due date
-                        const nextDueCell = row.cells[4];
-                        if (isActive) {
-                            nextDueCell.innerHTML = '<span class="text-muted">Inactive</span>';
-                        } else {
-                            // We'll need to reload to get the proper next date calculation
-                            location.reload();
-                            return;
-                        }
-                        
-                        // Update toggle button
-                        const actionCell = row.cells[6];
-                        const toggleBtn = actionCell.querySelector('button:first-child');
-                        if (toggleBtn) {
-                            toggleBtn.className = isActive ? 
-                                'btn btn-sm btn-success' : 
-                                'btn btn-sm btn-warning';
-                            toggleBtn.innerHTML = isActive ? 
-                                '<i class="fas fa-play me-1"></i>Activate' : 
-                                '<i class="fas fa-pause me-1"></i>Pause';
-                            toggleBtn.setAttribute('onclick', `toggleRecurringActive(${recurringId}, ${!isActive})`);
-                        }
-                    }
-                } else {
-                    // Show error message
-                    showToast(data.message || 'Failed to update recurring expense status', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast(`Error updating recurring expense: ${error.message}`, 'error');
-            });
-        }
-    );
-}
-
-// Function to delete a recurring expense
-function deleteRecurring(recurringId, description) {
-    showConfirmDialog(
-        'Delete Recurring Expense',
-        `Are you sure you want to delete the recurring expense "${description}"? This action cannot be undone.`,
-        function() {
-            // User confirmed, send the request
-            fetch(`/delete_recurring/${recurringId}`, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to delete recurring expense');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Show success message
-                    showToast(data.message || 'Recurring expense deleted successfully', 'success');
-                    
-                    // Remove row from table with animation
-                    const row = document.getElementById(`recurring-row-${recurringId}`);
-                    if (row) {
-                        // Add fade-out animation
-                        row.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-                        row.style.opacity = '0';
-                        row.style.transform = 'translateY(-20px)';
-                        
-                        // Remove after animation completes
-                        setTimeout(() => {
-                            row.remove();
-                            
-                            // Check if table is now empty
-                            const tbody = row.parentNode;
-                            if (tbody.children.length === 0) {
-                                tbody.innerHTML = '<tr><td colspan="7" class="text-center">No recurring expenses set up yet</td></tr>';
-                            }
-                        }, 500);
-                    }
-                } else {
-                    // Show error message
-                    showToast(data.message || 'Failed to delete recurring expense', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast(`Error deleting recurring expense: ${error.message}`, 'error');
-            });
-        }
-    );
-}
-
-// Include the same split functions from dashboard/transactions
-function toggleSplitOptions() {
-    const splitMethod = document.getElementById('split_method').value;
-    const splitValueContainer = document.getElementById('split_value_container');
-    const customSplitContainer = document.getElementById('custom_split_container');
-    const splitValue = document.getElementById('split_value');
-    const splitInstruction = document.getElementById('split_instruction');
     
-    // Hide legacy split value field
-    splitValueContainer.style.display = 'none';
-    splitValue.removeAttribute('required');
+    // Include the same split functions from dashboard/transactions
+    function toggleSplitOptions() {
+        const splitMethod = document.getElementById('split_method').value;
+        const splitValueContainer = document.getElementById('split_value_container');
+        const customSplitContainer = document.getElementById('custom_split_container');
+        const splitValue = document.getElementById('split_value');
+        const splitInstruction = document.getElementById('split_instruction');
+        
+        // Hide legacy split value field
+        splitValueContainer.style.display = 'none';
+        splitValue.removeAttribute('required');
+        
+        if (splitMethod === 'equal') {
+            customSplitContainer.style.display = 'none';
+        } else {
+            customSplitContainer.style.display = 'block';
+            
+            if (splitMethod === 'percentage') {
+                splitInstruction.textContent = 'Set what percentage each person pays (total must be 100%)';
+            } else { // custom amounts
+                splitInstruction.textContent = 'Set how much each person pays (total must match expense amount)';
+            }
+            
+            // Update the split values UI
+            updateSplitValues();
+        }
+    }
     
-    if (splitMethod === 'equal') {
-        customSplitContainer.style.display = 'none';
-    } else {
-        customSplitContainer.style.display = 'block';
+    function updateSplitValues() {
+        const splitMethod = document.getElementById('split_method').value;
+        if (splitMethod === 'equal') return;
+        
+        const totalAmount = parseFloat(document.getElementById('amount').value) || 0;
+        const paidById = document.getElementById('paid_by').value;
+        const splitWithIds = Array.from(document.getElementById('split_with').selectedOptions).map(opt => opt.value);
+        
+        // Display current amount in the UI
+        document.getElementById('expense_amount').textContent = totalAmount.toFixed(2);
+        
+        // Get all participant IDs (payer + split_with)
+        let allParticipantIds = [...splitWithIds];
+        // Add payer if they're not already in the split_with list
+        if (!allParticipantIds.includes(paidById)) {
+            allParticipantIds.unshift(paidById);
+        }
+        
+        // Generate split values UI
+        const container = document.getElementById('split_values_container');
+        container.innerHTML = '';
+        
+        let splitValues = {};
         
         if (splitMethod === 'percentage') {
-            splitInstruction.textContent = 'Set what percentage each person pays (total must be 100%)';
-        } else { // custom amounts
-            splitInstruction.textContent = 'Set how much each person pays (total must match expense amount)';
-        }
-        
-        // Update the split values UI
-        updateSplitValues();
-    }
-}
-
-function updateSplitValues() {
-    const splitMethod = document.getElementById('split_method').value;
-    if (splitMethod === 'equal') return;
-    
-    const totalAmount = parseFloat(document.getElementById('amount').value) || 0;
-    const paidById = document.getElementById('paid_by').value;
-    const splitWithIds = Array.from(document.getElementById('split_with').selectedOptions).map(opt => opt.value);
-    
-    // Display current amount in the UI
-    document.getElementById('expense_amount').textContent = totalAmount.toFixed(2);
-    
-    // Get all participant IDs (payer + split_with)
-    let allParticipantIds = [...splitWithIds];
-    // Add payer if they're not already in the split_with list
-    if (!allParticipantIds.includes(paidById)) {
-        allParticipantIds.unshift(paidById);
-    }
-    
-    // Generate split values UI
-    const container = document.getElementById('split_values_container');
-    container.innerHTML = '';
-    
-    let splitValues = {};
-    
-    if (splitMethod === 'percentage') {
-        // Start with equal percentages
-        const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
-        
-        allParticipantIds.forEach(userId => {
-            const user = Array.from(document.getElementById('paid_by').options)
-                .find(opt => opt.value === userId);
+            // Start with equal percentages
+            const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
             
-            if (user) {
-                const userName = user.text.split(' (')[0];
-                const isPayerId = userId === paidById;
+            allParticipantIds.forEach(userId => {
+                const user = Array.from(document.getElementById('paid_by').options)
+                    .find(opt => opt.value === userId);
                 
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <input type="number" class="form-control bg-dark text-light split-value-input"
-                                data-user-id="${userId}" step="0.1" min="0" max="100" 
-                                value="${equalPercentage.toFixed(1)}">
-                            <span class="input-group-text bg-dark text-light">%</span>
+                if (user) {
+                    const userName = user.text.split(' (')[0];
+                    const isPayerId = userId === paidById;
+                    
+                    // Create row for this user
+                    const row = document.createElement('div');
+                    row.className = 'row mb-2 align-items-center';
+                    row.innerHTML = `
+                        <div class="col-md-6">
+                            <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
+                                ${isPayerId ? '💰' : ''} ${userName}
+                            </span>
+                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
                         </div>
-                    </div>
-                `;
-                container.appendChild(row);
-                
-                // Save the initial value
-                splitValues[userId] = equalPercentage;
-            }
-        });
-        
-        // Add event listeners to percentage inputs
-        container.querySelectorAll('.split-value-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const userId = this.getAttribute('data-user-id');
-                const percentage = parseFloat(this.value) || 0;
-                splitValues[userId] = percentage;
-                
-                // Calculate total percentage
-                const totalPercentage = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                document.getElementById('split_total').textContent = totalPercentage.toFixed(1) + '%';
-                
-                // Update status
-                const statusBadge = document.getElementById('split_status');
-                if (Math.abs(totalPercentage - 100) < 0.1) {
-                    statusBadge.textContent = 'Balanced';
-                    statusBadge.className = 'badge bg-success';
-                } else if (totalPercentage < 100) {
-                    statusBadge.textContent = 'Underfunded';
-                    statusBadge.className = 'badge bg-warning';
-                } else {
-                    statusBadge.textContent = 'Overfunded';
-                    statusBadge.className = 'badge bg-danger';
-                }
-                
-                // Update hidden split details field
-                document.getElementById('split_details').value = JSON.stringify({
-                    type: 'percentage',
-                    values: splitValues
-                });
-            });
-            
-            // Trigger input event to initialize values
-            input.dispatchEvent(new Event('input'));
-        });
-        
-    } else { // Custom amount
-        // Start with equal amounts
-        const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
-        
-        allParticipantIds.forEach(userId => {
-            const user = Array.from(document.getElementById('paid_by').options)
-                .find(opt => opt.value === userId);
-            
-            if (user) {
-                const userName = user.text.split(' (')[0];
-                const isPayerId = userId === paidById;
-                
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <span class="input-group-text bg-dark text-light">${baseCurrencySymbol}</span>
-                            <input type="number" class="form-control bg-dark text-light split-value-input"
-                                data-user-id="${userId}" step="0.01" min="0" 
-                                value="${equalAmount.toFixed(2)}">
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input type="number" class="form-control bg-dark text-light split-value-input"
+                                    data-user-id="${userId}" step="0.1" min="0" max="100" 
+                                    value="${equalPercentage.toFixed(1)}">
+                                <span class="input-group-text bg-dark text-light">%</span>
+                            </div>
                         </div>
-                    </div>
-                `;
-                container.appendChild(row);
-                
-                // Save the initial value
-                splitValues[userId] = equalAmount;
-            }
-        });
-        
-        // Add event listeners to amount inputs
-        container.querySelectorAll('.split-value-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const userId = this.getAttribute('data-user-id');
-                const amount = parseFloat(this.value) || 0;
-                splitValues[userId] = amount;
-                
-                // Calculate total amount
-                const totalSplit = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                document.getElementById('split_total').textContent = totalSplit.toFixed(2);
-                
-                // Update status
-                const statusBadge = document.getElementById('split_status');
-                if (Math.abs(totalSplit - totalAmount) < 0.01) {
-                    statusBadge.textContent = 'Balanced';
-                    statusBadge.className = 'badge bg-success';
-                } else if (totalSplit < totalAmount) {
-                    statusBadge.textContent = 'Underfunded';
-                    statusBadge.className = 'badge bg-warning';
-                } else {
-                    statusBadge.textContent = 'Overfunded';
-                    statusBadge.className = 'badge bg-danger';
+                    `;
+                    container.appendChild(row);
+                    
+                    // Save the initial value
+                    splitValues[userId] = equalPercentage;
                 }
-                
-                // Update hidden split details field
-                document.getElementById('split_details').value = JSON.stringify({
-                    type: 'amount',
-                    values: splitValues
+            });
+            
+            // Add event listeners to percentage inputs
+            container.querySelectorAll('.split-value-input').forEach(input => {
+                input.addEventListener('input', function() {
+                    const userId = this.getAttribute('data-user-id');
+                    const percentage = parseFloat(this.value) || 0;
+                    splitValues[userId] = percentage;
+                    
+                    // Calculate total percentage
+                    const totalPercentage = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
+                    document.getElementById('split_total').textContent = totalPercentage.toFixed(1) + '%';
+                    
+                    // Update status
+                    const statusBadge = document.getElementById('split_status');
+                    if (Math.abs(totalPercentage - 100) < 0.1) {
+                        statusBadge.textContent = 'Balanced';
+                        statusBadge.className = 'badge bg-success';
+                    } else if (totalPercentage < 100) {
+                        statusBadge.textContent = 'Underfunded';
+                        statusBadge.className = 'badge bg-warning';
+                    } else {
+                        statusBadge.textContent = 'Overfunded';
+                        statusBadge.className = 'badge bg-danger';
+                    }
+                    
+                    // Update hidden split details field
+                    document.getElementById('split_details').value = JSON.stringify({
+                        type: 'percentage',
+                        values: splitValues
+                    });
                 });
-            });
-            
-            // Trigger input event to initialize values
-            input.dispatchEvent(new Event('input'));
-        });
-    }
-}
-
-// Update split_with options when paid_by changes
-function updateSplitWithOptions() {
-    const paidById = document.getElementById('paid_by').value;
-    const splitWithSelect = document.getElementById('split_with');
-    
-    // Store currently selected options
-    const selectedOptions = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-    
-    // Reload custom multiselect if it exists
-    if (typeof initializeMultiSelect === 'function') {
-        // Get the existing wrapper
-        const wrapper = document.querySelector('.multiselect-wrapper');
-        if (wrapper) {
-            // Remove old multiselect UI
-            wrapper.outerHTML = splitWithSelect.outerHTML;
-            
-            // Re-initialize multiselect
-            initializeMultiSelect();
-            
-            // Re-select previously selected options (except the new payer)
-            const newSplitWith = document.getElementById('split_with');
-            for (let i = 0; i < newSplitWith.options.length; i++) {
-                const option = newSplitWith.options[i];
-                if (selectedOptions.includes(option.value) && option.value !== paidById) {
-                    option.selected = true;
-                }
-            }
-            
-            // Trigger change event to update UI
-            newSplitWith.dispatchEvent(new Event('change'));
-        }
-    }
-}
-
-function initializeMultiSelect() {
-    // Get the select element
-    const selectElement = document.getElementById('split_with');
-    const paidBySelect = document.getElementById('paid_by');
-    
-    // Create a wrapper div
-    const wrapper = document.createElement('div');
-    wrapper.className = 'multiselect-wrapper position-relative';
-    selectElement.parentNode.insertBefore(wrapper, selectElement);
-    wrapper.appendChild(selectElement);
-    
-    // Create the custom dropdown
-    const customSelect = document.createElement('div');
-    customSelect.className = 'form-control bg-dark text-light d-flex flex-wrap align-items-center';
-    customSelect.style.minHeight = '38px';
-    customSelect.style.cursor = 'pointer';
-    wrapper.appendChild(customSelect);
-    
-    // Create dropdown content
-    const dropdownContent = document.createElement('div');
-    dropdownContent.className = 'position-absolute w-100 bg-dark border border-secondary rounded mt-1 p-2';
-    dropdownContent.style.zIndex = '100';
-    dropdownContent.style.maxHeight = '200px';
-    dropdownContent.style.overflowY = 'auto';
-    dropdownContent.style.display = 'none';
-    wrapper.appendChild(dropdownContent);
-    
-    // Hide the original select
-    selectElement.style.display = 'none';
-    
-    // Function to update options based on paid_by
-    function updateOptions() {
-        const paidById = paidBySelect.value;
-        
-        // Clear existing dropdown content
-        dropdownContent.innerHTML = '';
-        
-        // When payer changes, unselect them from split_with if they were selected
-        for (let i = 0; i < selectElement.options.length; i++) {
-            if (selectElement.options[i].value === paidById && selectElement.options[i].selected) {
-                selectElement.options[i].selected = false;
-            }
-        }
-        
-        // Repopulate dropdown options
-        for (let i = 0; i < selectElement.options.length; i++) {
-            const option = selectElement.options[i];
-            
-            // Skip adding the current payer to the dropdown options
-            if (option.value === paidById) continue;
-            
-            const checkboxContainer = document.createElement('div');
-            checkboxContainer.className = 'form-check mb-2';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'form-check-input';
-            checkbox.value = option.value;
-            checkbox.id = 'multiselect-' + option.value;
-            checkbox.checked = option.selected;
-            
-            const label = document.createElement('label');
-            label.htmlFor = 'multiselect-' + option.value;
-            label.className = 'form-check-label text-light ms-2';
-            label.textContent = option.textContent;
-            
-            checkboxContainer.appendChild(checkbox);
-            checkboxContainer.appendChild(label);
-            dropdownContent.appendChild(checkboxContainer);
-            
-            // Handle checkbox change
-            checkbox.addEventListener('change', function() {
-                option.selected = checkbox.checked;
-                updateCustomSelectDisplay();
                 
-                // Trigger change event on original select
-                const event = new Event('change', { bubbles: true });
-                selectElement.dispatchEvent(event);
+                // Trigger input event to initialize values
+                input.dispatchEvent(new Event('input'));
+            });
+            
+        } else { // Custom amount
+            // Start with equal amounts
+            const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
+            
+            allParticipantIds.forEach(userId => {
+                const user = Array.from(document.getElementById('paid_by').options)
+                    .find(opt => opt.value === userId);
+                
+                if (user) {
+                    const userName = user.text.split(' (')[0];
+                    const isPayerId = userId === paidById;
+                    
+                    // Create row for this user
+                    const row = document.createElement('div');
+                    row.className = 'row mb-2 align-items-center';
+                    row.innerHTML = `
+                        <div class="col-md-6">
+                            <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
+                                ${isPayerId ? '💰' : ''} ${userName}
+                            </span>
+                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark text-light">$</span>
+                                <input type="number" class="form-control bg-dark text-light split-value-input"
+                                    data-user-id="${userId}" step="0.01" min="0" 
+                                    value="${equalAmount.toFixed(2)}">
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(row);
+                    
+                    // Save the initial value
+                    splitValues[userId] = equalAmount;
+                }
+            });
+            
+            // Add event listeners to amount inputs
+            container.querySelectorAll('.split-value-input').forEach(input => {
+                input.addEventListener('input', function() {
+                    const userId = this.getAttribute('data-user-id');
+                    const amount = parseFloat(this.value) || 0;
+                    splitValues[userId] = amount;
+                    
+                    // Calculate total amount
+                    const totalSplit = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
+                    document.getElementById('split_total').textContent = totalSplit.toFixed(2);
+                    
+                    // Update status
+                    const statusBadge = document.getElementById('split_status');
+                    if (Math.abs(totalSplit - totalAmount) < 0.01) {
+                        statusBadge.textContent = 'Balanced';
+                        statusBadge.className = 'badge bg-success';
+                    } else if (totalSplit < totalAmount) {
+                        statusBadge.textContent = 'Underfunded';
+                        statusBadge.className = 'badge bg-warning';
+                    } else {
+                        statusBadge.textContent = 'Overfunded';
+                        statusBadge.className = 'badge bg-danger';
+                    }
+                    
+                    // Update hidden split details field
+                    document.getElementById('split_details').value = JSON.stringify({
+                        type: 'amount',
+                        values: splitValues
+                    });
+                });
+                
+                // Trigger input event to initialize values
+                input.dispatchEvent(new Event('input'));
             });
         }
-        
-        // Update display
-        updateCustomSelectDisplay();
     }
     
-    // Toggle dropdown on click
-    customSelect.addEventListener('click', function(e) {
-        dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
-        e.stopPropagation();
-    });
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function() {
+    function initializeMultiSelect() {
+        // Get the select element
+        const selectElement = document.getElementById('split_with');
+        const paidBySelect = document.getElementById('paid_by');
+        
+        // Create a wrapper div
+        const wrapper = document.createElement('div');
+        wrapper.className = 'multiselect-wrapper position-relative';
+        selectElement.parentNode.insertBefore(wrapper, selectElement);
+        wrapper.appendChild(selectElement);
+        
+        // Create the custom dropdown
+        const customSelect = document.createElement('div');
+        customSelect.className = 'form-control bg-dark text-light d-flex flex-wrap align-items-center';
+        customSelect.style.minHeight = '38px';
+        customSelect.style.cursor = 'pointer';
+        wrapper.appendChild(customSelect);
+        
+        // Create dropdown content
+        const dropdownContent = document.createElement('div');
+        dropdownContent.className = 'position-absolute w-100 bg-dark border border-secondary rounded mt-1 p-2';
+        dropdownContent.style.zIndex = '100';
+        dropdownContent.style.maxHeight = '200px';
+        dropdownContent.style.overflowY = 'auto';
         dropdownContent.style.display = 'none';
-    });
-    
-    // Prevent dropdown from closing when clicking inside it
-    dropdownContent.addEventListener('click', function(e) {
-        e.stopPropagation();
-    });
-    
-    // Update the custom select display
-    function updateCustomSelectDisplay() {
-        customSelect.innerHTML = '';
-        let selectedCount = 0;
+        wrapper.appendChild(dropdownContent);
         
-        for (let i = 0; i < selectElement.options.length; i++) {
-            // Don't show the current payer in the display even if somehow selected
-            if (selectElement.options[i].selected && selectElement.options[i].value !== paidBySelect.value) {
-                const badge = document.createElement('span');
-                badge.className = 'badge me-1 mb-1';
-                const userColor = selectElement.options[i].getAttribute('data-color') || '#15803d';
-                badge.style.backgroundColor = userColor;
-                badge.textContent = selectElement.options[i].text.split(' (')[0]; // Just show the name
+        // Hide the original select
+        selectElement.style.display = 'none';
+        
+        // Function to update options based on paid_by
+        function updateOptions() {
+            const paidById = paidBySelect.value;
+            
+            // Clear existing dropdown content
+            dropdownContent.innerHTML = '';
+            
+            // Repopulate dropdown options
+            for (let i = 0; i < selectElement.options.length; i++) {
+                const option = selectElement.options[i];
                 
-                const removeBtn = document.createElement('span');
-                removeBtn.className = 'ms-1';
-                removeBtn.innerHTML = '&times;';
-                removeBtn.style.cursor = 'pointer';
+                // Skip the payer
+                if (option.value === paidById) continue;
                 
-                badge.appendChild(removeBtn);
-                customSelect.appendChild(badge);
-                selectedCount++;
+                const checkboxContainer = document.createElement('div');
+                checkboxContainer.className = 'form-check mb-2';
                 
-                // Handle remove button
-                removeBtn.addEventListener('click', function(e) {
-                    selectElement.options[i].selected = false;
-                    const checkbox = document.getElementById('multiselect-' + selectElement.options[i].value);
-                    if (checkbox) checkbox.checked = false;
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input';
+                checkbox.value = option.value;
+                checkbox.id = 'multiselect-' + option.value;
+                checkbox.checked = option.selected;
+                
+                const label = document.createElement('label');
+                label.htmlFor = 'multiselect-' + option.value;
+                label.className = 'form-check-label text-light ms-2';
+                label.textContent = option.textContent;
+                
+                checkboxContainer.appendChild(checkbox);
+                checkboxContainer.appendChild(label);
+                dropdownContent.appendChild(checkboxContainer);
+                
+                // Handle checkbox change
+                checkbox.addEventListener('change', function() {
+                    option.selected = checkbox.checked;
                     updateCustomSelectDisplay();
-                    e.stopPropagation();
+                    
+                    // Trigger change event on original select
+                    const event = new Event('change', { bubbles: true });
+                    selectElement.dispatchEvent(event);
                 });
+            }
+            
+            // Update display
+            updateCustomSelectDisplay();
+        }
+        
+        // Toggle dropdown on click
+        customSelect.addEventListener('click', function(e) {
+            dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
+            e.stopPropagation();
+        });
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function() {
+            dropdownContent.style.display = 'none';
+        });
+        
+        // Prevent dropdown from closing when clicking inside it
+        dropdownContent.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        
+        // Update the custom select display
+        function updateCustomSelectDisplay() {
+            customSelect.innerHTML = '';
+            let selectedCount = 0;
+            
+            for (let i = 0; i < selectElement.options.length; i++) {
+                if (selectElement.options[i].selected && selectElement.options[i].value !== paidBySelect.value) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-primary me-1 mb-1';
+                    badge.textContent = selectElement.options[i].text.split(' (')[0]; // Just show the name
+                    
+                    const removeBtn = document.createElement('span');
+                    removeBtn.className = 'ms-1';
+                    removeBtn.innerHTML = '&times;';
+                    removeBtn.style.cursor = 'pointer';
+                    
+                    badge.appendChild(removeBtn);
+                    customSelect.appendChild(badge);
+                    selectedCount++;
+                    
+                    // Handle remove button
+                    removeBtn.addEventListener('click', function(e) {
+                        selectElement.options[i].selected = false;
+                        const checkbox = document.getElementById('multiselect-' + selectElement.options[i].value);
+                        if (checkbox) checkbox.checked = false;
+                        updateCustomSelectDisplay();
+                        e.stopPropagation();
+                    });
+                }
+            }
+            
+            // If nothing selected, show placeholder
+            if (selectedCount === 0) {
+                const placeholder = document.createElement('span');
+                placeholder.className = 'text-muted';
+                placeholder.textContent = 'Select people to split with';
+                customSelect.appendChild(placeholder);
             }
         }
         
-        // If nothing selected, show placeholder
-        if (selectedCount === 0) {
-            const placeholder = document.createElement('span');
-            placeholder.className = 'text-muted';
-            placeholder.textContent = 'Select people to split with';
-            customSelect.appendChild(placeholder);
+        // Add event listener to paid_by select to update options
+        if (paidBySelect) {
+            paidBySelect.addEventListener('change', updateOptions);
         }
+        
+        // Initial setup
+        updateOptions();
     }
-    
-    // Add event listener to paid_by select to update options
-    if (paidBySelect) {
-        paidBySelect.addEventListener('change', updateOptions);
-    }
-    
-    // Initial setup
-    updateOptions();
-}
 </script>
 {% endblock %}
