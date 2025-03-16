@@ -66,9 +66,29 @@
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center">
                 <h2>Manage Categories</h2>
-                <button id="toggleCategoryForm" class="btn btn-primary">
-                    <i class="fas fa-plus me-2"></i>Add Category
-                </button>
+                <div>
+                    {% set has_defaults = False %}
+                    {% set default_categories = ["Housing", "Food", "Transportation", "Shopping", "Entertainment", "Health"] %}
+                    
+                    {% set default_count = 0 %}
+                    {% for cat in categories %}
+                      {% if cat.name in default_categories %}
+                        {% set default_count = default_count + 1 %}
+                      {% endif %}
+                    {% endfor %}
+                    
+                    {% if default_count < 4 %}
+                    <form action="{{ url_for('user_create_default_categories') }}" method="POST" class="d-inline me-2">
+                      <button type="submit" class="btn btn-outline-success">
+                        <i class="fas fa-tags me-1"></i> Add Default Categories
+                      </button>
+                    </form>
+                    {% endif %}
+                    
+                    <button id="toggleCategoryForm" class="btn btn-primary">
+                        <i class="fas fa-plus me-2"></i>Add Category
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -274,7 +294,17 @@
         {% else %}
         <div class="col-12">
             <div class="alert alert-info">
-                You haven't created any categories yet. Create one to organize your expenses!
+                <h4 class="alert-heading"><i class="fas fa-info-circle me-2"></i>No categories found!</h4>
+                <p>You don't have any expense categories set up yet. Categories help you organize and track your expenses more effectively.</p>
+                <hr>
+                <div class="d-flex justify-content-between align-items-center">
+                    <p class="mb-0">You can add categories manually or create a set of default categories to get started.</p>
+                    <form action="{{ url_for('user_create_default_categories') }}" method="POST">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-tags me-1"></i> Create Default Categories
+                        </button>
+                    </form>
+                </div>
             </div>
         </div>
         {% endfor %}

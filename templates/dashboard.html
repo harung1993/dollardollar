@@ -382,131 +382,171 @@
 </div>
 
     <!-- Monthly Breakdown -->
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Monthly Spending Breakdown</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Month</th>
-                                    <th>Total</th>
-                                    <th>Contributors</th>
-                                    <th>Cards Used</th>
-                                    <th>Details</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for month, data in monthly_totals.items()|sort(reverse=true) %}
-                                <tr>
-                                    <td>{{ month }}</td>
-                                    <td>{{ base_currency.symbol }}{{ "%.2f"|format(data.total) }}</td>
-                                    <td>
-                                        <!-- Contributors with amounts -->
-                                        {% for user_id, amount in data.contributors.items() %}
-                                            <div class="mb-1">
-                                                {% for user in users %}
-                                                    {% if user.id == user_id %}
-                                                        <span class="badge" style="background-color: {{ user.user_color|default('#15803d') }};">
-                                                            {{ user.name }}
-                                                        </span>
-                                                    {% endif %}
-                                                {% endfor %}
-                                                <span class="badge bg-success">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
-                                            </div>
-                                        {% endfor %}
-                                    </td>
-                                    <td>
-                                        <!-- Cards used this month -->
-                                        {% for card, amount in data.by_card.items() %}
-                                            <div class="mb-1">
-                                                <span class="badge bg-secondary">{{ card }}</span>
-                                                <span class="badge bg-info">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
-                                            </div>
-                                        {% endfor %}
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-light" type="button" 
-                                                data-bs-toggle="collapse" data-bs-target="#month{{ month|replace('-', '') }}" 
-                                                aria-expanded="false">
-                                            <i class="fas fa-chevron-down"></i> View
-                                        </button>
-                                    </td>
-                                </tr>
-                                <!-- Collapsible Details Row -->
-                                <tr class="bg-dark">
-                                    <td colspan="5" class="p-0">
-                                        <div class="collapse" id="month{{ month|replace('-', '') }}">
-                                            <div class="p-3">
-                                                <h6 class="mb-3">Expense Details for {{ month }}</h6>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Date</th>
-                                                                <th>Description</th>
-                                                                <th>Amount</th>
-                                                                <th>Paid By</th>
-                                                                <th>Card</th>
-                                                                <th>Split</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {% for expense in expenses %}
-                                                                {% if expense.date.strftime('%Y-%m') == month %}
-                                                                    {% set splits = expense_splits[expense.id] %}
-                                                                    <tr>
-                                                                        <td>{{ expense.date.strftime('%d') }}</td>
-                                                                        <td>{{ expense.description }}</td>
-                                                                        <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.amount) }}</td>
-                                                                        <td>{{ splits.payer.name }}</td>
-                                                                        <td>{{ expense.card_used }}</td>
-                                                                        <td>
-                                                                         <!-- Payer's portion -->
-                                                                            {% if splits.payer.amount > 0 %}
-                                                                            <small class="d-block mb-1">
-                                                                                {% set payer_user = get_user_by_id(splits.payer.email) %}
-                                                                                <span class="badge" style="background-color: {{ payer_user.user_color if payer_user and payer_user.user_color else '#15803d' }};">
-                                                                                    {{ splits.payer.name }}
-                                                                                </span>: 
-                                                                                {{ base_currency.symbol }}{{ "%.2f"|format(splits.payer.amount) }}
-                                                                            </small>
-                                                                            {% endif %}
+    <!-- Monthly Breakdown -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Monthly Spending Breakdown</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>Total</th>
+                                <th>Categories</th>
+                                <th>Contributors</th>
+                                <th>Cards Used</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for month, data in monthly_totals.items()|sort(reverse=true) %}
+                            <tr>
+                                <td>{{ month }}</td>
+                                <td>{{ base_currency.symbol }}{{ "%.2f"|format(data.total) }}</td>
+                                <td>
+                                    <!-- Categories for this month -->
+                                    {% set categories_for_month = {} %}
+                                    {% for expense in expenses %}
+                                        {% if expense.date.strftime('%Y-%m') == month and expense.category %}
+                                            {% if expense.category.name in categories_for_month %}
+                                                {% set _ = categories_for_month.update({expense.category.name: categories_for_month[expense.category.name] + expense.amount}) %}
+                                            {% else %}
+                                                {% set _ = categories_for_month.update({expense.category.name: expense.amount}) %}
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    
+                                    {% for category_name, amount in categories_for_month.items()|sort(attribute='1', reverse=true) %}
+                                        <div class="mb-1">
+                                            {% for category in categories %}
+                                                {% if category.name == category_name %}
+                                                    <span class="badge" style="background-color: {{ category.color }};">
+                                                        <i class="fas {{ category.icon }}"></i> {{ category_name }}
+                                                    </span>
+                                                {% endif %}
+                                            {% endfor %}
+                                            <span class="badge bg-info">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                        </div>
+                                    {% endfor %}
+                                    
+                                    {% if not categories_for_month %}
+                                        <span class="text-muted small">No categorized expenses</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <!-- Contributors with amounts -->
+                                    {% for user_id, amount in data.contributors.items() %}
+                                        <div class="mb-1">
+                                            {% for user in users %}
+                                                {% if user.id == user_id %}
+                                                    <span class="badge" style="background-color: {{ user.user_color|default('#15803d') }};">
+                                                        {{ user.name }}
+                                                    </span>
+                                                {% endif %}
+                                            {% endfor %}
+                                            <span class="badge bg-success">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                        </div>
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    <!-- Cards used this month -->
+                                    {% for card, amount in data.by_card.items() %}
+                                        <div class="mb-1">
+                                            <span class="badge bg-secondary">{{ card }}</span>
+                                            <span class="badge bg-info">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                        </div>
+                                    {% endfor %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-light" type="button" 
+                                            data-bs-toggle="collapse" data-bs-target="#month{{ month|replace('-', '') }}" 
+                                            aria-expanded="false">
+                                        <i class="fas fa-chevron-down"></i> View
+                                    </button>
+                                </td>
+                            </tr>
+                            <!-- Collapsible Details Row -->
+                            <tr class="bg-dark">
+                                <td colspan="6" class="p-0">
+                                    <div class="collapse" id="month{{ month|replace('-', '') }}">
+                                        <div class="p-3">
+                                            <h6 class="mb-3">Expense Details for {{ month }}</h6>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Date</th>
+                                                            <th>Description</th>
+                                                            <th>Category</th>
+                                                            <th>Amount</th>
+                                                            <th>Paid By</th>
+                                                            <th>Card</th>
+                                                            <th>Split</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for expense in expenses %}
+                                                            {% if expense.date.strftime('%Y-%m') == month %}
+                                                                {% set splits = expense_splits[expense.id] %}
+                                                                <tr>
+                                                                    <td>{{ expense.date.strftime('%d') }}</td>
+                                                                    <td>{{ expense.description }}</td>
+                                                                    <td>
+                                                                        {% if expense.category %}
+                                                                            <span class="badge" style="background-color: {{ expense.category.color }};">
+                                                                                <i class="fas {{ expense.category.icon }}"></i> {{ expense.category.name }}
+                                                                            </span>
+                                                                        {% else %}
+                                                                            <span class="text-muted">-</span>
+                                                                        {% endif %}
+                                                                    </td>
+                                                                    <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.amount) }}</td>
+                                                                    <td>{{ splits.payer.name }}</td>
+                                                                    <td>{{ expense.card_used }}</td>
+                                                                    <td>
+                                                                     <!-- Payer's portion -->
+                                                                        {% if splits.payer.amount > 0 %}
+                                                                        <small class="d-block mb-1">
+                                                                            {% set payer_user = get_user_by_id(splits.payer.email) %}
+                                                                            <span class="badge" style="background-color: {{ payer_user.user_color if payer_user and payer_user.user_color else '#15803d' }};">
+                                                                                {{ splits.payer.name }}
+                                                                            </span>: 
+                                                                            {{ base_currency.symbol }}{{ "%.2f"|format(splits.payer.amount) }}
+                                                                        </small>
+                                                                        {% endif %}
 
-                                                                            <!-- Others' portions -->
-                                                                            {% for split in splits.splits %}
-                                                                            <small class="d-block mb-1">
-                                                                                {% set split_user = get_user_by_id(split.email) %}
-                                                                                <span class="badge" style="background-color: {{ split_user.user_color if split_user and split_user.user_color else '#15803d' }};">
-                                                                                    {{ split.name }}
-                                                                                </span>: 
-                                                                                {{ base_currency.symbol }}{{ "%.2f"|format(split.amount) }}
-                                                                                </small>
-                                                                            {% endfor %}
-                                                                        </td>
-                                                                    </tr>
-                                                                {% endif %}
-                                                            {% endfor %}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
+                                                                        <!-- Others' portions -->
+                                                                        {% for split in splits.splits %}
+                                                                        <small class="d-block mb-1">
+                                                                            {% set split_user = get_user_by_id(split.email) %}
+                                                                            <span class="badge" style="background-color: {{ split_user.user_color if split_user and split_user.user_color else '#15803d' }};">
+                                                                                {{ split.name }}
+                                                                            </span>: 
+                                                                            {{ base_currency.symbol }}{{ "%.2f"|format(split.amount) }}
+                                                                            </small>
+                                                                        {% endfor %}
+                                                                    </td>
+                                                                </tr>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
-    
 </div>
 {% endblock %}
 {% block scripts %}

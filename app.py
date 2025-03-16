@@ -1911,9 +1911,19 @@ def add_expense():
             # Multiply by the rate to convert from selected currency to base currency
             # For example, if 1 INR = 0.012 USD, then 1 * 0.012 = 0.012 USD
             amount = original_amount * selected_currency.rate_to_base
+            
+            # Process category - set to "Other" if not provided
             category_id = request.form.get('category_id')
             if not category_id or category_id.strip() == '':
-                category_id = None
+                # Find the "Other" category for this user
+                other_category = Category.query.filter_by(
+                    name='Other',
+                    user_id=current_user.id,
+                    is_system=True
+                ).first()
+                
+                # If "Other" category doesn't exist, leave as None
+                category_id = other_category.id if other_category else None
             
             # Create expense record
             expense = Expense(
@@ -2128,6 +2138,19 @@ def update_expense(expense_id):
         split_details = None
         if request.form.get('split_details'):
             split_details = request.form.get('split_details')
+        category_id = request.form.get('category_id')
+
+        #catrgory section
+        if not category_id or not category_id.strip():
+            # Find "Other" category (system category)
+            other_category = Category.query.filter_by(
+                name='Other', 
+                user_id=current_user.id,
+                is_system=True
+            ).first()
+            
+            # Use Other category id if found, otherwise leave as None
+            category_id = other_category.id if other_category else None
         
         # Get currency information
         currency_code = request.form.get('currency_code', 'USD')
@@ -2166,12 +2189,7 @@ def update_expense(expense_id):
         expense.paid_by = request.form['paid_by']
         expense.group_id = request.form.get('group_id') if request.form.get('group_id') and request.form.get('group_id') != '' else None
         expense.split_with = split_with_str
-
-        # Properly handle category_id
-        category_id = request.form.get('category_id')
-        if not category_id or category_id.strip() == '':
-            category_id = None
-        expense.category_id = category_id        
+        expense.category_id = category_id
         
         # Handle tags - first remove all existing tags
         expense.tags = []
@@ -2334,11 +2352,13 @@ def recurring():
     users = User.query.all()
     groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
     currencies = Currency.query.all()
+    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     return render_template('recurring.html', 
                           recurring_expenses=recurring_expenses, 
                           users=users,
                           currencies=currencies,
                           base_currency=base_currency,
+                          categories=categories,
                           groups=groups)
 
 @app.route('/add_recurring', methods=['POST'])
@@ -2379,13 +2399,22 @@ def add_recurring():
                 flash(error_msg)
                 return redirect(url_for('recurring'))
         
-        # Process split details if provided
+        # Process category - set to "Other" if not provided
         category_id = request.form.get('category_id')
         if not category_id or category_id.strip() == '':
-            category_id = None
+            # Find the "Other" category for this user
+            other_category = Category.query.filter_by(
+                name='Other',
+                user_id=current_user.id,
+                is_system=True
+            ).first()
+            
+            # If "Other" category doesn't exist, leave as None
+            category_id = other_category.id if other_category else None
+            
+        # Process split details if provided
         split_details = None
         if request.form.get('split_details'):
-            import json
             split_details = request.form.get('split_details')
         
         # Get currency information
@@ -2525,42 +2554,133 @@ def toggle_recurring(recurring_id):
 @app.route('/delete_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
 def delete_recurring(recurring_id):
+    recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
+    
+    # Security check
+    if recurring_expense.user_id != current_user.id:
+        flash('You don\'t have permission to delete this recurring expense')
+        return redirect(url_for('recurring'))
+    
+    db.session.delete(recurring_expense)
+    db.session.commit()
+    
+    flash('Recurring expense deleted successfully')
+    
+    return redirect(url_for('recurring'))
+
+@app.route('/edit_recurring/<int:recurring_id>')
+@login_required_dev
+def edit_recurring_page(recurring_id):
+    """Load the recurring expenses page with form pre-filled for editing"""
+    # Find the recurring expense
+    recurring = RecurringExpense.query.get_or_404(recurring_id)
+    
+    # Security check: Only the creator can edit
+    if recurring.user_id != current_user.id:
+        flash('You do not have permission to edit this recurring expense')
+        return redirect(url_for('recurring'))
+    
+    # Prepare the same data needed for the recurring page
+    base_currency = get_base_currency()
+    recurring_expenses = RecurringExpense.query.filter(
+        or_(
+            RecurringExpense.user_id == current_user.id,
+            RecurringExpense.split_with.like(f'%{current_user.id}%')
+        )
+    ).all()
+    users = User.query.all()
+    groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
+    currencies = Currency.query.all()
+    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    
+    # Return the template with the recurring expense data and flags for edit mode
+    return render_template('recurring.html', 
+                          recurring_expenses=recurring_expenses, 
+                          users=users,
+                          currencies=currencies,
+                          base_currency=base_currency,
+                          groups=groups,
+                          categories=categories,
+                          edit_recurring=recurring,  # Pass the recurring expense to edit
+                          auto_open_form=True)       # Flag to auto-open the form
+
+@app.route('/update_recurring/<int:recurring_id>', methods=['POST'])
+@login_required_dev
+def update_recurring(recurring_id):
+    """Update an existing recurring expense"""
     try:
-        recurring_expense = RecurringExpense.query.get_or_404(recurring_id)
+        # Find the recurring expense
+        recurring = RecurringExpense.query.get_or_404(recurring_id)
         
-        # Security check
-        if recurring_expense.user_id != current_user.id:
-            error_msg = "You don't have permission to delete this recurring expense"
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({'success': False, 'message': error_msg}), 403
-            else:
-                flash(error_msg)
+        # Security check: Only the creator can update the recurring expense
+        if recurring.user_id != current_user.id:
+            flash('You do not have permission to edit this recurring expense')
+            return redirect(url_for('recurring'))
+        
+        # Check if this is a personal expense (no splits)
+        is_personal_expense = request.form.get('personal_expense') == 'on'
+        
+        # Handle split_with based on whether it's a personal expense
+        if is_personal_expense:
+            # For personal expenses, we set split_with to empty
+            split_with_str = None
+        else:
+            # Handle multi-select for split_with
+            split_with_ids = request.form.getlist('split_with')
+            if not split_with_ids:
+                flash('Please select at least one person to split with or mark as personal expense.')
                 return redirect(url_for('recurring'))
+            
+            split_with_str = ','.join(split_with_ids) if split_with_ids else None
         
-        db.session.delete(recurring_expense)
+        # Parse date with error handling
+        try:
+            start_date = datetime.strptime(request.form['start_date'], '%Y-%m-%d')
+            end_date = None
+            if request.form.get('end_date'):
+                end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d')
+        except ValueError:
+            flash('Invalid date format. Please use YYYY-MM-DD format.')
+            return redirect(url_for('recurring'))
+        
+        # Process split details if provided
+        category_id = request.form.get('category_id')
+        if category_id and not category_id.strip():
+            category_id = None
+            
+        split_details = None
+        if request.form.get('split_details'):
+            split_details = request.form.get('split_details')
+        
+        # Update recurring expense fields
+        recurring.description = request.form['description']
+        recurring.amount = float(request.form['amount'])
+        recurring.card_used = request.form['card_used']
+        recurring.split_method = request.form['split_method']
+        recurring.split_value = float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0
+        recurring.split_details = split_details
+        recurring.paid_by = request.form['paid_by']
+        recurring.group_id = request.form.get('group_id') if request.form.get('group_id') and request.form.get('group_id') != '' else None
+        recurring.split_with = split_with_str
+        recurring.frequency = request.form['frequency']
+        recurring.start_date = start_date
+        recurring.end_date = end_date
+        recurring.category_id = category_id
+        
+        # Handle currency if provided
+        if request.form.get('currency_code'):
+            recurring.currency_code = request.form.get('currency_code')
+        
+        # Save changes
         db.session.commit()
+        flash('Recurring expense updated successfully!')
         
-        success_msg = 'Recurring expense deleted successfully'
-        
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({
-                'success': True,
-                'message': success_msg
-            })
-        else:
-            flash(success_msg)
-            return redirect(url_for('recurring'))
-            
     except Exception as e:
-        app.logger.error(f"Error deleting recurring expense: {str(e)}")
-        error_msg = f'Error: {str(e)}'
+        db.session.rollback()
+        app.logger.error(f"Error updating recurring expense {recurring_id}: {str(e)}")
+        flash(f'Error: {str(e)}')
         
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({'success': False, 'message': error_msg}), 500
-        else:
-            flash(error_msg)
-            return redirect(url_for('recurring'))
-            
+    return redirect(url_for('recurring'))
 #--------------------
 # ROUTES: GROUPS
 #--------------------
@@ -3546,7 +3666,37 @@ def export_transactions():
 #--------------------
 # ROUTES: Categories
 #--------------------
+# Add these functions to your app.py file
 
+def has_default_categories(user_id):
+    """Check if a user already has the default category set"""
+    # We'll check for a few specific default categories to determine if defaults were already created
+    default_category_names = ["Housing", "Food", "Transportation", "Shopping", "Entertainment", "Health"]
+    
+    # Count how many of these default categories the user has
+    match_count = Category.query.filter(
+        Category.user_id == user_id,
+        Category.name.in_(default_category_names),
+        Category.parent_id == None  # Top-level categories only
+    ).count()
+    
+    # If they have at least 4 of these categories, assume defaults were created
+    return match_count >= 4
+
+@app.route('/categories/create_defaults', methods=['POST'])
+@login_required_dev
+def user_create_default_categories():
+    """Allow a user to create default categories for themselves"""
+    # Check if user already has default categories
+    if has_default_categories(current_user.id):
+        flash('You already have the default categories.')
+        return redirect(url_for('manage_categories'))
+    
+    # Create default categories
+    create_default_categories(current_user.id)
+    flash('Default categories created successfully!')
+    
+    return redirect(url_for('manage_categories'))
 
 
 @app.route('/categories')

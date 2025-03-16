@@ -275,6 +275,13 @@
             list-style: none;
             padding: 0;
             margin: 1rem 0;
+            
+            /* Change these properties */
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0; /* Important for Firefox */
+            
+            /* Keep these */
             display: flex;
             flex-direction: column;
         }
@@ -448,7 +455,16 @@
         .sidebar-toggle:hover {
             transform: scale(1.1);
         }
-        
+        .sidebar.mini .sidebar-logout {
+            padding: 0.5rem 0;
+            justify-content: center;
+        }
+
+        /* Ensure the user section remains visible in mini mode */
+        .sidebar.mini .sidebar-user {
+            padding: 0.5rem 0;
+            margin-bottom: 0;
+        }
         .sidebar-toggle .fa-bars {
             display: block;
         }
@@ -668,19 +684,6 @@
     {% if current_user.is_authenticated %}
     <!-- Sidebar with Improved Navigation Structure -->
     <div class="sidebar" id="sidebar">
-        <!-- User profile at the top of sidebar -->
-        <div class="sidebar-user">
-            <div class="user-avatar" style="background-color: {{ current_user.user_color }};">
-                {{ current_user.name[0] | upper }}
-            </div>
-            <div class="user-details">
-                <div class="user-name">{{ current_user.name }}</div>
-                <div class="user-email">{{ current_user.id }}</div>
-            </div>
-            <button id="collapseSidebar" class="btn btn-sm btn-outline-light ms-auto sidebar-collapse-btn">
-                <i class="fas fa-angles-left"></i>
-            </button>
-        </div>
         
         <!-- Toggle full/mini sidebar for mini mode -->
         <div class="sidebar-mini-toggle">
