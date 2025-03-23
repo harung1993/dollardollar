@@ -273,7 +273,7 @@ class Expense(db.Model):
     description = db.Column(db.String(200), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    card_used = db.Column(db.String(50), nullable=False)
+    card_used = db.Column(db.String(150), nullable=False)
     split_method = db.Column(db.String(20), nullable=False)  # 'equal', 'custom', 'percentage'
     split_value = db.Column(db.Float)  # deprecated - kept for backward compatibility
     paid_by = db.Column(db.String(50), nullable=False)
@@ -520,7 +520,7 @@ class RecurringExpense(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     description = db.Column(db.String(200), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    card_used = db.Column(db.String(50), nullable=False)
+    card_used = db.Column(db.String(150), nullable=False)
     split_method = db.Column(db.String(20), nullable=False)  # 'equal', 'custom', 'percentage'
     split_value = db.Column(db.Float, nullable=True)
     split_details = db.Column(db.Text, nullable=True)  # JSON string
@@ -1856,9 +1856,31 @@ def convert_currency(amount, from_code, to_code):
     if not from_currency or not to_currency:
         return amount  # Return original if either currency not found
     
-    # Convert to base currency first, then to target currency
-    amount_in_base = amount / from_currency.rate_to_base
-    return amount_in_base * to_currency.rate_to_base
+    # Get base currency for reference
+    base_currency = Currency.query.filter_by(is_base=True).first()
+    if not base_currency:
+        return amount  # Cannot convert without a base currency
+    
+    # First convert amount to base currency
+    if from_code == base_currency.code:
+        # Amount is already in base currency
+        amount_in_base = amount
+    else:
+        # Convert from source currency to base currency
+        # The rate_to_base represents how much of the base currency 
+        # equals 1 unit of this currency
+        amount_in_base = amount * from_currency.rate_to_base
+    
+    # Then convert from base currency to target currency
+    if to_code == base_currency.code:
+        # Target is base currency, so we're done
+        return amount_in_base
+    else:
+        # Convert from base currency to target currency
+        # We divide by the target currency's rate_to_base to get 
+        # the equivalent amount in the target currency
+        return amount_in_base / to_currency.rate_to_base
+
 def create_scheduled_expenses():
     """Create expense instances for active recurring expenses"""
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -4429,6 +4451,9 @@ def get_expense_edit_form(expense_id):
 # ROUTES: Accounts and Imports 
 #--------------------
 
+# This function should be added to the route that handles the accounts page
+# Update the accounts route in app.py
+
 @app.route('/accounts')
 @login_required_dev
 def accounts():
@@ -4436,17 +4461,50 @@ def accounts():
     # Get all user accounts
     user_accounts = Account.query.filter_by(user_id=current_user.id).all()
     
-    # Calculate financial summary
-    total_assets = sum(account.balance for account in user_accounts 
-                    if account.type in ['checking', 'savings', 'investment'] and account.balance > 0)
+    # Get user's preferred currency for conversion and display
+    user_currency = None
+    if current_user.default_currency_code:
+        user_currency = Currency.query.filter_by(code=current_user.default_currency_code).first()
     
-    total_liabilities = abs(sum(account.balance for account in user_accounts 
-                          if account.type in ['credit', 'loan'] or account.balance < 0))
+    # Fall back to base currency if user has no preference
+    if not user_currency:
+        user_currency = Currency.query.filter_by(is_base=True).first()
+        
+    # If somehow we still don't have a currency, use USD as ultimate fallback
+    if not user_currency:
+        user_currency = Currency.query.filter_by(code='USD').first() or Currency(code='USD', name='US Dollar', symbol='$', rate_to_base=1.0)
+        
+    user_currency_code = user_currency.code
     
+    # Calculate financial summary with currency conversion
+    total_assets = 0
+    total_liabilities = 0
+    
+    for account in user_accounts:
+        # Get account balance in account's currency
+        balance = account.balance or 0
+        
+        # Skip near-zero balances
+        if abs(balance) < 0.01:
+            continue
+            
+        # Get account's currency code
+        account_currency = account.currency_code or user_currency_code
+        
+        # Convert to user's preferred currency if different
+        if account_currency != user_currency_code:
+            converted_balance = convert_currency(balance, account_currency, user_currency_code)
+        else:
+            converted_balance = balance
+            
+        # Add to appropriate total
+        if account.type in ['checking', 'savings', 'investment'] and converted_balance > 0:
+            total_assets += converted_balance
+        elif account.type in ['credit', 'loan'] or converted_balance < 0:
+            total_liabilities += abs(converted_balance)  # Store as positive amount
+    
+    # Calculate net worth
     net_worth = total_assets - total_liabilities
-    
-    # Get base currency for display
-    base_currency = get_base_currency()
     
     # Get all currencies for the form
     currencies = Currency.query.all()
@@ -4456,7 +4514,7 @@ def accounts():
                           total_assets=total_assets,
                           total_liabilities=total_liabilities,
                           net_worth=net_worth,
-                          base_currency=base_currency,
+                          user_currency=user_currency,
                           currencies=currencies)
 
 
@@ -4962,14 +5020,11 @@ def simplefin_fetch_accounts():
         app.logger.error(f"Error fetching SimpleFin accounts: {str(e)}")
         flash(f'Error fetching accounts: {str(e)}')
         return redirect(url_for('advanced'))
+
 @app.route('/simplefin/add_accounts', methods=['POST'])
 @login_required_dev
 def simplefin_add_accounts():
     """Process selected accounts to add to the system"""
-    if not app.config['SIMPLEFIN_ENABLED']:
-        flash('SimpleFin integration is not enabled.')
-        return redirect(url_for('advanced'))
-    
     # Get selected account IDs from form
     account_ids = request.form.getlist('account_ids')
     if not account_ids:
@@ -4987,7 +5042,7 @@ def simplefin_add_accounts():
         # Decode the access URL
         access_url = base64.b64decode(simplefin_settings.access_url.encode()).decode()
         
-        # Fetch accounts and transactions again (instead of relying on session data)
+        # Fetch accounts and transactions
         raw_data = simplefin_client.get_accounts_with_transactions(access_url, days_back=30)
         
         if not raw_data:
@@ -4998,7 +5053,23 @@ def simplefin_add_accounts():
         accounts = simplefin_client.process_raw_accounts(raw_data)
         
         # Filter to only selected accounts
-        selected_accounts = [acc for acc in accounts if acc.get('id') in account_ids]
+        selected_accounts = []
+        for account in accounts:
+            if account.get('id') in account_ids:
+                # Apply customizations from form data
+                account_id = account.get('id')
+                
+                # Get custom account name if provided
+                custom_name = request.form.get(f'account_name_{account_id}')
+                if custom_name and custom_name.strip():
+                    account['name'] = custom_name.strip()
+                
+                # Get custom account type if provided
+                custom_type = request.form.get(f'account_type_{account_id}')
+                if custom_type:
+                    account['type'] = custom_type
+                
+                selected_accounts.append(account)
         
         # Count for success message
         accounts_added = 0
@@ -5025,14 +5096,15 @@ def simplefin_add_accounts():
                 existing_account.last_sync = datetime.utcnow()
                 existing_account.external_id = sf_account.get('id')
                 existing_account.status = 'active'
+                existing_account.type = sf_account.get('type')  # Apply custom type
                 db.session.commit()
                 accounts_added += 1
                 account_obj = existing_account
             else:
-                # Create new account
+                # Create new account with custom values
                 new_account = Account(
-                    name=sf_account.get('name'),
-                    type=sf_account.get('type'),
+                    name=sf_account.get('name'),  # Custom name from form
+                    type=sf_account.get('type'),  # Custom type from form
                     institution=sf_account.get('institution'),
                     balance=sf_account.get('balance', 0),
                     currency_code=sf_account.get('currency_code', default_currency),
@@ -5097,7 +5169,7 @@ def simplefin_add_accounts():
         flash(f'Error adding accounts: {str(e)}')
     
     return redirect(url_for('accounts'))
-
+        
 @app.route('/sync_account/<int:account_id>', methods=['POST'])
 @login_required_dev
 def sync_account(account_id):
@@ -6869,10 +6941,13 @@ def utility_processor():
             'spent': budget.calculate_spent_amount(),
             'remaining': budget.get_remaining_amount()
         }
-    
+    def template_convert_currency(amount, from_code, to_code):
+        """Make convert_currency available to templates"""
+        return convert_currency(amount, from_code, to_code)
     return {
         # Previous functions...
-        'get_budget_status_for_category': get_budget_status_for_category
+        'get_budget_status_for_category': get_budget_status_for_category,
+        'convert_currency': template_convert_currency 
     }
 @app.route('/budgets/trends-data')
 @login_required_dev

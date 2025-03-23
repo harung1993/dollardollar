@@ -7,40 +7,52 @@
     <!-- Account Balance Summary -->
     {% if current_user.accounts %}
     <div class="card mt-4">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Account Balance Summary</h5>
+            <span class="badge bg-secondary">All values in {{ user_currency.code }}</span>
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-8">
-                    <canvas id="accountBalanceChart" height="250"></canvas>
-                </div>
-                <div class="col-md-4">
-                    <div class="list-group">
-                        <div class="list-group-item bg-dark border-secondary d-flex justify-content-between">
-                            <strong>Total Assets:</strong>
-                            <span class="text-success">
-                                {{ base_currency.symbol }}{{ "%.2f"|format(total_assets) }}
-                            </span>
+                <!-- Move summary to the top for better visibility -->
+                <div class="col-12 mb-4">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="card bg-dark text-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-light mb-2">Total Assets</h6>
+                                    <h4 class="text-success">{{ user_currency.symbol }}{{ "%.2f"|format(total_assets) }}</h4>
+                                </div>
+                            </div>
                         </div>
-                        <div class="list-group-item bg-dark border-secondary d-flex justify-content-between">
-                            <strong>Total Liabilities:</strong>
-                            <span class="text-danger">
-                                {{ base_currency.symbol }}{{ "%.2f"|format(total_liabilities) }}
-                            </span>
+                        <div class="col-md-4">
+                            <div class="card bg-dark text-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-light mb-2">Total Liabilities</h6>
+                                    <h4 class="text-danger">{{ user_currency.symbol }}{{ "%.2f"|format(total_liabilities) }}</h4>
+                                </div>
+                            </div>
                         </div>
-                        <div class="list-group-item bg-dark border-secondary d-flex justify-content-between">
-                            <strong>Net Worth:</strong>
-                            <span class="{% if net_worth >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                {{ base_currency.symbol }}{{ "%.2f"|format(net_worth) }}
-                            </span>
+                        <div class="col-md-4">
+                            <div class="card bg-dark text-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-light mb-2">Net Worth</h6>
+                                    <h4 class="{% if net_worth >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {{ user_currency.symbol }}{{ "%.2f"|format(net_worth) }}
+                                    </h4>
+                                </div>
+                            </div>
                         </div>
                     </div>
+                </div>
+                
+                <!-- Chart takes full width now and is below the summary -->
+                <div class="col-12">
+                    <canvas id="accountBalanceChart" height="250"></canvas>
                 </div>
             </div>
         </div>
     </div>
-    {% endif %}
+{% endif %}
 
 
     <div class="card mb-4">
@@ -136,10 +148,10 @@
                                     {% if account.currency %}
                                         {{ account.currency.symbol }}{{ "%.2f"|format(account.balance) }}
                                     {% else %}
-                                        {{ base_currency.symbol }}{{ "%.2f"|format(account.balance) }}
+                                        {{ user_currency.symbol }}{{ "%.2f"|format(account.balance) }}
                                     {% endif %}
                                 </td>
-                                <td>{{ account.currency.code if account.currency else base_currency.code }}</td>
+                                <td>{{ account.currency.code if account.currency else user_currency.code }}</td>
                                 <td>{{ account.last_sync.strftime('%Y-%m-%d %H:%M') if account.last_sync else "Never" }}</td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
@@ -284,80 +296,92 @@
     }
     
     // Account Balance Chart initialization
-    function initializeAccountChart() {
-        {% if current_user.accounts %}
-        const chartElement = document.getElementById('accountBalanceChart');
-        if (!chartElement) return;
-        
-        const ctx = chartElement.getContext('2d');
-        
-        // Prepare data for chart with proper formatting and handling negative values
-        const accountData = {
-            labels: [
+    // Function to initialize the account balance chart with proper currency conversion
+function initializeAccountChart() {
+    {% if current_user.accounts %}
+    const chartElement = document.getElementById('accountBalanceChart');
+    if (!chartElement) return;
+    
+    const ctx = chartElement.getContext('2d');
+    
+    // User's preferred currency for reference in tooltips
+    const userCurrency = "{{ user_currency.code }}";
+    const userCurrencySymbol = "{{ user_currency.symbol }}";
+    
+    // Prepare data for chart with proper formatting and handling negative values
+    const accountData = {
+        labels: [
+            {% for account in current_user.accounts %}
+                "{{ account.name }} ({{ account.currency.code if account.currency else user_currency.code }})",
+            {% endfor %}
+        ],
+        datasets: [{
+            label: 'Account Balance',
+            data: [
                 {% for account in current_user.accounts %}
-                    "{{ account.name }}",
+                    // If account currency differs from user's preferred currency, we need the converted value
+                    {{ convert_currency(account.balance, account.currency_code, user_currency.code) if account.currency_code and account.currency_code != user_currency.code else account.balance }},
                 {% endfor %}
             ],
-            datasets: [{
-                label: 'Account Balance',
-                data: [
-                    {% for account in current_user.accounts %}
-                        {{ account.balance }},
-                    {% endfor %}
-                ],
-                backgroundColor: [
-                    'rgba(54, 162, 235, 0.7)',
-                    'rgba(75, 192, 192, 0.7)',
-                    'rgba(255, 206, 86, 0.7)',
-                    'rgba(153, 102, 255, 0.7)',
-                    'rgba(255, 159, 64, 0.7)',
-                    'rgba(255, 99, 132, 0.7)',
-                    'rgba(199, 199, 199, 0.7)',
-                ],
-                borderColor: [
-                    'rgba(54, 162, 235, 1)',
-                    'rgba(75, 192, 192, 1)',
-                    'rgba(255, 206, 86, 1)',
-                    'rgba(153, 102, 255, 1)',
-                    'rgba(255, 159, 64, 1)',
-                    'rgba(255, 99, 132, 1)',
-                    'rgba(199, 199, 199, 1)',
-                ],
-                borderWidth: 1
-            }]
-        };
-        
-        const accountBalanceChart = new Chart(ctx, {
-            type: 'doughnut',
-            data: accountData,
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: {
-                            color: '#ffffff'
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.label || '';
-                                if (label) {
-                                    label += ': ';
-                                }
-                                label += '{{ base_currency.symbol }}' + Number(context.parsed).toFixed(2);
-                                return label;
+            backgroundColor: [
+                'rgba(54, 162, 235, 0.7)',
+                'rgba(75, 192, 192, 0.7)',
+                'rgba(255, 206, 86, 0.7)',
+                'rgba(153, 102, 255, 0.7)',
+                'rgba(255, 159, 64, 0.7)',
+                'rgba(255, 99, 132, 0.7)',
+                'rgba(199, 199, 199, 0.7)',
+            ],
+            borderColor: [
+                'rgba(54, 162, 235, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255, 99, 132, 1)',
+                'rgba(199, 199, 199, 1)',
+            ],
+            borderWidth: 1
+        }]
+    };
+    
+    const accountBalanceChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: accountData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right',
+                    labels: {
+                        color: '#ffffff'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.label || '';
+                            if (label) {
+                                label += ': ';
                             }
+                            // Show user's preferred currency symbol and amount
+                            label += userCurrencySymbol + Number(context.parsed).toFixed(2);
+                            
+                            // Add note about conversion if original currency is different
+                            if (label.includes('(') && !label.includes('(' + userCurrency + ')')) {
+                                label += ' (' + userCurrency + ' equivalent)';
+                            }
+                            
+                            return label;
                         }
                     }
                 }
             }
-        });
-        {% endif %}
-    }
-
+        }
+    });
+    {% endif %}
+}
     function deleteAccount(accountId) {
         if (!accountId) return;
         
