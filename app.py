@@ -1,121 +1,91 @@
 r"""29a41de6a866d56c36aba5159f45257c"""
+
 import os
-from dotenv import load_dotenv
-from flask import Flask, render_template, send_file, request, jsonify, request, redirect, url_for, flash, session
-import csv
-import hashlib
-import io
-import re   
-from flask_apscheduler import APScheduler
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask import (
+    Flask,
+    render_template,
+    send_file,
+    request,
+    jsonify,
+    redirect,
+    url_for,
+    flash,
+    session,
+)
+import re
+from flask_login import (
+    UserMixin,
+    login_user,
+    login_required,
+    logout_user,
+    current_user,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import calendar
 from functools import wraps
 import logging
 from sqlalchemy import func, or_, and_
-import json
 import secrets
-from datetime import timedelta
-from flask_mail import Mail, Message
+from flask_mail import Message
 from flask_migrate import Migrate
 import ssl
 import requests
-import json
 from sqlalchemy import inspect, text
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from simplefin_client import SimpleFin
 from flask import session, request, jsonify, url_for, flash, redirect
 from datetime import datetime, timedelta
-import uuid
-import json
 import base64
 import pytz
+from config import get_config
+from extensions import db, login_manager, mail, migrate, scheduler
 
-os.environ['OPENSSL_LEGACY_PROVIDER'] = '1'
+# Development user credentials from environment
+DEV_USER_EMAIL = os.getenv('DEV_USER_EMAIL', 'dev@example.com')
+DEV_USER_PASSWORD = os.getenv('DEV_USER_PASSWORD', 'dev')
+os.environ["OPENSSL_LEGACY_PROVIDER"] = "1"
 
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
 except AttributeError:
     pass
-#--------------------
-# SETUP AND CONFIGURATION
-#--------------------
 
-# Load environment variables
-load_dotenv()
+def create_app(config_object=None):
+    # App Factory
+    app = Flask(__name__)
 
-# Development mode configuration
-app = Flask(__name__)
+    if config_object is None:
+        config_object = get_config()
+    app.config.from_object(config_object)
+        
+    # Initialize extensions with the app
+    db.init_app(app)
+    migrate.init_app(app, db)
+    login_manager.init_app(app)
+    mail.init_app(app)
+    scheduler.init_app(app)
 
-# Configure from environment variables with sensible defaults
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback_secret_key_change_in_production')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('SQLALCHEMY_DATABASE_URI', 'sqlite:///instance/expenses.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['DEVELOPMENT_MODE'] = os.getenv('DEVELOPMENT_MODE', 'True').lower() == 'true'
-app.config['DISABLE_SIGNUPS'] = os.environ.get('DISABLE_SIGNUPS', 'False').lower() == 'true'  # Default to allowing signups
-app.config['LOCAL_LOGIN_DISABLE'] = os.getenv('LOCAL_LOGIN_DISABLE', 'False').lower() == 'true' # Default to false to allow local logins
+    return app
 
-app.config['SIMPLEFIN_ENABLED'] = os.getenv('SIMPLEFIN_ENABLED', 'True').lower() == 'true'
-app.config['SIMPLEFIN_SETUP_TOKEN_URL'] = os.getenv('SIMPLEFIN_SETUP_TOKEN_URL', 'https://beta-bridge.simplefin.org/setup-token')
-
-
-
-# Email configuration from environment variables
-app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
-app.config['MAIL_USE_SSL'] = os.getenv('MAIL_USE_SSL', 'False').lower() == 'true'
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', os.getenv('MAIL_USERNAME'))
-
-# Initialize scheduler
-scheduler = APScheduler()
-scheduler.init_app(app)
+app = create_app()
+logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
 
 @scheduler.task('cron', id='monthly_reports', day=1, hour=1, minute=0)
 def scheduled_monthly_reports():
     """Run on the 1st day of each month at 1:00 AM"""
     send_automatic_monthly_reports()
-
-
 @scheduler.task('cron', id='simplefin_sync', hour=23, minute=0)
 def scheduled_simplefin_sync():
     """Run every day at 11:00 PM"""
     sync_all_simplefin_accounts()
-
-# Start the scheduler
 scheduler.start()
-
 
 simplefin_client = SimpleFin(app)
 
-mail = Mail(app)
-
-
-# Logging configuration
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-logging.basicConfig(level=getattr(logging, log_level))
-
-# Development user credentials from environment
-DEV_USER_EMAIL = os.getenv('DEV_USER_EMAIL', 'dev@example.com')
-DEV_USER_PASSWORD = os.getenv('DEV_USER_PASSWORD', 'dev')
-
 oidc_enabled = setup_oidc_config(app)
-db = SQLAlchemy(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
-
-
-migrate = Migrate(app, db)
-
-
-
 
 #--------------------
 # DATABASE MODELS
