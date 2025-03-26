@@ -877,27 +877,33 @@
                                 <td>{{ base_currency.symbol }}{{ "%.2f"|format(data.total) }}</td>
                                 <td>
                                     <!-- Categories for this month -->
+                                    <!-- Replace the Categories column code in dashboard.html with this: -->
+                                    <!-- Categories for this month -->
                                     {% set categories_for_month = {} %}
                                     {% for expense in expenses %}
                                         {% if expense.date.strftime('%Y-%m') == month and expense.category and (not expense.transaction_type or expense.transaction_type == 'expense') %}
                                             {% if expense.category.name in categories_for_month %}
-                                                {% set _ = categories_for_month.update({expense.category.name: categories_for_month[expense.category.name] + expense.amount}) %}
+                                                {% set _ = categories_for_month.update({expense.category.name: {
+                                                    'amount': categories_for_month[expense.category.name].amount + expense.amount,
+                                                    'color': expense.category.color,
+                                                    'icon': expense.category.icon
+                                                }}) %}
                                             {% else %}
-                                                {% set _ = categories_for_month.update({expense.category.name: expense.amount}) %}
+                                                {% set _ = categories_for_month.update({expense.category.name: {
+                                                    'amount': expense.amount,
+                                                    'color': expense.category.color,
+                                                    'icon': expense.category.icon
+                                                }}) %}
                                             {% endif %}
                                         {% endif %}
                                     {% endfor %}
                                     
-                                    {% for category_name, amount in categories_for_month.items()|sort(attribute='1', reverse=true) %}
+                                    {% for category_name, data in categories_for_month.items()|sort(attribute='1.amount', reverse=true) %}
                                         <div class="mb-1">
-                                            {% for category in categories %}
-                                                {% if category.name == category_name %}
-                                                    <span class="badge" style="background-color: {{ category.color }};">
-                                                        <i class="fas {{ category.icon }}"></i> {{ category_name }}
-                                                    </span>
-                                                {% endif %}
-                                            {% endfor %}
-                                            <span class="badge bg-info">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                            <span class="badge" style="background-color: {{ data.color }};">
+                                                <i class="fas {{ data.icon }}"></i> {{ category_name }}
+                                            </span>
+                                            <span class="badge bg-info">{{ base_currency.symbol }}{{ "%.2f"|format(data.amount) }}</span>
                                         </div>
                                     {% endfor %}
                                     
@@ -1888,14 +1894,19 @@ function setupAssetDebtChart() {
     let assetData = {{ asset_trends|tojson|safe }};
     let debtData = {{ debt_trends|tojson|safe }};
     
-    // Fallback if no data
-    if (!months || months.length === 0) {
-        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-        assetData = [5000, 5500, 6000, 5800, 6200, 6500];
-        debtData = [2000, 1800, 1600, 1500, 1400, 1300];
+    // Check if we have actual data
+    if (!months || months.length === 0 || assetData.length === 0) {
+        // No data - show message instead of chart
+        ctx.height = 150; // Set minimum height for message
+        const noDataMsg = document.createElement('div');
+        noDataMsg.className = 'text-center py-4';
+        noDataMsg.innerHTML = '<p class="text-muted">No asset or debt data available yet. Add accounts to see your financial trends.</p>';
+        ctx.parentNode.insertBefore(noDataMsg, ctx);
+        ctx.style.display = 'none';
+        return;
     }
     
-    // Create the chart
+    // Create the chart with actual data
     new Chart(ctx, {
         type: 'line',
         data: {
@@ -1957,13 +1968,11 @@ function setupAssetDebtChart() {
     });
 }
 
-
-
-
-
 function setupCategoryDonutChart() {
     // Get or create category data
     const categoriesToUse = [];
+    const ctx = document.getElementById('categoryDonutChart');
+    if (!ctx) return;
     
     // Instead of complex Jinja2 processing, let's use a safer approach
     // First check if we have categories data in the page
@@ -1974,26 +1983,24 @@ function setupCategoryDonutChart() {
         categoryData.forEach(cat => {
             categoriesToUse.push(cat);
         });
-    } else {
-        // Use sample data if no categories are available
-        categoriesToUse.push(
-            { name: 'Food', amount: 850, color: '#FF6B6B' },
-            { name: 'Housing', amount: 1200, color: '#4ECDC4' },
-            { name: 'Transportation', amount: 400, color: '#FF9F1C' },
-            { name: 'Entertainment', amount: 300, color: '#7785AC' },
-            { name: 'Utilities', amount: 250, color: '#5D5D5D' }
-        );
     }
     
-    // If no categories with data, use sample data
+    // If no categories with data, show a message instead of using sample data
     if (categoriesToUse.length === 0) {
-        categoriesToUse.push(
-            { name: 'Food', amount: 850, color: '#FF6B6B' },
-            { name: 'Housing', amount: 1200, color: '#4ECDC4' },
-            { name: 'Transportation', amount: 400, color: '#FF9F1C' },
-            { name: 'Entertainment', amount: 300, color: '#7785AC' },
-            { name: 'Utilities', amount: 250, color: '#5D5D5D' }
-        );
+        // No data - show message instead of chart
+        ctx.height = 150; // Set minimum height for message
+        const noDataMsg = document.createElement('div');
+        noDataMsg.className = 'text-center py-4';
+        noDataMsg.innerHTML = '<p class="text-muted">No category spending data available yet. Add some transactions with categories to see your spending breakdown.</p>';
+        ctx.parentNode.insertBefore(noDataMsg, ctx);
+        ctx.style.display = 'none';
+        
+        // Also clear the legend area
+        const legendContainer = document.getElementById('categoryLegend');
+        if (legendContainer) {
+            legendContainer.innerHTML = '';
+        }
+        return;
     }
     
     const categoryNames = categoriesToUse.map(c => c.name);
@@ -2001,9 +2008,6 @@ function setupCategoryDonutChart() {
     const categoryColors = categoriesToUse.map(c => c.color);
     
     // Create the donut chart
-    const ctx = document.getElementById('categoryDonutChart');
-    if (!ctx) return;
-    
     new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -2042,6 +2046,7 @@ function setupCategoryDonutChart() {
     // Create custom legend
     createCategoryLegend(categoriesToUse);
 }
+
 
 function createCategoryLegend(categories) {
     const legendContainer = document.getElementById('categoryLegend');

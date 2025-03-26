@@ -64,8 +64,11 @@
                     <select class="form-select bg-dark text-light" id="frequency" name="frequency" required>
                         <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
+                        <option value="biweekly">Bi-weekly</option>
                         <option value="monthly" selected>Monthly</option>
+                        <option value="quarterly">Quarterly</option>
                         <option value="yearly">Yearly</option>
+
                     </select>
                 </div>
             </div>
@@ -327,8 +330,38 @@
         </div>
     </div>
 </div>
+<!-- Start of Recurring Detection Section -->
+<div class="mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>
+            <i class="fas fa-magic me-2 text-warning"></i>
+            Smart Recurring Detection
+        </h3>
+        <div>
+            <a href="{{ url_for('manage_ignored_patterns') }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-ban me-1"></i>Manage Ignored
+            </a>
+            <button id="toggle-detected-recurring" class="btn btn-outline-light">
+                <i class="fas fa-chevron-up me-1"></i>
+                <span>Hide Detected Recurring</span>
+            </button>
+        </div>
+    </div>
+    
+    <div class="text-muted small mb-3">
+        <i class="fas fa-info-circle me-2"></i>
+        Patterns detected in your transaction history for informational purposes only
+    </div>
+    
+    <div id="detected-recurring-container">
+        <!-- This will be populated by JavaScript -->
+        <div class="text-center py-4">
+            <i class="fas fa-spinner fa-spin me-2"></i>Loading recurring transaction analysis...
+        </div>
+    </div>
+</div>
+<!-- End of Recurring Detection Section -->
 {% endblock %}
-
 
 {% block scripts %}
 <script>
@@ -359,6 +392,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize edit mode if needed
     initializeEditMode();
+
+    fetchDetectedRecurring();
 });
 
 // Initialize edit mode if we're editing a recurring expense
@@ -1061,4 +1096,5 @@ function initializeMultiSelect() {
     updateOptions();
 }
 </script>
+<script src="{{ url_for('static', filename='js/recurring-detection.js') }}"></script>
 {% endblock %}

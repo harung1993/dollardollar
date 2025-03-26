@@ -622,6 +622,28 @@ class SimpleFin(db.Model):
         return f"<SimpleFin settings for user {self.user_id}>"
 
 
+class IgnoredRecurringPattern(db.Model):
+    """
+    Stores patterns of recurring transactions that a user has chosen to ignore
+    """
+    __tablename__ = 'ignored_recurring_patterns'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
+    pattern_key = db.Column(db.String(255), nullable=False)  # Unique pattern identifier
+    description = db.Column(db.String(200), nullable=False)  # For reference
+    amount = db.Column(db.Float, nullable=False)
+    frequency = db.Column(db.String(20), nullable=False)
+    ignore_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Relationship with User
+    user = db.relationship('User', backref=db.backref('ignored_patterns', lazy=True))
+    
+    # Ensure user can't ignore the same pattern twice
+    __table_args__ = (db.UniqueConstraint('user_id', 'pattern_key'),)
+    
+    def __repr__(self):
+        return f"<IgnoredPattern: {self.description} ({self.amount}) - {self.frequency}>"
+
             
      
 #--------------------
@@ -832,19 +854,34 @@ def calculate_asset_debt_trends(current_user):
     # Get all accounts for the user
     accounts = Account.query.filter_by(user_id=current_user.id).all()
     
+    # Get user's preferred currency code
+    user_currency_code = current_user.default_currency_code or 'USD'
+    
     # Calculate true total assets and debts directly from accounts (for accurate current total)
     direct_total_assets = 0
     direct_total_debts = 0
     
     for account in accounts:
-        if account.type in ['checking', 'savings', 'investment'] and account.balance > 0:
-            direct_total_assets += account.balance
-        elif account.type in ['credit'] or account.balance < 0:
+        # Get account's currency code, default to user's preferred currency
+        account_currency_code = account.currency_code or user_currency_code
+        
+        # Convert account balance to user's currency if needed
+        if account_currency_code != user_currency_code:
+            converted_balance = convert_currency(account.balance, account_currency_code, user_currency_code)
+        else:
+            converted_balance = account.balance
+        
+        if account.type in ['checking', 'savings', 'investment'] and converted_balance > 0:
+            direct_total_assets += converted_balance
+        elif account.type in ['credit'] or converted_balance < 0:
             # For credit cards with negative balances (standard convention)
-            direct_total_debts += abs(account.balance)
+            direct_total_debts += abs(converted_balance)
     
     # Process each account for historical trends
     for account in accounts:
+        # Get account's currency code, default to user's preferred currency
+        account_currency_code = account.currency_code or user_currency_code
+        
         # Categorize account types
         is_asset = account.type in ['checking', 'savings', 'investment'] and account.balance > 0
         is_debt = account.type in ['credit'] or account.balance < 0
@@ -871,14 +908,24 @@ def calculate_asset_debt_trends(current_user):
         for transaction in transactions:
             month_key = transaction.date.strftime('%Y-%m')
             
+            # Consider currency conversion for each transaction if needed
+            transaction_amount = transaction.amount
+            if transaction.currency_code and transaction.currency_code != account_currency_code:
+                transaction_amount = convert_currency(transaction_amount, transaction.currency_code, account_currency_code)
+            
             # Adjust balance based on transaction
             if transaction.transaction_type == 'income':
-                current_balance += transaction.amount
+                current_balance += transaction_amount
             elif transaction.transaction_type == 'expense' or transaction.transaction_type == 'transfer':
-                current_balance -= transaction.amount
+                current_balance -= transaction_amount
             
             # Update monthly balance
             balance_history[month_key] = current_balance
+        
+        # Convert balance history to user currency if needed
+        if account_currency_code != user_currency_code:
+            for month, balance in balance_history.items():
+                balance_history[month] = convert_currency(balance, account_currency_code, user_currency_code)
         
         # Categorize and store balances
         for month, balance in balance_history.items():
@@ -913,7 +960,6 @@ def calculate_asset_debt_trends(current_user):
         'total_debts': total_debts,
         'net_worth': net_worth
     }
-
 
 
 def detect_internal_transfer(description, amount, account_id=None):
@@ -2630,7 +2676,13 @@ def login():
                     app.logger.error(f"Error checking SimpleFin sync status: {str(e)}")
                     # Don't show error to user to keep login smooth
 
-
+            import threading
+            detection_thread = threading.Thread(
+                target=detect_recurring_transactions,
+                args=(user.id,)
+            )
+            detection_thread.daemon = True
+            detection_thread.start()
 
             db.session.commit()
             return redirect(url_for('dashboard'))
@@ -3233,7 +3285,7 @@ def get_expense(expense_id):
 @app.route('/update_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def update_expense(expense_id):
-    """Update an existing expense"""
+    """Update an existing expense with improved error handling"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
@@ -3243,38 +3295,81 @@ def update_expense(expense_id):
             flash('You do not have permission to edit this expense')
             return redirect(url_for('transactions'))
         
-        # Get the transaction type
+        # Log incoming data for debugging
+        app.logger.info(f"Update expense request data: {request.form}")
+        
+        # Get the transaction type with safer fallback
         transaction_type = request.form.get('transaction_type', 'expense')
         
-        # Common fields for all transaction types
-        expense.description = request.form['description']
-        expense.amount = float(request.form['amount'])
-        expense.date = datetime.strptime(request.form['date'], '%Y-%m-%d')
-        expense.category_id = request.form.get('category_id') if request.form.get('category_id') else None
-        expense.account_id = request.form.get('account_id') if request.form.get('account_id') else None
+        # Common fields for all transaction types (with safer handling)
+        expense.description = request.form.get('description', expense.description)
+        
+        # Handle amount safely
+        try:
+            expense.amount = float(request.form.get('amount', expense.amount))
+        except (ValueError, TypeError):
+            # Keep existing amount if conversion fails
+            pass
+        
+        # Handle date safely
+        try:
+            expense.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d')
+        except (ValueError, TypeError):
+            # Keep existing date if conversion fails
+            pass
+        
+        # Handle category_id safely (allow null values)
+        category_id = request.form.get('category_id')
+        if category_id == 'null' or category_id == '':
+            expense.category_id = None
+        elif category_id is not None:
+            try:
+                expense.category_id = int(category_id)
+            except ValueError:
+                # Keep existing category if conversion fails
+                app.logger.warning(f"Invalid category_id value: {category_id}")
+        
+        # Handle account_id safely
+        account_id = request.form.get('account_id')
+        if account_id and account_id != 'null' and account_id != '':
+            try:
+                expense.account_id = int(account_id)
+            except ValueError:
+                app.logger.warning(f"Invalid account_id value: {account_id}")
         
         # Set transaction type
         expense.transaction_type = transaction_type
         
         # Type-specific processing
         if transaction_type == 'expense':
-            # Check if this is a personal expense (no splits)
+            # Handle personal expense flag
             is_personal_expense = request.form.get('personal_expense') == 'on'
             
-            # Handle split_with based on whether it's a personal expense
+            # Split with handling
             if is_personal_expense:
-                # For personal expenses, we set split_with to empty
                 expense.split_with = None
+                expense.split_details = None
             else:
-                # Handle multi-select for split_with
-                split_with_ids = request.form.getlist('split_with')
-                expense.split_with = ','.join(split_with_ids) if split_with_ids else None
+                # Get split_with as a list, then join to string
+                split_with_list = request.form.getlist('split_with')
+                expense.split_with = ','.join(split_with_list) if split_with_list else None
+                
+                # Process split details
+                expense.split_details = request.form.get('split_details')
             
-            # Process split details if provided
-            expense.split_details = request.form.get('split_details')
-            expense.split_method = request.form['split_method']
-            expense.paid_by = request.form['paid_by']
-            expense.group_id = request.form.get('group_id') if request.form.get('group_id') and request.form.get('group_id') != '' else None
+            # Other expense-specific fields
+            expense.split_method = request.form.get('split_method', 'equal')
+            expense.paid_by = request.form.get('paid_by', current_user.id)
+            
+            # Group ID handling (allow empty string to be converted to None)
+            group_id = request.form.get('group_id')
+            if group_id and group_id.strip():
+                try:
+                    expense.group_id = int(group_id)
+                except ValueError:
+                    expense.group_id = None
+            else:
+                expense.group_id = None
             
             # Clear transfer-specific fields
             expense.destination_account_id = None
@@ -3298,19 +3393,30 @@ def update_expense(expense_id):
             expense.paid_by = current_user.id
             expense.group_id = None
             
-            # Set transfer-specific fields
-            expense.destination_account_id = request.form.get('destination_account_id')
+            # Set transfer-specific fields - with proper handling for empty values
+            destination_id = request.form.get('destination_account_id')
+            if destination_id and destination_id != 'null' and destination_id.strip():
+                try:
+                    expense.destination_account_id = int(destination_id)
+                except ValueError:
+                    # If not a valid integer, set to None
+                    expense.destination_account_id = None
+            else:
+                # If empty, set to None
+                expense.destination_account_id = None
         
         # Save changes
         db.session.commit()
         flash('Transaction updated successfully!')
+        
+        return redirect(url_for('transactions'))
         
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error updating expense {expense_id}: {str(e)}")
         flash(f'Error: {str(e)}')
         
-    return redirect(url_for('transactions'))
+        return redirect(url_for('transactions'))
 
 #--------------------
 # ROUTES: tags
@@ -3667,6 +3773,360 @@ def update_recurring(recurring_id):
         flash(f'Error: {str(e)}')
         
     return redirect(url_for('recurring'))
+@app.route('/detect_recurring_transactions')
+@login_required_dev
+def get_recurring_transactions():
+    """API endpoint to detect recurring transactions for the current user"""
+    try:
+        # Default to 60 days lookback and 2 min occurrences
+        lookback_days = int(request.args.get('lookback_days', 60))
+        min_occurrences = int(request.args.get('min_occurrences', 2))
+        
+        # Detect recurring transactions
+        candidates = detect_recurring_transactions(
+            current_user.id, 
+            lookback_days=lookback_days,
+            min_occurrences=min_occurrences
+        )
+        
+        # Get base currency symbol for formatting
+        base_currency = get_base_currency()
+        currency_symbol = base_currency['symbol'] if isinstance(base_currency, dict) else base_currency.symbol
+        
+        # Get all ignored patterns for this user
+        ignored_patterns = IgnoredRecurringPattern.query.filter_by(user_id=current_user.id).all()
+        ignored_keys = [pattern.pattern_key for pattern in ignored_patterns]
+        
+        # Prepare response data
+        candidate_data = []
+        for candidate in candidates:
+            # Create a unique pattern key for this candidate
+            pattern_key = f"{candidate['description']}_{candidate['amount']}_{candidate['frequency']}"
+            
+            # Skip if this pattern is in the ignored list
+            if pattern_key in ignored_keys:
+                continue
+                
+            # Create a candidate ID that's stable across requests
+            candidate_id = f"candidate_{hash(pattern_key) & 0xffffffff}"
+                
+            # Create a serializable version of the candidate
+            candidate_dict = {
+                'id': candidate_id,  # Use a stable ID based on pattern
+                'description': candidate['description'],
+                'amount': candidate['amount'],
+                'currency_code': candidate['currency_code'],
+                'frequency': candidate['frequency'],
+                'confidence': candidate['confidence'],
+                'occurrences': candidate['occurrences'],
+                'next_date': candidate['next_date'].isoformat(),
+                'avg_interval': candidate['avg_interval'],
+                # Include account and category info if available
+                'account_id': candidate['account_id'],
+                'category_id': candidate['category_id'],
+                'account_name': None,
+                'category_name': None
+            }
+            
+            # Add account name if available
+            if candidate['account_id']:
+                account = Account.query.get(candidate['account_id'])
+                if account:
+                    candidate_dict['account_name'] = account.name
+            
+            # Add category name if available
+            if candidate['category_id']:
+                category = Category.query.get(candidate['category_id'])
+                if category:
+                    candidate_dict['category_name'] = category.name
+                    candidate_dict['category_icon'] = category.icon
+                    candidate_dict['category_color'] = category.color
+            
+            candidate_data.append(candidate_dict)
+            
+            # Store candidate in session for later reference
+            # Use the stable candidate ID as the session key
+            session_key = f'recurring_candidate_{candidate_id}'
+            session[session_key] = {
+                'description': candidate['description'],
+                'amount': candidate['amount'],
+                'currency_code': candidate['currency_code'],
+                'frequency': candidate['frequency'],
+                'account_id': candidate['account_id'],
+                'category_id': candidate['category_id'],
+                'transaction_type': candidate.get('transaction_type', 'expense'),
+                'transaction_ids': candidate['transaction_ids']
+            }
+        
+        return jsonify({
+            'success': True,
+            'candidates': candidate_data,
+            'currency_symbol': currency_symbol
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error detecting recurring transactions: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error detecting recurring transactions: {str(e)}'
+        }), 500
+@app.route('/recurring_candidate_history/<candidate_id>')
+@login_required_dev
+def recurring_candidate_history(candidate_id):
+    """Get transaction history for a recurring candidate"""
+    try:
+        # Get stored candidate data from session
+        session_key = f'recurring_candidate_{candidate_id}'
+        candidate_data = session.get(session_key)
+        
+        if not candidate_data:
+            return jsonify({
+                'success': False,
+                'message': 'Candidate details not found. Please refresh the page and try again.'
+            }), 404
+        
+        # Get transaction IDs from the stored data
+        transaction_ids = candidate_data.get('transaction_ids', [])
+        
+        # Get user's base currency
+        base_currency = get_base_currency()
+        currency_symbol = base_currency['symbol'] if isinstance(base_currency, dict) else base_currency.symbol
+        
+        # Fetch the actual transactions
+        transactions = []
+        for tx_id in transaction_ids:
+            expense = Expense.query.get(tx_id)
+            if expense and expense.user_id == current_user.id:
+                tx_data = {
+                    'id': expense.id,
+                    'description': expense.description,
+                    'amount': expense.amount,
+                    'date': expense.date.isoformat(),
+                    'account_name': expense.account.name if expense.account else None
+                }
+                
+                # Add category information if available
+                if hasattr(expense, 'category') and expense.category:
+                    tx_data['category_name'] = expense.category.name
+                    tx_data['category_icon'] = expense.category.icon
+                    tx_data['category_color'] = expense.category.color
+                
+                transactions.append(tx_data)
+        
+        # Sort transactions by date (newest first)
+        transactions.sort(key=lambda x: x['date'], reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'candidate_id': candidate_id,
+            'description': candidate_data['description'],
+            'currency_symbol': currency_symbol,
+            'transactions': transactions
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error fetching transaction history: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error fetching transaction history: {str(e)}'
+        }), 500
+@app.route('/convert_to_recurring/<candidate_id>', methods=['POST'])
+@login_required_dev
+def convert_to_recurring(candidate_id):
+    """Convert a detected recurring transaction to a RecurringExpense"""
+    from recurring_detection import create_recurring_expense_from_detection
+    
+    try:
+        # Check if this is an edit request
+        is_edit = request.args.get('edit', 'false').lower() == 'true'
+        
+        if is_edit:
+            # If this is an edit, we're using the form data
+            # Process the form data just like in add_recurring route
+            
+            # Extract form data
+            description = request.form.get('description')
+            amount = float(request.form.get('amount', 0))
+            frequency = request.form.get('frequency')
+            account_id = request.form.get('account_id')
+            category_id = request.form.get('category_id')
+            
+            # Create a custom candidate data structure
+            custom_candidate = {
+                'description': description,
+                'amount': amount,
+                'frequency': frequency,
+                'account_id': account_id,
+                'category_id': category_id,
+                'transaction_type': 'expense'  # Default
+            }
+            
+            # Create recurring expense from custom data
+            recurring = create_recurring_expense_from_detection(current_user.id, custom_candidate)
+            
+            # Additional fields from form
+            recurring.start_date = datetime.strptime(request.form.get('start_date'), '%Y-%m-%d')
+            if request.form.get('end_date'):
+                recurring.end_date = datetime.strptime(request.form.get('end_date'), '%Y-%m-%d')
+            
+            # Process split settings
+            is_personal = request.form.get('personal_expense') == 'on'
+            
+            if is_personal:
+                recurring.split_with = None
+            else:
+                split_with_ids = request.form.getlist('split_with')
+                recurring.split_with = ','.join(split_with_ids) if split_with_ids else None
+            
+            recurring.split_method = request.form.get('split_method', 'equal')
+            recurring.split_details = request.form.get('split_details')
+            recurring.paid_by = request.form.get('paid_by', current_user.id)
+            recurring.group_id = request.form.get('group_id') if request.form.get('group_id') else None
+            
+            # Save to database
+            db.session.add(recurring)
+            db.session.commit()
+            
+            # Check if this is a regular form submission or AJAX request
+            if not request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                flash('Recurring expense created successfully!')
+                return redirect(url_for('recurring'))
+            
+            return jsonify({
+                'success': True,
+                'message': 'Recurring expense created successfully!'
+            })
+            
+        else:
+            # Standard conversion (not edit)
+            
+            # Get candidate data from session
+            session_key = f'recurring_candidate_{candidate_id}'
+            candidate_data = session.get(session_key)
+            
+            if not candidate_data:
+                return jsonify({
+                    'success': False,
+                    'message': 'Candidate details not found. Please refresh the page and try again.'
+                }), 404
+            
+            # Create recurring expense from the candidate data
+            recurring = create_recurring_expense_from_detection(current_user.id, candidate_data)
+            
+            # Set to active
+            recurring.active = True
+            
+            # Save to database
+            db.session.add(recurring)
+            db.session.commit()
+            
+            return jsonify({
+                'success': True,
+                'message': 'Recurring expense created successfully!'
+            })
+            
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error converting to recurring: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+@app.route('/ignore_recurring_candidate/<candidate_id>', methods=['POST'])
+@login_required_dev
+def ignore_recurring_candidate(candidate_id):
+    """Mark a recurring transaction pattern as ignored"""
+    try:
+        # Get candidate data from session
+        session_key = f'recurring_candidate_{candidate_id}'
+        candidate_data = session.get(session_key)
+        
+        if not candidate_data:
+            return jsonify({
+                'success': False,
+                'message': 'Candidate details not found. Please refresh the page and try again.'
+            }), 404
+        
+        # Create pattern key for this candidate
+        pattern_key = f"{candidate_data['description']}_{candidate_data['amount']}_{candidate_data['frequency']}"
+        
+        # Check if already ignored
+        existing = IgnoredRecurringPattern.query.filter_by(
+            user_id=current_user.id,
+            pattern_key=pattern_key
+        ).first()
+        
+        if existing:
+            return jsonify({
+                'success': True,
+                'message': 'Pattern was already ignored'
+            })
+        
+        # Create ignored pattern record
+        ignored = IgnoredRecurringPattern(
+            user_id=current_user.id,
+            pattern_key=pattern_key,
+            description=candidate_data['description'],
+            amount=candidate_data['amount'],
+            frequency=candidate_data['frequency']
+        )
+        
+        db.session.add(ignored)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Pattern will no longer be detected as recurring'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error ignoring recurring candidate: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+@app.route('/restore_ignored_pattern/<int:pattern_id>', methods=['POST'])
+@login_required_dev
+def restore_ignored_pattern(pattern_id):
+    """Restore a previously ignored recurring pattern"""
+    try:
+        # Find the pattern
+        pattern = IgnoredRecurringPattern.query.get_or_404(pattern_id)
+        
+        # Security check
+        if pattern.user_id != current_user.id:
+            flash('You do not have permission to modify this pattern.')
+            return redirect(url_for('manage_ignored_patterns'))
+        
+        # Delete the pattern (which effectively restores it for detection)
+        db.session.delete(pattern)
+        db.session.commit()
+        
+        flash('Pattern restored successfully. It may appear in future recurring detection results.')
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error restoring pattern {pattern_id}: {str(e)}")
+        flash(f'Error: {str(e)}')
+    
+    return redirect(url_for('manage_ignored_patterns'))
+@app.route('/manage_ignored_patterns')
+@login_required_dev
+def manage_ignored_patterns():
+    """View and manage ignored recurring transaction patterns"""
+    # Get all ignored patterns for the current user
+    ignored_patterns = IgnoredRecurringPattern.query.filter_by(user_id=current_user.id).order_by(
+        IgnoredRecurringPattern.ignore_date.desc()
+    ).all()
+    
+    # Get base currency for display
+    base_currency = get_base_currency()
+    
+    return render_template('manage_ignored_patterns.html',
+                          ignored_patterns=ignored_patterns,
+                          base_currency=base_currency)
 #--------------------
 # ROUTES: GROUPS
 #--------------------
@@ -6363,57 +6823,88 @@ def edit_category(category_id):
 @app.route('/categories/delete/<int:category_id>', methods=['POST'])
 @login_required_dev
 def delete_category(category_id):
-    """Delete a category"""
-    category = Category.query.get_or_404(category_id)
+    """Debug-enhanced category deletion route"""
+    try:
+        # Find the category
+        category = Category.query.get_or_404(category_id)
+        
+        # Extensive logging
+        app.logger.info(f"Attempting to delete category: {category.name} (ID: {category.id})")
+        app.logger.info(f"Category details - User ID: {category.user_id}, Is System: {category.is_system}")
+        
+        # Security checks
+        if category.user_id != current_user.id:
+            app.logger.warning(f"Unauthorized delete attempt for category {category_id}")
+            flash('You don\'t have permission to delete this category')
+            return redirect(url_for('manage_categories'))
 
-    # Check if category belongs to current user
-    if category.user_id != current_user.id:
-        flash('You don\'t have permission to delete this category')
-        return redirect(url_for('manage_categories'))
+        # Don't allow deleting system categories
+        if category.is_system:
+            app.logger.warning(f"Attempted to delete system category {category_id}")
+            flash('System categories cannot be deleted')
+            return redirect(url_for('manage_categories'))
 
-    # Don't allow deleting system categories
-    if category.is_system:
-        flash('System categories cannot be deleted')
-        return redirect(url_for('manage_categories'))
-
-    # Find 'Other' category
-    other_category = Category.query.filter_by(
-        name='Other', 
-        user_id=current_user.id,
-        is_system=True
-    ).first()
-
-    # Check if category has expenses associated with it
-    if category.expenses:
-        if other_category:
-            # Move expenses to 'Other' category
-            for expense in category.expenses:
-                expense.category_id = other_category.id
-        else:
-            # If 'Other' doesn't exist, clear category_id
-            for expense in category.expenses:
-                expense.category_id = None
-
-    # Also handle recurring expenses with this category
-    recurring_expenses = RecurringExpense.query.filter_by(category_id=category_id).all()
-    if recurring_expenses:
-        if other_category:
-            # Move recurring expenses to 'Other' category
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = other_category.id
-        else:
-            # If 'Other' doesn't exist, clear category_id
-            for rec_expense in recurring_expenses:
-                rec_expense.category_id = None
-
-    # Delete subcategories first
-    for subcategory in category.subcategories:
-        db.session.delete(subcategory)
-
-    db.session.delete(category)
-    db.session.commit()
-
-    flash('Category deleted successfully')
+        # Check related records before deletion
+        expense_count = Expense.query.filter_by(category_id=category_id).count()
+        recurring_count = RecurringExpense.query.filter_by(category_id=category_id).count()
+        budget_count = Budget.query.filter_by(category_id=category_id).count()
+        mapping_count = CategoryMapping.query.filter_by(category_id=category_id).count()
+        
+        app.logger.info(f"Related records - Expenses: {expense_count}, Recurring: {recurring_count}, Budgets: {budget_count}, Mappings: {mapping_count}")
+        
+        # Find 'Other' category (fallback)
+        other_category = Category.query.filter_by(
+            name='Other', 
+            user_id=current_user.id,
+            is_system=True
+        ).first()
+        
+        app.logger.info(f"Other category found: {bool(other_category)}")
+        
+        # Subcategories handling
+        if category.subcategories:
+            app.logger.info(f"Handling {len(category.subcategories)} subcategories")
+            for subcategory in category.subcategories:
+                # Update or delete related records for subcategory
+                Expense.query.filter_by(category_id=subcategory.id).update({
+                    'category_id': other_category.id if other_category else None
+                })
+                RecurringExpense.query.filter_by(category_id=subcategory.id).update({
+                    'category_id': other_category.id if other_category else None
+                })
+                CategoryMapping.query.filter_by(category_id=subcategory.id).delete()
+                
+                # Log subcategory deletion
+                app.logger.info(f"Deleting subcategory: {subcategory.name} (ID: {subcategory.id})")
+                db.session.delete(subcategory)
+        
+        # Update or delete main category's related records
+        Expense.query.filter_by(category_id=category_id).update({
+            'category_id': other_category.id if other_category else None
+        })
+        RecurringExpense.query.filter_by(category_id=category_id).update({
+            'category_id': other_category.id if other_category else None
+        })
+        Budget.query.filter_by(category_id=category_id).update({
+            'category_id': other_category.id if other_category else None
+        })
+        CategoryMapping.query.filter_by(category_id=category_id).delete()
+        
+        # Actually delete the category
+        db.session.delete(category)
+        
+        # Commit changes
+        db.session.commit()
+        
+        app.logger.info(f"Category {category.name} (ID: {category_id}) deleted successfully")
+        flash('Category deleted successfully')
+        
+    except Exception as e:
+        # Rollback and log any errors
+        db.session.rollback()
+        app.logger.error(f"Error deleting category {category_id}: {str(e)}", exc_info=True)
+        flash(f'Error deleting category: {str(e)}')
+    
     return redirect(url_for('manage_categories'))
 
 #--------------------

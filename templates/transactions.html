@@ -1173,123 +1173,129 @@ function openEditTransactionPanel(expenseId) {
     // Setup event listeners for edit transaction form
     function setupEditTransactionFormListeners() {
     // Add transaction type change handler
-            const transactionTypeSelect = document.getElementById('edit_transaction_type');
-            if (transactionTypeSelect) {
-                transactionTypeSelect.addEventListener('change', handleEditTransactionTypeChange);
-                // Initialize UI based on current transaction type
-                handleEditTransactionTypeChange();
-            }
-            
-            // Personal expense toggle
-            const personalExpenseCheck = document.getElementById('edit_personal_expense');
-            if (personalExpenseCheck) {
-                personalExpenseCheck.addEventListener('change', toggleEditPersonalExpense);
-            }
-            const categorySelect = document.getElementById('edit_category_id');
-            if (categorySelect) {
-                 categorySelect.addEventListener('change', function() {
-                    console.log('Category changed to:', this.value);
-            // Optional: You could update a hidden field or do other actions here
-             });
+    const transactionTypeSelect = document.getElementById('edit_transaction_type');
+    if (transactionTypeSelect) {
+        transactionTypeSelect.addEventListener('change', handleEditTransactionTypeChange);
+        // Initialize UI based on current transaction type
+        handleEditTransactionTypeChange();
     }
-            // Split method change handler
-            const splitMethodSelect = document.getElementById('edit_split_method');
-            if (splitMethodSelect) {
-                splitMethodSelect.addEventListener('change', toggleEditSplitOptions);
+    
+    // Personal expense toggle
+    const personalExpenseCheck = document.getElementById('edit_personal_expense');
+    if (personalExpenseCheck) {
+        personalExpenseCheck.addEventListener('change', toggleEditPersonalExpense);
+    }
+    
+    // Ensure proper category selection handling
+    const categorySelect = document.getElementById('edit_category_id');
+    if (categorySelect) {
+        // Add a change event listener to log selection changes
+        categorySelect.addEventListener('change', function() {
+            console.log('Category changed to:', this.value);
+        });
+        
+        // Ensure the category select isn't disabled
+        categorySelect.disabled = false;
+    }
+    
+    // Split method change handler
+    const splitMethodSelect = document.getElementById('edit_split_method');
+    if (splitMethodSelect) {
+        splitMethodSelect.addEventListener('change', toggleEditSplitOptions);
+    }
+    
+    // Amount field change handler
+    const amountField = document.getElementById('edit_amount');
+    if (amountField) {
+        amountField.addEventListener('input', function() {
+            // Only update split values if a split method is selected
+            const splitMethod = document.getElementById('edit_split_method')?.value;
+            if (splitMethod && splitMethod !== 'equal') {
+                updateEditSplitValues();
             }
+        });
+    }
+    
+    // Paid by change handler
+    const paidBySelect = document.getElementById('edit_paid_by');
+    if (paidBySelect) {
+        paidBySelect.addEventListener('change', function() {
+            updateEditSplitWithOptions();
             
-            // Amount field change handler
-            const amountField = document.getElementById('edit_amount');
-            if (amountField) {
-                amountField.addEventListener('input', function() {
-                    // Only update split values if a split method is selected
-                    const splitMethod = document.getElementById('edit_split_method')?.value;
-                    if (splitMethod && splitMethod !== 'equal') {
-                        updateEditSplitValues();
-                    }
-                });
+            // Only update split values if a split method is selected
+            const splitMethod = document.getElementById('edit_split_method')?.value;
+            if (splitMethod && splitMethod !== 'equal') {
+                updateEditSplitValues();
             }
-            
-            // Paid by change handler
-            const paidBySelect = document.getElementById('edit_paid_by');
-            if (paidBySelect) {
-                paidBySelect.addEventListener('change', function() {
-                    updateEditSplitWithOptions();
-                    
-                    // Only update split values if a split method is selected
-                    const splitMethod = document.getElementById('edit_split_method')?.value;
-                    if (splitMethod && splitMethod !== 'equal') {
-                        updateEditSplitValues();
-                    }
-                });
+        });
+    }
+    
+    // Split with change handler
+    const splitWithSelect = document.getElementById('edit_split_with');
+    if (splitWithSelect) {
+        splitWithSelect.addEventListener('change', function() {
+            // Only update split values if a split method is selected
+            const splitMethod = document.getElementById('edit_split_method')?.value;
+            if (splitMethod && splitMethod !== 'equal') {
+                updateEditSplitValues();
             }
-            
-            // Split with change handler
-            const splitWithSelect = document.getElementById('edit_split_with');
-            if (splitWithSelect) {
-                splitWithSelect.addEventListener('change', function() {
-                    // Only update split values if a split method is selected
-                    const splitMethod = document.getElementById('edit_split_method')?.value;
-                    if (splitMethod && splitMethod !== 'equal') {
-                        updateEditSplitValues();
-                    }
-                });
-            }
-        }
+        });
+    }
+}
 
         // Function to handle transaction type changes in edit mode
         function handleEditTransactionTypeChange() {
-            const transactionTypeSelect = document.getElementById('edit_transaction_type');
-            if (!transactionTypeSelect) return;
-            
-            const transactionType = transactionTypeSelect.value;
-            const expenseOnlyFields = document.querySelector('.edit-expense-only-fields');
-            const toAccountContainer = document.getElementById('edit_to_account_container');
-            const accountLabel = document.getElementById('edit_account_label');
-            
-            // Show/hide fields based on transaction type
-            if (transactionType === 'expense') {
-                // Show splitting options for expenses
-                if (expenseOnlyFields) expenseOnlyFields.style.display = 'block';
-                if (toAccountContainer) toAccountContainer.style.display = 'none';
-                
-                // Update account label
-                if (accountLabel) accountLabel.textContent = 'Payment Account';
-                
-                // Make sure the destination account is cleared
-                const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-                if (destinationAccountSelect) {
-                    destinationAccountSelect.value = '';
-                }
-            } 
-            else if (transactionType === 'income') {
-                // Hide splitting options for income
-                if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
-                if (toAccountContainer) toAccountContainer.style.display = 'none';
-                
-                // Update account label
-                if (accountLabel) accountLabel.textContent = 'Deposit Account';
-                
-                // Make sure the destination account is cleared
-                const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-                if (destinationAccountSelect) {
-                    destinationAccountSelect.value = '';
-                }
-            }
-            else if (transactionType === 'transfer') {
-                // Hide splitting options for transfers
-                if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
-                
-                // Show destination account
-                if (toAccountContainer) toAccountContainer.style.display = 'block';
-                
-                // Update account label
-                if (accountLabel) accountLabel.textContent = 'From Account';
-                
-                // Update destination account options to exclude the selected source account
-                updateDestinationAccountOptions();
-            }
+    const transactionTypeSelect = document.getElementById('edit_transaction_type');
+    if (!transactionTypeSelect) return;
+    
+    const transactionType = transactionTypeSelect.value;
+    const expenseOnlyFields = document.querySelector('.edit-expense-only-fields');
+    const toAccountContainer = document.getElementById('edit_to_account_container');
+    const accountLabel = document.getElementById('edit_account_label');
+    
+    // Show/hide fields based on transaction type
+    if (transactionType === 'expense') {
+        // Show splitting options for expenses
+        if (expenseOnlyFields) expenseOnlyFields.style.display = 'block';
+        if (toAccountContainer) toAccountContainer.style.display = 'none';
+        
+        // Update account label
+        if (accountLabel) accountLabel.textContent = 'Payment Account';
+        
+        // Make sure the destination account is cleared
+        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
+        if (destinationAccountSelect) {
+            destinationAccountSelect.value = '';
         }
+    } 
+    else if (transactionType === 'income') {
+        // Hide splitting options for income
+        if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
+        if (toAccountContainer) toAccountContainer.style.display = 'none';
+        
+        // Update account label
+        if (accountLabel) accountLabel.textContent = 'Deposit Account';
+        
+        // Make sure the destination account is cleared
+        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
+        if (destinationAccountSelect) {
+            destinationAccountSelect.value = '';
+        }
+    }
+    else if (transactionType === 'transfer') {
+        // Hide splitting options for transfers
+        if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
+        
+        // Show destination account
+        if (toAccountContainer) toAccountContainer.style.display = 'block';
+        
+        // Update account label
+        if (accountLabel) accountLabel.textContent = 'From Account';
+        
+        // Update destination account options to exclude the selected source account
+        updateDestinationAccountOptions();
+    }
+}
 
         // Function to update destination account options to exclude the selected source account
         function updateDestinationAccountOptions() {
@@ -1335,24 +1341,35 @@ function openEditTransactionPanel(expenseId) {
     // Create FormData from the form
     const formData = new FormData(form);
     
+    // Handle destination_account_id for transfers
+    const transactionTypeSelect = document.getElementById('edit_transaction_type');
+    if (transactionTypeSelect && transactionTypeSelect.value === 'transfer') {
+        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
+        // If destination account is empty or not selected, make it null instead of empty string
+        if (!destinationAccountSelect || !destinationAccountSelect.value) {
+            formData.delete('destination_account_id');
+            formData.append('destination_account_id', 'null');
+        }
+    }
+    
     // Explicitly add the category_id from the select element
     const categorySelect = document.getElementById('edit_category_id');
     if (categorySelect) {
-        // Log the category ID to debug
-        console.log('Category ID selected:', categorySelect.value);
-        
         // Remove any existing category_id entries to avoid duplicates
-        if (formData.has('category_id')) {
-            formData.delete('category_id');
-        }
+        formData.delete('category_id');
         
-        // Add the selected category_id
-        formData.append('category_id', categorySelect.value);
+        // Add the selected category_id, ensuring it's never sent as an empty string
+        const categoryId = categorySelect.value || null;
+        formData.append('category_id', categoryId);
+        
+        // Log for debugging
+        console.log('Category ID selected:', categoryId);
     }
     
-    // Log the entire FormData to see what's being sent
-    for (let pair of formData.entries()) {
-        console.log(pair[0] + ': ' + pair[1]);
+    // Add proper handling for transaction type
+    if (transactionTypeSelect) {
+        formData.delete('transaction_type');
+        formData.append('transaction_type', transactionTypeSelect.value);
     }
     
     // Send AJAX request
@@ -1362,7 +1379,7 @@ function openEditTransactionPanel(expenseId) {
     })
     .then(response => {
         if (!response.ok) {
-            throw new Error('Failed to update transaction');
+            throw new Error(`Failed to update transaction: ${response.status} ${response.statusText}`);
         }
         return response.text();
     })
@@ -1379,10 +1396,11 @@ function openEditTransactionPanel(expenseId) {
         // Reset button state
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Save Changes';
+            submitBtn.innerHTML = 'Save Changes';
         }
     });
 }
+
     
     // Handle transaction type change
     function handleTransactionTypeChange() {
