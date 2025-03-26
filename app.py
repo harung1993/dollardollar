@@ -77,6 +77,47 @@ from simplefin_client import SimpleFin
 
 from session_timeout import DemoTimeout, demo_time_limited
 
+from flask import (
+    Flask,
+    render_template,
+    send_file,
+    request,
+    jsonify,
+    redirect,
+    url_for,
+    flash,
+    session,
+)
+import re
+from flask_login import (
+    UserMixin,
+    login_user,
+    login_required,
+    logout_user,
+    current_user,
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+import calendar
+from functools import wraps
+import logging
+from sqlalchemy import func, or_, and_
+import secrets
+from flask_mail import Message
+from flask_migrate import Migrate
+import ssl
+import requests
+from sqlalchemy import inspect, text
+from oidc_auth import setup_oidc_config, register_oidc_routes
+from oidc_user import extend_user_model
+from datetime import datetime, timedelta
+from simplefin_client import SimpleFin
+from flask import session, request, jsonify, url_for, flash, redirect
+from datetime import datetime, timedelta
+import base64
+import pytz
+from config import get_config
+from extensions import db, login_manager, mail, migrate, scheduler
 
 # Development user credentials from environment
 DEV_USER_EMAIL = os.getenv('DEV_USER_EMAIL', 'dev@example.com')
@@ -129,7 +170,7 @@ app.config['TIMEZONE'] = 'EST'  # Default timezone
 scheduler = APScheduler()
 scheduler.timezone = pytz.timezone('EST') # Explicitly set scheduler to use EST
 scheduler.init_app(app)
-
+logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
 @scheduler.task('cron', id='monthly_reports', day=1, hour=1, minute=0)
 def scheduled_monthly_reports():
     """Run on the 1st day of each month at 1:00 AM"""
