@@ -5169,16 +5169,28 @@ def import_csv():
         detect_duplicates = 'detect_duplicates' in request.form
         auto_categorize = 'auto_categorize' in request.form
         negative_is_expense = 'negative_is_expense' in request.form
-        
+        # NEW: Get the delimiter selection
+        delimiter_type = request.form.get('delimiter', 'comma')
+        delimiter = ','  # Default to comma
         # Read file content
-        file_content = csv_file.read().decode('utf-8')
         
+        if delimiter_type == 'tab':
+            delimiter = '\t'
+        elif delimiter_type == 'semicolon':
+            delimiter = ';'
+        elif delimiter_type == 'pipe':
+            delimiter = '|'
+        elif delimiter_type == 'custom':
+            custom_delimiter = request.form.get('custom_delimiter', ',')
+            if custom_delimiter:
+                delimiter = custom_delimiter
+        file_content = csv_file.read().decode('utf-8')
         # Parse CSV
         import csv
         import io
         from datetime import datetime
         
-        csv_reader = csv.DictReader(io.StringIO(file_content))
+        csv_reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
         
         # Get account if specified
         account = None
@@ -8095,7 +8107,6 @@ def send_automatic_monthly_reports():
 #--------------------
 # # statss
 #--------------------
-
 @app.route('/stats')
 @login_required_dev
 def stats():
@@ -8163,6 +8174,28 @@ def stats():
     current_user_expenses = []
     total_user_expenses = 0
     
+    # Initialize monthly data structures BEFORE the loop
+    monthly_spending = {}
+    monthly_income = {}  # New dictionary to track income
+    monthly_labels = []
+    monthly_amounts = []
+    monthly_income_amounts = []  # New array for chart
+
+    # Initialize all months in range
+    current_date = start_date.replace(day=1)
+    while current_date <= end_date:
+        month_key = current_date.strftime('%Y-%m')
+        month_label = current_date.strftime('%b %Y')
+        monthly_labels.append(month_label)
+        monthly_spending[month_key] = 0
+        monthly_income[month_key] = 0  # Initialize income for this month
+        
+        # Advance to next month
+        if current_date.month == 12:
+            current_date = current_date.replace(year=current_date.year + 1, month=1)
+        else:
+            current_date = current_date.replace(month=current_date.month + 1)
+    
     for expense in expenses:
         # Calculate splits for this expense
         splits = expense.calculate_splits()
@@ -8201,7 +8234,7 @@ def stats():
                 # Default to 'expense' for backward compatibility
                 expense_data['transaction_type'] = 'expense'
             
-            # Format amounts based on transaction type in the route itself
+            # Format amounts based on transaction type
             if expense_data['transaction_type'] == 'income':
                 expense_data['formatted_amount'] = f"+{base_currency['symbol']}{expense_data['user_portion']:.2f}"
                 expense_data['amount_color'] = '#10b981'  # Green
@@ -8211,7 +8244,6 @@ def stats():
             else:  # Expense (default)
                 expense_data['formatted_amount'] = f"-{base_currency['symbol']}{expense_data['user_portion']:.2f}"
                 expense_data['amount_color'] = '#ef4444'  # Red
-
 
             # Add category information for the expense
             if hasattr(expense, 'category_id') and expense.category_id:
@@ -8229,72 +8261,53 @@ def stats():
             
             # Add to user's total
             total_user_expenses += user_portion
+
+            # Add to monthly spending or income based on transaction type
+            month_key = expense_data['date'].strftime('%Y-%m')
+            if month_key in monthly_spending:
+                # Separate income and expense transactions
+                if expense_data.get('transaction_type') == 'income':
+                    monthly_income[month_key] += expense_data['user_portion']
+                else:  # 'expense' or 'transfer' or None (legacy expenses)
+                    monthly_spending[month_key] += expense_data['user_portion']
+
+    # Prepare chart data in correct order
+    for month_key in sorted(monthly_spending.keys()):
+        monthly_amounts.append(monthly_spending[month_key])
+        monthly_income_amounts.append(monthly_income[month_key])
+            
+    # Calculate spending trend compared to previous period
+    previous_period_start = start_date - (end_date - start_date)
+    previous_period_filters = [
+        or_(
+            Expense.user_id == current_user.id,
+            Expense.split_with.like(f'%{current_user.id}%')
+        ),
+        Expense.date >= previous_period_start,
+        Expense.date < start_date
+    ]
     
-                # Calculate monthly spending for current user
-            monthly_spending = {}
-            monthly_income = {}  # New dictionary to track income
-            monthly_labels = []
-            monthly_amounts = []
-            monthly_income_amounts = []  # New array for chart
-
-            # Initialize all months in range
-            current_date = start_date.replace(day=1)
-            while current_date <= end_date:
-                month_key = current_date.strftime('%Y-%m')
-                month_label = current_date.strftime('%b %Y')
-                monthly_labels.append(month_label)
-                monthly_spending[month_key] = 0
-                monthly_income[month_key] = 0  # Initialize income for this month
-                
-                # Advance to next month
-                if current_date.month == 12:
-                    current_date = current_date.replace(year=current_date.year + 1, month=1)
-                else:
-                    current_date = current_date.replace(month=current_date.month + 1)
-
-            # Fill in spending and income data separately
-            for expense_data in current_user_expenses:
-                month_key = expense_data['date'].strftime('%Y-%m')
-                if month_key in monthly_spending:
-                    # Separate income and expense transactions
-                    if expense_data.get('transaction_type') == 'income':
-                        monthly_income[month_key] += expense_data['user_portion']
-                    else:  # 'expense' or 'transfer' or None (legacy expenses)
-                        monthly_spending[month_key] += expense_data['user_portion']
-
-            # Prepare chart data in correct order
-            for month_key in sorted(monthly_spending.keys()):
-                monthly_amounts.append(monthly_spending[month_key])
-                monthly_income_amounts.append(monthly_income[month_key])
-
-            # Calculate spending trend compared to previous period
-            previous_period_start = start_date - (end_date - start_date)
-            previous_period_filters = [
-                or_(
-                    Expense.user_id == current_user.id,
-                    Expense.split_with.like(f'%{current_user.id}%')
-                ),
-                Expense.date >= previous_period_start,
-                Expense.date < start_date
-            ]
-
-            previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
-            previous_total = 0
-
-            for expense in previous_expenses:
-                splits = expense.calculate_splits()
-                user_portion = 0
-                
-                if expense.paid_by == current_user.id:
-                    user_portion = splits['payer']['amount']
-                else:
-                    for split in splits['splits']:
-                        if split['email'] == current_user.id:
-                            user_portion = split['amount']
-                            break
-                
-                previous_total += user_portion
+    # Initialize previous_total before querying
+    previous_total = 0
     
+    previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
+    
+    # Process previous expenses and calculate total
+    for expense in previous_expenses:
+        splits = expense.calculate_splits()
+        user_portion = 0
+        
+        if expense.paid_by == current_user.id:
+            user_portion = splits['payer']['amount']
+        else:
+            for split in splits['splits']:
+                if split['email'] == current_user.id:
+                    user_portion = split['amount']
+                    break
+        
+        previous_total += user_portion
+    
+    # Then calculate spending trend
     if previous_total > 0:
         spending_trend = ((total_user_expenses - previous_total) / previous_total) * 100
     else:
@@ -8443,7 +8456,6 @@ def stats():
     # Top expenses for the table - show user's portion
     top_expenses = sorted(current_user_expenses, key=lambda x: x['user_portion'], reverse=True)[:10]  # Top 10
 
-
     user_categories = {}
     
     # Try to get all user categories
@@ -8583,19 +8595,12 @@ def stats():
     
     app.logger.info(f"Tag names: {tag_names}")
     app.logger.info(f"Tag totals: {tag_totals}")
-    expenses = Expense.query.filter(
-        or_(
-            Expense.user_id == current_user.id,
-            Expense.split_with.like(f'%{current_user.id}%')
-        )
-    ).order_by(Expense.date.desc()).all()
     
-    # Initialize new variables
+    # Calculate totals for each transaction type
     total_expenses_only = 0
     total_income = 0
     total_transfers = 0
     
-    # Calculate totals for each transaction type
     for expense in expenses:
         if hasattr(expense, 'transaction_type'):
             if expense.transaction_type == 'expense' or expense.transaction_type is None:
@@ -8627,37 +8632,6 @@ def stats():
     income_trend = 5.2  # Example value
     liquidity_ratio = 3.5  # Example value
     account_growth = 7.8  # Example value
-    monthly_income = {}
-    for month_key in monthly_spending.keys():
-        monthly_income[month_key] = 0
-
-    # Fill in income data
-    for expense in expenses:
-        # Skip if not income type
-        if not hasattr(expense, 'transaction_type') or expense.transaction_type != 'income':
-            continue
-            
-        # Calculate user's portion
-        splits = expense.calculate_splits()
-        user_portion = 0
-        
-        if expense.paid_by == current_user.id:
-            user_portion = splits['payer']['amount']
-        else:
-            for split in splits['splits']:
-                if split['email'] == current_user.id:
-                    user_portion = split['amount']
-                    break
-        
-        # Add to monthly income
-        month_key = expense.date.strftime('%Y-%m')
-        if month_key in monthly_income:
-            monthly_income[month_key] += user_portion
-
-    # Prepare monthly income data in correct order (same as expenses)
-    monthly_income_amounts = []
-    for month_key in sorted(monthly_income.keys()):
-        monthly_income_amounts.append(monthly_income[month_key])
 
     return render_template('stats.html',
                           expenses=expenses,
@@ -8690,7 +8664,6 @@ def stats():
                           expense_income_ratio=expense_income_ratio,
                           liquidity_ratio=liquidity_ratio,
                           account_growth=account_growth,
-                          monthly_income_amounts=monthly_income_amounts,
                           # New data for enhanced charts
                           category_names=category_names,
                           category_totals=category_totals,

@@ -1511,130 +1511,131 @@ function showDetailedComparisonTable(data, metric) {
         createTagChart();
         
         function createIncomeExpenseChart() {
-            const ctx = document.getElementById('incomeExpenseChart');
-            if (!ctx) return;
-            
-            // Use server data
-            const months = {{ monthly_labels|tojson }};
-            
-            // Get expense data from server
-            const expenseData = {{ monthly_amounts|tojson }};
-            
-            // Get income data from server with fallback
-            const incomeData = {{ monthly_income_amounts|default([])|tojson }};
-            
-            // Ensure both arrays are the same length
-            const dataLength = Math.max(expenseData.length, incomeData.length);
-            const normalizedIncomeData = Array(dataLength).fill(0);
-            const normalizedExpenseData = Array(dataLength).fill(0);
-            console.log("Income data:", incomeData);
-            console.log("Expense data:", expenseData);
-            console.log("Months:", months);
-                    // Fill with actual data
-            for (let i = 0; i < dataLength; i++) {
-                if (i < incomeData.length) normalizedIncomeData[i] = incomeData[i];
-                if (i < expenseData.length) normalizedExpenseData[i] = expenseData[i];
-            }
-            
-            // Calculate net data
-            const netData = normalizedIncomeData.map((income, index) => 
-                income - normalizedExpenseData[index]);
-            
-            // Create chart with actual data
-            new Chart(ctx, {
-                // Rest of your chart configuration
-                type: 'bar',
-                data: {
-                    labels: months,
-                    datasets: [
-                        {
-                            label: 'Income',
-                            data: normalizedIncomeData,
-                            backgroundColor: 'rgba(16, 185, 129, 0.7)',
-                            borderColor: '#10b981',
-                            borderWidth: 1,
-                            borderRadius: 4,
-                            order: 2
-                        },
-                        {
-                            label: 'Expenses',
-                            data: normalizedExpenseData,
-                            backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                            borderColor: '#ef4444',
-                            borderWidth: 1,
-                            borderRadius: 4,
-                            order: 3
-                        },
-                        {
-                            label: 'Net Cash Flow',
-                            data: netData,
-                            type: 'line',
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.4,
-                            pointBackgroundColor: '#3b82f6',
-                            pointBorderColor: '#1d4ed8',
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
-                            order: 1
-                        }
-                    ]
+    const ctx = document.getElementById('incomeExpenseChart');
+    if (!ctx) return;
+    
+    // Use server data
+    const months = {{ monthly_labels|tojson }};
+    
+    // Get expense data from server
+    const expenseData = {{ monthly_amounts|tojson }};
+    
+    // Get income data from server
+    const incomeData = {{ monthly_income|tojson }};
+    
+    console.log("Income data:", incomeData);
+    console.log("Expense data:", expenseData);
+    console.log("Months:", months);
+    
+    // Ensure both arrays are the same length
+    const dataLength = Math.max(expenseData.length, incomeData.length);
+    const normalizedIncomeData = Array(dataLength).fill(0);
+    const normalizedExpenseData = Array(dataLength).fill(0);
+    
+    // Fill with actual data
+    for (let i = 0; i < dataLength; i++) {
+        if (i < incomeData.length) normalizedIncomeData[i] = incomeData[i];
+        if (i < expenseData.length) normalizedExpenseData[i] = expenseData[i];
+    }
+    
+    // Calculate net data
+    const netData = normalizedIncomeData.map((income, index) => 
+        income - normalizedExpenseData[index]);
+    
+    // Create chart with actual data
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: months,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: normalizedIncomeData,
+                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                    borderColor: '#10b981',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    order: 2
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: {
-                            grid: {
-                                color: 'rgba(148, 163, 184, 0.1)'
-                            }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(148, 163, 184, 0.1)'
-                            },
-                            ticks: {
-                                callback: function(value) {
-                                    return baseCurrencySymbol + value;
-                                }
-                            }
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            position: 'top',
-                            labels: {
-                                usePointStyle: true,
-                                pointStyle: 'circle'
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed.y !== null) {
-                                        label += baseCurrencySymbol + context.parsed.y.toFixed(2);
-                                    }
-                                    return label;
-                                }
-                            },
-                            backgroundColor: 'rgba(15, 23, 42, 0.8)',
-                            titleColor: '#38bdf8',
-                            bodyColor: '#f8fafc',
-                            borderColor: '#1e40af',
-                            borderWidth: 1
-                        }
-                    },
-                    animation: chartAnimations
+                {
+                    label: 'Expenses',
+                    data: normalizedExpenseData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                    borderColor: '#ef4444',
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    order: 3
+                },
+                {
+                    label: 'Net Cash Flow',
+                    data: netData,
+                    type: 'line',
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4,
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#1d4ed8',
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    order: 1
                 }
-            });
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return baseCurrencySymbol + value;
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                label += baseCurrencySymbol + context.parsed.y.toFixed(2);
+                            }
+                            return label;
+                        }
+                    },
+                    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+                    titleColor: '#38bdf8',
+                    bodyColor: '#f8fafc',
+                    borderColor: '#1e40af',
+                    borderWidth: 1
+                }
+            },
+            animation: chartAnimations
         }
+    });
+}
         
         function createTransactionTypeChart() {
             const ctx = document.getElementById('transactionTypeChart');
