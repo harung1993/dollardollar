@@ -4314,95 +4314,101 @@ def admin_delete_user(user_id):
         flash('Cannot delete your own admin account!')
         return redirect(url_for('admin'))
     
+    app.logger.info(f"Starting deletion process for user: {user_id}")
+    
     user = User.query.filter_by(id=user_id).first()
     if not user:
-        flash('User not found')
+        flash('User not found.')
         return redirect(url_for('admin'))
-        
+    
     try:
         # Start a transaction
-        db.session.begin_nested()
+        app.logger.info("Starting transaction")
         
-        app.logger.info(f"Starting deletion process for user {user_id}")
-        
-        # 1. Delete budgets first (they depend on categories)
-        budget_count = Budget.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {budget_count} budgets")
+        # Delete all related data in the correct order
+        # 1. First handle budgets (they reference categories)
+        app.logger.info("Deleting budgets...")
+        Budget.query.filter_by(user_id=user_id).delete()
         
         # 2. Delete recurring expenses
-        recurring_count = RecurringExpense.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {recurring_count} recurring expenses")
+        app.logger.info("Deleting recurring expenses...")
+        RecurringExpense.query.filter_by(user_id=user_id).delete()
         
         # 3. Delete expenses
-        expense_count = Expense.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {expense_count} expenses")
+        app.logger.info("Deleting expenses...")
+        Expense.query.filter_by(user_id=user_id).delete()
         
-        # 4. Delete category mappings
-        mapping_count = CategoryMapping.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {mapping_count} category mappings")
+        # 4. Delete settlements
+        app.logger.info("Deleting settlements...")
+        Settlement.query.filter(
+            or_(Settlement.payer_id == user_id, Settlement.receiver_id == user_id)
+        ).delete(synchronize_session=False)
         
-        # 5. Delete categories (now safe because budgets are gone)
-        category_count = Category.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {category_count} categories")
+        # 5. Delete category mappings
+        app.logger.info("Deleting category mappings...")
+        CategoryMapping.query.filter_by(user_id=user_id).delete()
         
-        # 6. Delete user's tags
-        tag_count = Tag.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {tag_count} tags")
+        # 6. Delete SimpleFin settings
+        app.logger.info("Deleting SimpleFin settings...")
+        SimpleFin.query.filter_by(user_id=user_id).delete()
         
-        # 7. Delete settlements (payer and receiver)
-        settlement_count = Settlement.query.filter(or_(
-            Settlement.payer_id == user_id,
-            Settlement.receiver_id == user_id
-        )).delete(synchronize_session=False)
-        app.logger.info(f"Deleted {settlement_count} settlements")
+        # 7. Delete ignored recurring patterns
+        app.logger.info("Deleting ignored patterns...")
+        IgnoredRecurringPattern.query.filter_by(user_id=user_id).delete()
         
-        # 8. Delete accounts
-        account_count = Account.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {account_count} accounts")
+        # 8. Handle user's accounts
+        app.logger.info("Deleting accounts...")
+        Account.query.filter_by(user_id=user_id).delete()
         
-        # 9. Delete SimpleFin connection if it exists
-        simplefin_count = SimpleFin.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {simplefin_count} SimpleFin connections")
+        # 9. Handle tags - first remove from association table
+        app.logger.info("Handling tags...")
+        user_tags = Tag.query.filter_by(user_id=user_id).all()
+        for tag in user_tags:
+            # Clear association with expenses
+            tag.expenses = []
+        db.session.flush()
         
-        # 10. Delete ignored patterns
-        pattern_count = IgnoredRecurringPattern.query.filter_by(user_id=user_id).delete()
-        app.logger.info(f"Deleted {pattern_count} ignored patterns")
+        # Now delete the tags
+        Tag.query.filter_by(user_id=user_id).delete()
         
-        # 11. Handle groups - reassign ownership or delete
+        # 10. Categories can now be deleted
+        app.logger.info("Deleting categories...")
+        Category.query.filter_by(user_id=user_id).delete()
+        
+        # 11. Handle group memberships
+        app.logger.info("Handling group memberships...")
+        # First, handle groups created by this user
         for group in Group.query.filter_by(created_by=user_id).all():
-            if len(group.members) > 1:
-                # Find another member to become the owner
-                for member in group.members:
-                    if member.id != user_id:
-                        group.created_by = member.id
-                        app.logger.info(f"Reassigned group {group.id} to new owner {member.id}")
-                        break
+            # Remove the user from the group members if they're in it
+            if user in group.members:
+                group.members.remove(user)
+                
+            # Find a new owner or delete the group if empty
+            if group.members:
+                # Assign first remaining member as new owner
+                new_owner = next(iter(group.members))
+                group.created_by = new_owner.id
             else:
-                # Delete empty groups
+                # Delete group if no members left
                 db.session.delete(group)
-                app.logger.info(f"Deleted empty group {group.id}")
         
-        # 12. Remove user from their groups
-        membership_count = 0
+        # Remove user from all groups they're a member of
         for group in user.groups:
             group.members.remove(user)
-            membership_count += 1
-        app.logger.info(f"Removed user from {membership_count} groups")
         
-        # 13. Finally, delete the user
+        # 12. Finally delete the user
+        app.logger.info("Deleting user...")
         db.session.delete(user)
-        app.logger.info(f"Deleted user {user_id}")
         
         # Commit all changes
         db.session.commit()
+        app.logger.info(f"User {user_id} deleted successfully")
         flash('User deleted successfully!')
         
     except Exception as e:
-        # Rollback on any error
         db.session.rollback()
-        error_msg = str(e)
-        app.logger.error(f"Error deleting user {user_id}: {error_msg}", exc_info=True)
-        flash(f'Error deleting user: {error_msg}')
+        app.logger.error(f"Error deleting user: {str(e)}", exc_info=True)
+        flash(f'Error deleting user: {str(e)}')
     
     return redirect(url_for('admin'))
 
