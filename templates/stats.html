@@ -692,8 +692,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     // COMPARISON TAB FUNCTIONALITY
+const baseCurrencySymbol = "{{ base_currency.symbol }}"; 
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize comparison tab functionality after DOM is loaded
+    // ---- COMBINED INITIALIZATION CODE ----
+    
+    // 1. Initialize comparison tab functionality
     initializeComparisonTab();
     const analyticsTab = document.getElementById('analyticsTab');
     if (analyticsTab) {
@@ -709,7 +712,86 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // 2. Initialize date filters (last 6 months by default)
+    const today = new Date();
+    const endDate = today.toISOString().split('T')[0];
+    
+    const startDate = new Date();
+    startDate.setMonth(today.getMonth() - 6);
+    
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    
+    if (startDateInput) startDateInput.value = startDate.toISOString().split('T')[0];
+    if (endDateInput) endDateInput.value = endDate;
+    
+    // 3. Filter button handler
+    const applyFiltersBtn = document.getElementById('applyFilters');
+    if (applyFiltersBtn) {
+        applyFiltersBtn.addEventListener('click', applyFilters);
+        
+        // Add hover effects to buttons
+        applyFiltersBtn.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-2px)';
+            this.style.boxShadow = '0 6px 10px -1px rgba(99, 102, 241, 0.3)';
+        });
+        applyFiltersBtn.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = '0 4px 6px -1px rgba(99, 102, 241, 0.2)';
+        });
+    }
+    
+    // 4. Initialize charts
+    initializeOverviewCharts();
+    
+    // 5. Add animation to cards
+    animateCards();
+    
+    // 6. Initialize gauge charts for financial health indicators
+    initializeGaugeCharts();
+    
+    // 7. Fix for recent transactions table
+    setTimeout(updateTransactionDisplay, 100);
 });
+
+function updateTransactionDisplay() {
+    console.log("Updating transaction display...");
+    const transactionRows = document.querySelectorAll('#recentTransactionsBody tr');
+    
+    transactionRows.forEach((row) => {
+        // Get the transaction type from the badge in the third column
+        const typeBadge = row.querySelector('td:nth-child(3) .badge');
+        if (!typeBadge) return;
+        
+        const typeText = typeBadge.textContent.trim().toLowerCase();
+        const amountCell = row.querySelector('td:nth-child(4)');
+        if (!amountCell) return;
+        
+        // Get the current amount text and clean it up
+        let amountText = amountCell.textContent.trim();
+        // Remove any existing + or - signs
+        amountText = amountText.replace(/^[+-]/, '');
+        
+        // Format based on transaction type
+        if (typeText.includes('income')) {
+            amountCell.textContent = '+' + amountText;
+            amountCell.style.color = '#10b981'; // Green
+            amountCell.style.fontWeight = 'bold';
+        } 
+        else if (typeText.includes('expense')) {
+            amountCell.textContent = '-' + amountText;
+            amountCell.style.color = '#ef4444'; // Red
+            amountCell.style.fontWeight = 'bold';
+        }
+        else if (typeText.includes('transfer')) {
+            // For transfers, don't add a sign but still style it
+            amountCell.textContent = amountText;
+            amountCell.style.color = '#a855f7'; // Purple
+            amountCell.style.fontWeight = 'bold';
+        }
+    });
+}   
 
 function initializeComparisonTab() {
     // Button event handlers for comparison tab
@@ -1305,41 +1387,8 @@ function showDetailedComparisonTable(data, metric) {
 }
 
 
-    const baseCurrencySymbol = "{{ base_currency.symbol }}"; 
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize date filters (last 6 months by default)
-        const today = new Date();
-        const endDate = today.toISOString().split('T')[0];
-        
-        const startDate = new Date();
-        startDate.setMonth(today.getMonth() - 6);
-        document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
-        document.getElementById('endDate').value = endDate;
-        
-        // Filter button handler
-        document.getElementById('applyFilters').addEventListener('click', applyFilters);
-        
-        // Add hover effects to buttons
-        const filterBtn = document.getElementById('applyFilters');
-        filterBtn.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateY(-2px)';
-            this.style.boxShadow = '0 6px 10px -1px rgba(99, 102, 241, 0.3)';
-        });
-        filterBtn.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateY(0)';
-            this.style.boxShadow = '0 4px 6px -1px rgba(99, 102, 241, 0.2)';
-        });
-        
-        // Initialize charts
-        initializeOverviewCharts();
-        
-        // Add animation to cards
-        animateCards();
-        
-        // Initialize gauge charts for financial health indicators
-        initializeGaugeCharts();
-    });
-    
+
+   
     function applyFilters() {
         // Get filter values
         const startDate = document.getElementById('startDate').value;
@@ -1465,23 +1514,42 @@ function showDetailedComparisonTable(data, metric) {
             const ctx = document.getElementById('incomeExpenseChart');
             if (!ctx) return;
             
-            // Use server data or fallback to sample data
+            // Use server data
             const months = {{ monthly_labels|tojson }};
-            // Income data (will need to be provided by your server)
-            const incomeData = Array(months.length).fill(0).map(() => Math.floor(Math.random() * 1000) + 2000);
-            // Expense data from your current stats
-            const expenseData = {{ monthly_amounts|tojson }};
-            // Calculate net data
-            const netData = incomeData.map((income, index) => income - (expenseData[index] || 0));
             
+            // Get expense data from server
+            const expenseData = {{ monthly_amounts|tojson }};
+            
+            // Get income data from server with fallback
+            const incomeData = {{ monthly_income_amounts|default([])|tojson }};
+            
+            // Ensure both arrays are the same length
+            const dataLength = Math.max(expenseData.length, incomeData.length);
+            const normalizedIncomeData = Array(dataLength).fill(0);
+            const normalizedExpenseData = Array(dataLength).fill(0);
+            console.log("Income data:", incomeData);
+            console.log("Expense data:", expenseData);
+            console.log("Months:", months);
+                    // Fill with actual data
+            for (let i = 0; i < dataLength; i++) {
+                if (i < incomeData.length) normalizedIncomeData[i] = incomeData[i];
+                if (i < expenseData.length) normalizedExpenseData[i] = expenseData[i];
+            }
+            
+            // Calculate net data
+            const netData = normalizedIncomeData.map((income, index) => 
+                income - normalizedExpenseData[index]);
+            
+            // Create chart with actual data
             new Chart(ctx, {
+                // Rest of your chart configuration
                 type: 'bar',
                 data: {
                     labels: months,
                     datasets: [
                         {
                             label: 'Income',
-                            data: incomeData,
+                            data: normalizedIncomeData,
                             backgroundColor: 'rgba(16, 185, 129, 0.7)',
                             borderColor: '#10b981',
                             borderWidth: 1,
@@ -1490,7 +1558,7 @@ function showDetailedComparisonTable(data, metric) {
                         },
                         {
                             label: 'Expenses',
-                            data: expenseData,
+                            data: normalizedExpenseData,
                             backgroundColor: 'rgba(239, 68, 68, 0.7)',
                             borderColor: '#ef4444',
                             borderWidth: 1,

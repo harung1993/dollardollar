@@ -1220,40 +1220,6 @@ def extract_keywords(description):
 
 
 
-def determine_transaction_type(row):
-    """Determine transaction type based on row data from CSV import"""
-    type_column = request.form.get('type_column')
-    negative_is_expense = 'negative_is_expense' in request.form
-    
-    # Check if there's a specific transaction type column
-    if type_column and type_column in row:
-        type_value = row[type_column].strip().lower()
-        
-        # Map common terms to transaction types
-        if type_value in ['expense', 'debit', 'purchase', 'payment', 'withdrawal']:
-            return 'expense'
-        elif type_value in ['income', 'credit', 'deposit', 'refund']:
-            return 'income'
-        elif type_value in ['transfer', 'move']:
-            return 'transfer'
-    
-    # If no type column or unknown value, try to determine from amount sign
-    amount_str = row[request.form.get('amount_column', 'Amount')].strip().replace('$', '').replace(',', '')
-    try:
-        amount = float(amount_str)
-        # Determine type based on amount sign and settings
-        if amount < 0 and negative_is_expense:
-            return 'expense'
-        elif amount > 0 and negative_is_expense:
-            return 'income'
-        elif amount < 0 and not negative_is_expense:
-            return 'income'  # In some systems, negative means money coming in
-        else:
-            return 'expense'  # Default to expense for positive amounts
-    except ValueError:
-        # If amount can't be parsed, default to expense
-        return 'expense'
-
 def get_category_id(category_name, description=None, user_id=None):
     """Find, create, or auto-suggest a category based on name and description"""
     # Clean the category name
@@ -4232,6 +4198,61 @@ def remove_group_member(group_id, member_id):
     
     return redirect(url_for('group_details', group_id=group_id))
 
+@app.route('/groups/<int:group_id>/delete', methods=['GET', 'POST'])
+@login_required_dev
+def delete_group(group_id):
+    """Delete a group and its associated expenses"""
+    # Find the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Security check: Only the creator can delete the group
+    if current_user.id != group.created_by:
+        flash('Only the group creator can delete the group', 'error')
+        return redirect(url_for('group_details', group_id=group_id))
+    
+    # GET request shows confirmation prompt, POST actually deletes
+    if request.method == 'GET':
+        # Count associated expenses
+        expense_count = Expense.query.filter_by(group_id=group_id).count()
+        # Set up session data for confirmation
+        session['delete_group_id'] = group_id
+        session['delete_group_name'] = group.name
+        session['delete_group_expense_count'] = expense_count
+        # Show confirmation toast
+        flash(f'Warning: Deleting this group will also delete {expense_count} associated transactions. This action cannot be undone.', 'warning')
+        return redirect(url_for('group_details', group_id=group_id))
+    
+    # POST request (actual deletion)
+    try:
+        # Get stored values from session
+        group_name = session.get('delete_group_name', group.name)
+        expense_count = session.get('delete_group_expense_count', 0)
+        
+        # Delete associated expenses first
+        Expense.query.filter_by(group_id=group_id).delete()
+        
+        # Delete the group
+        db.session.delete(group)
+        db.session.commit()
+        
+        # Clear session data
+        session.pop('delete_group_id', None)
+        session.pop('delete_group_name', None)
+        session.pop('delete_group_expense_count', None)
+        
+        # Success message
+        if expense_count > 0:
+            flash(f'Group "{group_name}" and {expense_count} associated transactions have been deleted', 'success')
+        else:
+            flash(f'Group "{group_name}" has been deleted', 'success')
+            
+        return redirect(url_for('groups'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting group {group_id}: {str(e)}")
+        flash(f'Error deleting group: {str(e)}', 'error')
+        return redirect(url_for('group_details', group_id=group_id))
 #--------------------
 # ROUTES: ADMIN
 #--------------------
@@ -5129,6 +5150,9 @@ def import_csv():
         flash('File must be a CSV')
         return redirect(url_for('advanced'))
     
+    # Define base_currency for any functions that might need it
+    base_currency = get_base_currency()
+    
     imported_expenses = []
     
     try:
@@ -5164,6 +5188,61 @@ def import_csv():
                 flash('Invalid account selected')
                 return redirect(url_for('advanced'))
         
+        # Use the enhanced determine_transaction_type function that accepts account_id
+        def determine_transaction_type_for_import(row, current_account_id=None):
+            """Determine transaction type based on row data from CSV import"""
+            type_column = request.form.get('type_column')
+            negative_is_expense = 'negative_is_expense' in request.form
+            
+            # Check if there's a specific transaction type column
+            if type_column and type_column in row:
+                type_value = row[type_column].strip().lower()
+                
+                # Map common terms to transaction types
+                if type_value in ['expense', 'debit', 'purchase', 'payment', 'withdrawal']:
+                    return 'expense'
+                elif type_value in ['income', 'credit', 'deposit', 'refund']:
+                    return 'income'
+                elif type_value in ['transfer', 'move', 'xfer']:
+                    return 'transfer'
+            
+            # If no type column or unknown value, try to determine from description
+            description = row.get(description_column, '').strip()
+            if description:
+                # Common transfer keywords
+                transfer_keywords = ['transfer', 'xfer', 'move', 'moved to', 'sent to', 'to account', 'between accounts']
+                # Common income keywords
+                income_keywords = ['salary', 'deposit', 'refund', 'interest', 'dividend', 'payment received']
+                # Common expense keywords
+                expense_keywords = ['payment', 'purchase', 'fee', 'subscription', 'bill']
+                
+                desc_lower = description.lower()
+                
+                # Check for keywords in description
+                if any(keyword in desc_lower for keyword in transfer_keywords):
+                    return 'transfer'
+                elif any(keyword in desc_lower for keyword in income_keywords):
+                    return 'income'
+                elif any(keyword in desc_lower for keyword in expense_keywords):
+                    return 'expense'
+            
+            # If still undetermined, use amount sign
+            amount_str = row[amount_column].strip().replace('$', '').replace(',', '')
+            try:
+                amount = float(amount_str)
+                # Determine type based on amount sign and settings
+                if amount < 0 and negative_is_expense:
+                    return 'expense'
+                elif amount > 0 and negative_is_expense:
+                    return 'income'
+                elif amount < 0 and not negative_is_expense:
+                    return 'income'  # In some systems, negative means money coming in
+                else:
+                    return 'expense'  # Default to expense for positive amounts
+            except ValueError:
+                # If amount can't be parsed, default to expense
+                return 'expense'
+                
         # Get existing cards used
         existing_cards = db.session.query(Expense.card_used).filter_by(
             user_id=current_user.id
@@ -5234,8 +5313,8 @@ def import_csv():
                     source_account_id = source_account_id or account.id
                     # If we couldn't determine the destination, it stays None
                 else:
-                    # Use the standard transaction type detection
-                    transaction_type = determine_transaction_type(row, account.id if account else None)
+                    # Use the function defined within this scope
+                    transaction_type = determine_transaction_type_for_import(row, account.id if account else None)
                 
                 # Get external ID if available
                 external_id = row.get(id_column) if id_column and id_column in row else None
@@ -5318,7 +5397,8 @@ def import_csv():
         return render_template('import_results.html', 
                                expenses=imported_expenses,
                                count=imported_count,
-                               duplicate_count=duplicate_count)
+                               duplicate_count=duplicate_count,
+                               base_currency=base_currency)  # Pass base_currency here
         
     except Exception as e:
         db.session.rollback()
@@ -5326,7 +5406,6 @@ def import_csv():
         flash(f'Error importing transactions: {str(e)}')
     
     return redirect(url_for('advanced'))
-
 
 #--------------------
 # ROUTES: simplefun
@@ -8116,6 +8195,24 @@ def stats():
                 'group_name': expense.group.name if expense.group else None
             }
             
+            if hasattr(expense, 'transaction_type'):
+                expense_data['transaction_type'] = expense.transaction_type
+            else:
+                # Default to 'expense' for backward compatibility
+                expense_data['transaction_type'] = 'expense'
+            
+            # Format amounts based on transaction type in the route itself
+            if expense_data['transaction_type'] == 'income':
+                expense_data['formatted_amount'] = f"+{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#10b981'  # Green
+            elif expense_data['transaction_type'] == 'transfer':
+                expense_data['formatted_amount'] = f"{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#a855f7'  # Purple
+            else:  # Expense (default)
+                expense_data['formatted_amount'] = f"-{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#ef4444'  # Red
+
+
             # Add category information for the expense
             if hasattr(expense, 'category_id') and expense.category_id:
                 category = Category.query.get(expense.category_id)
@@ -8133,62 +8230,70 @@ def stats():
             # Add to user's total
             total_user_expenses += user_portion
     
-    # Calculate monthly spending for current user
-    monthly_spending = {}
-    monthly_labels = []
-    monthly_amounts = []
-    
-    # Initialize all months in range
-    current_date = start_date.replace(day=1)
-    while current_date <= end_date:
-        month_key = current_date.strftime('%Y-%m')
-        month_label = current_date.strftime('%b %Y')
-        monthly_labels.append(month_label)
-        monthly_spending[month_key] = 0
-        
-        # Advance to next month
-        if current_date.month == 12:
-            current_date = current_date.replace(year=current_date.year + 1, month=1)
-        else:
-            current_date = current_date.replace(month=current_date.month + 1)
-    
-    # Fill in spending data
-    for expense_data in current_user_expenses:
-        month_key = expense_data['date'].strftime('%Y-%m')
-        if month_key in monthly_spending:
-            monthly_spending[month_key] += expense_data['user_portion']
-    
-    # Prepare chart data in correct order
-    for month_key in sorted(monthly_spending.keys()):
-        monthly_amounts.append(monthly_spending[month_key])
-    
-    # Calculate spending trend compared to previous period
-    previous_period_start = start_date - (end_date - start_date)
-    previous_period_filters = [
-        or_(
-            Expense.user_id == current_user.id,
-            Expense.split_with.like(f'%{current_user.id}%')
-        ),
-        Expense.date >= previous_period_start,
-        Expense.date < start_date
-    ]
-    
-    previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
-    previous_total = 0
-    
-    for expense in previous_expenses:
-        splits = expense.calculate_splits()
-        user_portion = 0
-        
-        if expense.paid_by == current_user.id:
-            user_portion = splits['payer']['amount']
-        else:
-            for split in splits['splits']:
-                if split['email'] == current_user.id:
-                    user_portion = split['amount']
-                    break
-        
-        previous_total += user_portion
+                # Calculate monthly spending for current user
+            monthly_spending = {}
+            monthly_income = {}  # New dictionary to track income
+            monthly_labels = []
+            monthly_amounts = []
+            monthly_income_amounts = []  # New array for chart
+
+            # Initialize all months in range
+            current_date = start_date.replace(day=1)
+            while current_date <= end_date:
+                month_key = current_date.strftime('%Y-%m')
+                month_label = current_date.strftime('%b %Y')
+                monthly_labels.append(month_label)
+                monthly_spending[month_key] = 0
+                monthly_income[month_key] = 0  # Initialize income for this month
+                
+                # Advance to next month
+                if current_date.month == 12:
+                    current_date = current_date.replace(year=current_date.year + 1, month=1)
+                else:
+                    current_date = current_date.replace(month=current_date.month + 1)
+
+            # Fill in spending and income data separately
+            for expense_data in current_user_expenses:
+                month_key = expense_data['date'].strftime('%Y-%m')
+                if month_key in monthly_spending:
+                    # Separate income and expense transactions
+                    if expense_data.get('transaction_type') == 'income':
+                        monthly_income[month_key] += expense_data['user_portion']
+                    else:  # 'expense' or 'transfer' or None (legacy expenses)
+                        monthly_spending[month_key] += expense_data['user_portion']
+
+            # Prepare chart data in correct order
+            for month_key in sorted(monthly_spending.keys()):
+                monthly_amounts.append(monthly_spending[month_key])
+                monthly_income_amounts.append(monthly_income[month_key])
+
+            # Calculate spending trend compared to previous period
+            previous_period_start = start_date - (end_date - start_date)
+            previous_period_filters = [
+                or_(
+                    Expense.user_id == current_user.id,
+                    Expense.split_with.like(f'%{current_user.id}%')
+                ),
+                Expense.date >= previous_period_start,
+                Expense.date < start_date
+            ]
+
+            previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
+            previous_total = 0
+
+            for expense in previous_expenses:
+                splits = expense.calculate_splits()
+                user_portion = 0
+                
+                if expense.paid_by == current_user.id:
+                    user_portion = splits['payer']['amount']
+                else:
+                    for split in splits['splits']:
+                        if split['email'] == current_user.id:
+                            user_portion = split['amount']
+                            break
+                
+                previous_total += user_portion
     
     if previous_total > 0:
         spending_trend = ((total_user_expenses - previous_total) / previous_total) * 100
@@ -8522,6 +8627,37 @@ def stats():
     income_trend = 5.2  # Example value
     liquidity_ratio = 3.5  # Example value
     account_growth = 7.8  # Example value
+    monthly_income = {}
+    for month_key in monthly_spending.keys():
+        monthly_income[month_key] = 0
+
+    # Fill in income data
+    for expense in expenses:
+        # Skip if not income type
+        if not hasattr(expense, 'transaction_type') or expense.transaction_type != 'income':
+            continue
+            
+        # Calculate user's portion
+        splits = expense.calculate_splits()
+        user_portion = 0
+        
+        if expense.paid_by == current_user.id:
+            user_portion = splits['payer']['amount']
+        else:
+            for split in splits['splits']:
+                if split['email'] == current_user.id:
+                    user_portion = split['amount']
+                    break
+        
+        # Add to monthly income
+        month_key = expense.date.strftime('%Y-%m')
+        if month_key in monthly_income:
+            monthly_income[month_key] += user_portion
+
+    # Prepare monthly income data in correct order (same as expenses)
+    monthly_income_amounts = []
+    for month_key in sorted(monthly_income.keys()):
+        monthly_income_amounts.append(monthly_income[month_key])
 
     return render_template('stats.html',
                           expenses=expenses,
@@ -8530,6 +8666,7 @@ def stats():
                           net_balance=net_balance,
                           balance_count=balance_count,
                           monthly_average=monthly_average,
+                          monthly_income=monthly_income_amounts,
                           month_count=month_count,
                           largest_expense=largest_expense,
                           monthly_labels=monthly_labels,
@@ -8553,6 +8690,7 @@ def stats():
                           expense_income_ratio=expense_income_ratio,
                           liquidity_ratio=liquidity_ratio,
                           account_growth=account_growth,
+                          monthly_income_amounts=monthly_income_amounts,
                           # New data for enhanced charts
                           category_names=category_names,
                           category_totals=category_totals,
@@ -8561,7 +8699,6 @@ def stats():
                           tag_totals=tag_totals,
                           tag_colors=tag_colors)
 
-  
 def handle_comparison_request():
     """Handle time frame comparison requests within the stats route"""
     # Get parameters from request
@@ -8585,13 +8722,16 @@ def handle_comparison_request():
         'primary': {
             'totalSpending': 0,
             'transactionCount': 0,
-            'topCategory': 'None'
+            'topCategory': 'None',
+            'dailyAmounts': []  # Make sure this is initialized
         },
         'comparison': {
             'totalSpending': 0,
             'transactionCount': 0,
-            'topCategory': 'None'
-        }
+            'topCategory': 'None',
+            'dailyAmounts': []  # Make sure this is initialized
+        },
+        'dateLabels': []  # Initialize date labels
     }
     
     # Get expenses for both periods - reuse your existing query logic
@@ -8615,7 +8755,7 @@ def handle_comparison_request():
     ]
     comparison_expenses_raw = Expense.query.filter(and_(*comparison_query_filters)).order_by(Expense.date).all()
     
-    # Process expenses to get user's portion - similar to your existing code
+    # Process expenses to get user's portion
     primary_expenses = []
     comparison_expenses = []
     primary_total = 0
@@ -8681,7 +8821,7 @@ def handle_comparison_request():
     
     # Process data based on the selected metric
     if metric == 'spending':
-        # Daily spending data
+        # Calculate daily spending for each period
         primary_daily = process_daily_spending(primary_expenses, primary_start_date, primary_end_date)
         comparison_daily = process_daily_spending(comparison_expenses, comparison_start_date, comparison_end_date)
         
@@ -8689,6 +8829,10 @@ def handle_comparison_request():
         result['primary']['dailyAmounts'] = normalize_time_series(primary_daily, 10)
         result['comparison']['dailyAmounts'] = normalize_time_series(comparison_daily, 10)
         result['dateLabels'] = [f'Day {i+1}' for i in range(10)]
+        
+        # Debugging - log the daily spending data
+        app.logger.info(f"Primary daily amounts: {result['primary']['dailyAmounts']}")
+        app.logger.info(f"Comparison daily amounts: {result['comparison']['dailyAmounts']}")
         
     elif metric == 'categories':
         # Get category spending for both periods
@@ -8727,7 +8871,6 @@ def handle_comparison_request():
         
     elif metric == 'tags':
         # Similar logic for tags - adapt based on your data model
-        # You'll need to adjust this based on how tags are stored in your database
         primary_tags = {}
         comparison_tags = {}
         
@@ -8796,6 +8939,49 @@ def handle_comparison_request():
         result['comparison']['paymentAmounts'] = [comparison_payment.get(method, 0) for method in all_methods]
     
     return jsonify(result)
+
+# Helper functions for the comparison feature
+
+def process_daily_spending(expenses, start_date, end_date):
+    """Process expenses into daily totals"""
+    # Calculate number of days in period
+    days = (end_date - start_date).days + 1
+    daily_spending = [0] * days
+    
+    for expense in expenses:
+        # Calculate day index
+        day_index = (expense['date'] - start_date).days
+        if 0 <= day_index < days:
+            daily_spending[day_index] += expense['user_portion']
+    
+    return daily_spending
+
+def normalize_time_series(data, target_length):
+    """Normalize a time series to a target length for better comparison"""
+    if len(data) == 0:
+        return [0] * target_length
+    
+    if len(data) == target_length:
+        return data
+    
+    # Use resampling to normalize the data
+    result = []
+    ratio = len(data) / target_length
+    
+    for i in range(target_length):
+        start_idx = int(i * ratio)
+        end_idx = int((i + 1) * ratio)
+        if end_idx > len(data):
+            end_idx = len(data)
+        
+        if start_idx == end_idx:
+            segment_avg = data[start_idx] if start_idx < len(data) else 0
+        else:
+            segment_avg = sum(data[start_idx:end_idx]) / (end_idx - start_idx)
+        
+        result.append(segment_avg)
+    
+    return result
 
 
 def get_category_name(expense):

@@ -17,8 +17,24 @@
     <div class="row mb-4">
         <div class="col-md-8">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">{{ group.name }}</h4>
+                    {% if current_user.id == group.created_by %}
+                    <div>
+                        {% if session.get('delete_group_id') == group.id %}
+                        <!-- Show compact confirmation controls -->
+                        <form action="{{ url_for('delete_group', group_id=group.id) }}" method="POST" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-danger">Confirm Delete</button>
+                        </form>
+                        <a href="{{ url_for('group_details', group_id=group.id) }}" class="btn btn-sm btn-secondary">Cancel</a>
+                        {% else %}
+                        <!-- Show compact delete button -->
+                        <a href="{{ url_for('delete_group', group_id=group.id) }}" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-trash-alt"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="card-body">
                     {% if group.description %}
@@ -28,6 +44,7 @@
                         Created by: {{ group.creator.name }}<br>
                         Created on: {{ group.created_at.strftime('%Y-%m-%d') }}
                     </p>
+                    
                 </div>
             </div>
         </div>
