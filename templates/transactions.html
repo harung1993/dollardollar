@@ -117,7 +117,7 @@
                                 {% set splits = expense_splits[expense.id] %}
                                 <tr data-expense-id="{{ expense.id }}" 
                                     data-transaction-type="{{ expense.transaction_type|default('expense') }}"
-                                    data-category-id="{{ expense.category_id|default('none') }}">
+                                    data-category-id="{% if expense.category_id %}{{ expense.category_id }}{% else %}none{% endif %}">
                                     <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
                                     <td>
                                         {% if expense.is_income %}
@@ -543,8 +543,14 @@
             }
             
             // Category filter
-            if (categoryId === 'none' && rowCategory !== 'none') visible = false;
-            if (categoryId !== 'all' && categoryId !== 'none' && rowCategory !== categoryId) visible = false;
+            // Category filter
+            if (categoryId === 'none') {
+                // Only show uncategorized items
+                if (rowCategory !== 'none') visible = false;
+            } else if (categoryId !== 'all') {
+                // Show only the selected category
+                if (rowCategory !== categoryId) visible = false;
+}
             
             // Description filter
             if (description && !rowDescription.includes(description)) visible = false;
