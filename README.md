@@ -110,6 +110,7 @@ Set up transactions that repeat on a regular schedule:
 - Daily, weekly, monthly, or yearly recurrence
 - Set end dates or number of occurrences
 - Edit or cancel recurring transactions
+- Auto detected recurring
 
 ### Multi-Currency Support
 - Add expenses in any currency
@@ -231,6 +232,7 @@ Here's a visual tour of DollarDollar Bill Y'all:
 
 ### Recurring expenses
 <img width="1427" alt="Screenshot 2025-03-05 at 10 24 59 PM" src="https://github.com/user-attachments/assets/b0992c09-ea21-4f45-b85d-ce5378fdbdbc" />
+<img width="1509" alt="Screenshot 2025-03-30 at 12 51 28 PM" src="https://github.com/user-attachments/assets/a72c290b-bb06-4079-8c74-94c3adfefa39" />
 
 ### Budgets
 <img width="1509" alt="Screenshot 2025-03-22 at 5 36 30 PM" src="https://github.com/user-attachments/assets/8db5c16b-37e4-4bf4-aa0e-396810e0380d" />
