@@ -129,7 +129,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for account in current_user.accounts %}
+                            {% for account in current_user.accounts|sort(attribute='name') %}
                             <!-- Regular Row -->
                             <tr id="account-row-{{ account.id }}">
                                 <td>{{ account.name }}</td>
