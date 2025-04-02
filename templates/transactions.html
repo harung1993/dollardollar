@@ -7,6 +7,7 @@
             <div class="d-flex justify-content-between align-items-center">
                 <h2>All Transactions</h2>
                 <div>
+                    
                     <button type="button" class="btn btn-success me-2" id="bulkCategorizeBtn">
                         <i class="fas fa-tags me-2"></i>Auto-Categorize
                     </button>
@@ -22,6 +23,7 @@
     <div class="card mb-4">
         <div class="card-header">
             <h5 class="mb-0">Filters</h5>
+            
         </div>
         <div class="card-body">
             <form id="filterForm">
@@ -94,8 +96,20 @@
     <!-- Transactions Table -->
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Transaction History</h5>
-            <span class="badge bg-secondary" id="resultCount">{{ expenses|length }} transactions</span>
+            <h5 class="mb-0">Transaction History <span class="badge bg-secondary ms-2" id="resultCount">{{ expenses|length }} transactions</span></h5>
+            <div class="input-group" style="width: 300px;">
+                <span class="input-group-text bg-dark text-light border-secondary">
+                    <i class="fas fa-search"></i>
+                </span>
+                <input type="text" 
+                       id="globalSearchInput" 
+                       class="form-control bg-dark text-light" 
+                       placeholder="Search transactions..."
+                       autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn" style="display:none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -244,6 +258,73 @@
     let baseCurrencySymbol = '{{ base_currency.symbol }}';
 
     document.addEventListener('DOMContentLoaded', function() {
+        const globalSearchInput = document.getElementById('globalSearchInput');
+        const clearSearchBtn = document.getElementById('clearSearchBtn');
+        const transactionsTable = document.querySelector('#transactionsTable tbody');
+        const resultCountEl = document.getElementById('resultCount');
+
+        // Function to perform global search
+        function performGlobalSearch() {
+            const searchTerm = globalSearchInput.value.toLowerCase().trim();
+            clearSearchBtn.style.display = searchTerm ? 'block' : 'none';
+
+            let visibleCount = 0;
+            const rows = document.querySelectorAll('#transactionsTable tbody tr[data-expense-id]');
+
+            rows.forEach(row => {
+                // Search across multiple fields
+                const searchableTexts = [
+                    row.cells[0].textContent.toLowerCase(),  // Date
+                    row.cells[2].textContent.toLowerCase(),  // Description
+                    row.cells[3].textContent.toLowerCase(),  // Amount
+                    row.cells[4].textContent.toLowerCase(), // Account
+                    row.querySelector('td:nth-child(6)').textContent.toLowerCase() // Category
+                ];
+
+                // Additional metadata search
+                const typeText = row.querySelector('.badge').textContent.toLowerCase();
+                searchableTexts.push(typeText);
+
+                // Check if any searchable text includes the search term
+                const isMatch = searchableTexts.some(text => 
+                    text.includes(searchTerm) || 
+                    (searchTerm.startsWith('>') && parseFloat(text.replace(/[^\d.-]/g, '')) > parseFloat(searchTerm.slice(1))) ||
+                    (searchTerm.startsWith('<') && parseFloat(text.replace(/[^\d.-]/g, '')) < parseFloat(searchTerm.slice(1)))
+                );
+
+                row.style.display = isMatch ? '' : 'none';
+                if (isMatch) visibleCount++;
+            });
+
+            // Update result count
+            if (resultCountEl) {
+                resultCountEl.textContent = `${visibleCount} transaction${visibleCount !== 1 ? 's' : ''}`;
+            }
+
+            // Handle no results
+            const noResultsRow = document.querySelector('#transactionsTable tbody tr.no-results');
+            if (visibleCount === 0 && !noResultsRow) {
+                const noResultRow = document.createElement('tr');
+                noResultRow.className = 'no-results';
+                noResultRow.innerHTML = `<td colspan="7" class="text-center text-muted">No transactions match your search</td>`;
+                transactionsTable.appendChild(noResultRow);
+            } else if (visibleCount > 0 && noResultsRow) {
+                noResultsRow.remove();
+            }
+        }
+
+        // Add event listeners for dynamic search
+        if (globalSearchInput) {
+            globalSearchInput.addEventListener('input', performGlobalSearch);
+        }
+
+        // Clear search button functionality
+        if (clearSearchBtn) {
+            clearSearchBtn.addEventListener('click', function() {
+                globalSearchInput.value = '';
+                performGlobalSearch();
+            });
+        }
         // Initialize date fields
         initializeDates();
         

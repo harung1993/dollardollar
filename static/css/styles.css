@@ -1,0 +1,66 @@
+/* Slide panel styling */
+.slide-panel {
+    position: fixed;
+    top: 0;
+    right: -500px;
+    width: 500px;
+    height: 100vh;
+    background-color: #1f2937;
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+    z-index: 1050;
+    overflow-y: auto;
+    transition: right 0.3s ease-out;
+}
+
+.slide-panel.active {
+    right: 0;
+}
+
+.slide-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.slide-panel-content {
+    padding: 1rem;
+}
+
+.slide-panel-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease-out;
+}
+
+.slide-panel-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Custom multiselect styling */
+.custom-multiselect-wrapper {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #444;
+    border-radius: 0.25rem;
+    background-color: #2d2d2d;
+}
+
+.custom-multiselect-item {
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+}
+
+.custom-multiselect-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}

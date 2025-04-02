@@ -1,43 +1,43 @@
 r"""29a41de6a866d56c36aba5159f45257c"""
 import os
-from dotenv import load_dotenv
-from flask import Flask, render_template, send_file, request, jsonify, request, redirect, url_for, flash, session
 import csv
-import hashlib
+import re
 import io
-import re   
+import json
+import uuid
+import base64
+import pytz
+import secrets
+import logging
+import hashlib
+import requests
+import calendar
+from functools import wraps
+from datetime import datetime, date, timedelta
+
+import ssl
+import ssl
+
+from dotenv import load_dotenv
+from flask import Flask, render_template, send_file, request, jsonify, url_for, flash, redirect, session
 from flask_apscheduler import APScheduler
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from recurring_detection import detect_recurring_transactions, create_recurring_expense_from_detection
-from flask import jsonify, request
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-import calendar
-from functools import wraps
-import logging
-from sqlalchemy import func, or_, and_
-import json
-import secrets
-from datetime import timedelta
 from flask_mail import Mail, Message
 from flask_migrate import Migrate
-import ssl
-import requests
-import json
-from sqlalchemy import inspect, text
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import func, or_, and_, inspect, text
+
+from recurring_detection import detect_recurring_transactions, create_recurring_expense_from_detection
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
-from datetime import datetime, date, timedelta
 from simplefin_client import SimpleFin
-from flask import session, request, jsonify, url_for, flash, redirect
-from datetime import datetime, timedelta
-import uuid
-import json
-import base64
-import pytz
+
+
 
 os.environ['OPENSSL_LEGACY_PROVIDER'] = '1'
+
+APP_VERSION = "4.1.3"
 
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -75,8 +75,11 @@ app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', os.getenv('MAIL_USERNAME'))
 
+app.config['TIMEZONE'] = 'UTC'  # Default timezone
+
 # Initialize scheduler
 scheduler = APScheduler()
+scheduler.timezone = pytz.UTC  # Explicitly set scheduler to use UTC
 scheduler.init_app(app)
 
 @scheduler.task('cron', id='monthly_reports', day=1, hour=1, minute=0)
@@ -3137,22 +3140,38 @@ def add_expense():
                 destination_account_id=destination_account_id
             )
             
-            # Update account balances
+             # Update account balances
             if account_id:
                 from_account = Account.query.get(account_id)
                 if from_account and from_account.user_id == current_user.id:
                     if transaction_type == 'expense':
-                        from_account.balance -= amount
+                        # Check if currencies match
+                        if from_account.currency_code == currency_code:
+                            # Same currency - use original amount directly
+                            from_account.balance -= original_amount
+                        else:
+                            # Different currencies - use converted amount
+                            from_account.balance -= amount
                     elif transaction_type == 'income':
-                        from_account.balance += amount
+                        # Same check for income
+                        if from_account.currency_code == currency_code:
+                            from_account.balance += original_amount
+                        else:
+                            from_account.balance += amount
                     elif transaction_type == 'transfer' and destination_account_id:
-                        # For transfers, subtract from source account
-                        from_account.balance -= amount
+                        # For transfers, also check currencies
+                        if from_account.currency_code == currency_code:
+                            from_account.balance -= original_amount
+                        else:
+                            from_account.balance -= amount
                         
-                        # And add to destination account
-                        to_account = Account.query.get(destination_account_id)
-                        if to_account and to_account.user_id == current_user.id:
-                            to_account.balance += amount
+            # And for destination account
+            to_account = Account.query.get(destination_account_id)
+            if to_account and to_account.user_id == current_user.id:
+                if to_account.currency_code == currency_code:
+                    to_account.balance += original_amount
+                else:
+                    to_account.balance += amount
             
             # Handle tags if present
             tag_ids = request.form.getlist('tags')
@@ -7564,6 +7583,12 @@ def utility_processor():
         # Previous functions...
         'get_budget_status_for_category': get_budget_status_for_category,
         'convert_currency': template_convert_currency 
+    }
+@app.context_processor
+def inject_app_version():
+    """Make app version available to all templates"""
+    return {
+        'app_version': APP_VERSION
     }
 @app.route('/budgets/trends-data')
 @login_required_dev

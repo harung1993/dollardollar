@@ -16,5 +16,6 @@ PyJWT==2.8.0
 cryptography==41.0.5 
 pyOpenSSL==23.2.0 
 flask-apscheduler
-pytz
+pytz>=2021.1
+tzdata>=2021.1
 # 29a41de6a866d56c36aba5159f45257c
