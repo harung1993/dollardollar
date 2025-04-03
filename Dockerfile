@@ -71,4 +71,4 @@ EXPOSE 5001
 ARG TARGETPLATFORM
 
 # Use the absolute path to gunicorn from the virtual environment
-CMD flask db upgrade && exec /venv/bin/gunicorn --bind 0.0.0.0:5001 --workers=3 --timeout=120 app:app
+CMD ["/venv/bin/gunicorn", "--bind", "0.0.0.0:5001", "--workers=3", "--timeout=120", "app:app"]

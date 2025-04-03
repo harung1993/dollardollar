@@ -24,6 +24,9 @@ Born from a desire to move beyond restrictive financial tracking platforms, this
 - 💡 Flexible expense splitting mechanisms
 - 🏠 Self-hosted privacy
 - 🤝 Collaborative expense management
+- Integration with Simplefin (auto tracking accounts and transactions)
+- Budgets with notifications
+
   
 ## 🚀 Features
 
