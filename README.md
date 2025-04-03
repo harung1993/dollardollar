@@ -6,7 +6,7 @@
 <h1 align="center">DollarDollar Bill Y'all</h1>
 <div align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="license"></a>
-<a href="https://github.com/yourusername/dollardollar/actions"><img src="https://img.shields.io/github/actions/workflow/status/yourusername/dollardollar/ci.yml?branch=main" alt="GitHub Workflow Status"></a>
+<a href="https://github.com/harung1993/dollardollar/actions"><img src="https://img.shields.io/github/actions/workflow/status/harung1993/dollardollar/ci.yml?branch=main" alt="GitHub Workflow Status"></a>
 </div>
 <p align="center">An open-source, self-hosted money management platform with comprehensive expense tracking, budgeting, account synchronization, and bill-splitting features - designed for privacy, flexibility, and complete financial control.</p>
 <div align="center">
