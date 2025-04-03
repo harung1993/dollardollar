@@ -1,7 +1,7 @@
 # Use a more specific base image that supports multiple architectures
 FROM --platform=$TARGETPLATFORM ubuntu:20.04
 
-ENV PENSSL_LEGACY_PROVIDER=1
+ENV OPENSSL_LEGACY_PROVIDER=1
 
 # Set non-interactive installation and prevent apt from prompting
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,6 +30,11 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /etc/ssl
 RUN echo "[openssl_init]\nlegacy = 1\nproviders = provider_sect\n\n[provider_sect]\ndefault = default_sect\nlegacy = legacy_sect\n\n[default_sect]\nactivate = 1\n\n[legacy_sect]\nactivate = 1" > /etc/ssl/openssl-legacy.cnf
 
+
+# Set working directory
+WORKDIR /app
+
+
 # Set up a virtual environment
 RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
@@ -37,8 +42,6 @@ ENV PATH="/venv/bin:$PATH"
 # Upgrade pip
 RUN pip install --upgrade pip
 
-# Set working directory
-WORKDIR /app
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
@@ -68,4 +71,4 @@ EXPOSE 5001
 ARG TARGETPLATFORM
 
 # Use the absolute path to gunicorn from the virtual environment
-CMD ["/venv/bin/gunicorn", "--bind", "0.0.0.0:5001", "--workers=3", "--timeout=120", "app:app"]
+CMD flask db upgrade && exec /venv/bin/gunicorn --bind 0.0.0.0:5001 --workers=3 --timeout=120 app:app

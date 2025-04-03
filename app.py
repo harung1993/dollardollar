@@ -33,6 +33,7 @@ from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
 from simplefin_client import SimpleFin
 
+from session_timeout import DemoTimeout, demo_time_limited
 
 
 os.environ['OPENSSL_LEGACY_PROVIDER'] = '1'
@@ -120,7 +121,18 @@ login_manager.login_view = 'login'
 migrate = Migrate(app, db)
 
 
-
+# Initialize demo timeout middleware
+demo_timeout = DemoTimeout(
+    timeout_minutes=int(os.getenv('DEMO_TIMEOUT_MINUTES', 10)),
+    demo_users=[
+        'demo@example.com',
+        'demo1@example.com',
+        'demo2@example.com',
+        # Add any specific demo accounts here
+    ]
+)
+demo_timeout.init_app(app)
+app.extensions['demo_timeout'] = demo_timeout  # Store for access in decorator
 
 #--------------------
 # DATABASE MODELS
@@ -864,7 +876,14 @@ def init_db():
             print("Development user created:", DEV_USER_EMAIL)
 
 
-
+def restrict_demo_access(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if current_user.is_authenticated and demo_timeout.is_demo_user(current_user.id):
+            flash('Demo users cannot access this page.')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 #--------------------
@@ -2511,6 +2530,438 @@ def get_transaction_details(other_user_id):
 
     return jsonify(transactions)
 
+#--------------------
+# ROUTES: DEMO
+#--------------------
+@app.route('/demo')
+@app.route('/')
+def demo_login():
+    """Auto-login as demo user with session timeout"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Check if demo mode is enabled
+    if not os.getenv('DEMO_MODE', 'False').lower() == 'true':
+        # If demo mode is not enabled, use default route
+        return home()
+    
+    # Get demo timeout instance
+    demo_timeout = app.extensions.get('demo_timeout')
+    
+    # Check concurrent session limit
+    max_sessions = int(os.getenv('MAX_CONCURRENT_DEMO_SESSIONS', 5))
+    current_sessions = demo_timeout.get_active_demo_sessions()  # Remove 'if demo_timeout else 0'
+    
+    if current_sessions >= max_sessions:
+        flash(f'Maximum number of demo sessions ({max_sessions}) has been reached. Please try again later.')
+        return redirect(url_for('demo_max_users'))
+    
+    # Find or create demo user
+    demo_user = User.query.filter_by(id='demo@example.com').first()
+    if not demo_user:
+        logger.info("Creating new demo user")
+        demo_user = User(
+            id='demo@example.com',
+            name='Demo User',
+            is_admin=False
+        )
+        demo_user.set_password('demo')
+        db.session.add(demo_user)
+        db.session.commit()
+    else:
+        logger.info("Using existing demo user")
+    
+    # Try to register the demo session
+    if not demo_timeout.register_demo_session(demo_user.id):
+        flash(f'Maximum number of demo sessions ({max_sessions}) has been reached. Please try again later.')
+        return redirect(url_for('login'))
+    
+    # Always reset demo data for each new session
+    logger.info("Resetting demo data for new session")
+    reset_demo_data(demo_user.id)
+    
+    # Create demo data
+    result = create_demo_data(demo_user.id)
+    logger.info(f"Demo data creation result: {result}")
+    
+    # Login as demo user
+    login_user(demo_user)
+    
+    # Set demo start time and expiry time
+    demo_timeout_minutes = int(os.getenv('DEMO_TIMEOUT_MINUTES', 10))
+    session['demo_start_time'] = datetime.utcnow().timestamp()
+    session['demo_expiry_time'] = (datetime.utcnow() + timedelta(minutes=demo_timeout_minutes)).timestamp()
+    
+    flash(f'Welcome to the demo! Your session will expire in {demo_timeout_minutes} minutes.')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/demo_max_users')
+def demo_max_users():
+    return render_template('demo/demo_concurrent.html')
+
+@app.route('/demo_expired')
+def demo_expired():
+    """Handle expired demo sessions"""
+    return render_template('demo/demo_expired.html')
+
+@app.route('/demo-thanks')
+def demo_thanks():
+    """Page to thank users after demo session"""
+    return render_template('demo/demo_thanks.html')
+
+# Demo data creation function
+def create_demo_data(user_id):
+    """Create comprehensive sample data for demo users with proper checking"""
+    from datetime import datetime, timedelta
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting demo data creation for user {user_id}")
+    
+    # First create default categories
+    create_default_categories(user_id)
+    db.session.flush()
+    
+    # Check if demo data already exists
+    existing_accounts = Account.query.filter_by(user_id=user_id).all()
+    if existing_accounts:
+        logger.info(f"Found {len(existing_accounts)} existing accounts for user {user_id}")
+        # We'll still continue to create any missing data
+    
+    # Create sample accounts if they don't exist
+    checking = Account.query.filter_by(name="Demo Checking", user_id=user_id).first()
+    if not checking:
+        logger.info("Creating demo checking account")
+        checking = Account(
+            name="Demo Checking",
+            type="checking",
+            institution="Demo Bank",
+            balance=2543.87,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(checking)
+    
+    savings = Account.query.filter_by(name="Demo Savings", user_id=user_id).first()
+    if not savings:
+        logger.info("Creating demo savings account")
+        savings = Account(
+            name="Demo Savings",
+            type="savings",
+            institution="Demo Bank",
+            balance=8750.25,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(savings)
+    
+    credit = Account.query.filter_by(name="Demo Credit Card", user_id=user_id).first()
+    if not credit:
+        logger.info("Creating demo credit card account")
+        credit = Account(
+            name="Demo Credit Card",
+            type="credit",
+            institution="Demo Bank",
+            balance=-1250.30,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(credit)
+    
+    investment = Account.query.filter_by(name="Demo Investment", user_id=user_id).first()
+    if not investment:
+        logger.info("Creating demo investment account")
+        investment = Account(
+            name="Demo Investment",
+            type="investment",
+            institution="Vanguard",
+            balance=15000.00,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(investment)
+    
+    db.session.flush()
+    
+    # Get categories
+    food_category = Category.query.filter_by(name="Food", user_id=user_id).first()
+    housing_category = Category.query.filter_by(name="Housing", user_id=user_id).first()
+    transportation_category = Category.query.filter_by(name="Transportation", user_id=user_id).first()
+    entertainment_category = Category.query.filter_by(name="Entertainment", user_id=user_id).first()
+    
+    # Create sample transactions if they don't exist
+    # 1. Regular expenses
+    if not Expense.query.filter_by(description="Grocery shopping", user_id=user_id).first():
+        logger.info("Creating demo grocery expense")
+        expense1 = Expense(
+            description="Grocery shopping",
+            amount=125.75,
+            date=datetime.utcnow(),
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=food_category.id if food_category else None,
+            split_with=None,
+            group_id=None,
+            account_id=credit.id,
+            transaction_type="expense"
+        )
+        db.session.add(expense1)
+    
+    if not Expense.query.filter_by(description="Monthly rent", user_id=user_id).first():
+        logger.info("Creating demo rent expense")
+        expense2 = Expense(
+            description="Monthly rent",
+            amount=1200.00,
+            date=datetime.utcnow() - timedelta(days=7),
+            card_used="Demo Checking",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=housing_category.id if housing_category else None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="expense"
+        )
+        db.session.add(expense2)
+    
+    # 2. Income transactions
+    if not Expense.query.filter_by(description="Salary deposit", user_id=user_id).first():
+        logger.info("Creating demo salary income")
+        income1 = Expense(
+            description="Salary deposit",
+            amount=3500.00,
+            date=datetime.utcnow() - timedelta(days=15),
+            card_used="Direct Deposit",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="income"
+        )
+        db.session.add(income1)
+    
+    if not Expense.query.filter_by(description="Side gig payment", user_id=user_id).first():
+        logger.info("Creating demo side income")
+        income2 = Expense(
+            description="Side gig payment",
+            amount=250.00,
+            date=datetime.utcnow() - timedelta(days=8),
+            card_used="PayPal",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="income"
+        )
+        db.session.add(income2)
+    
+    # 3. Transfers between accounts
+    if not Expense.query.filter_by(description="Transfer to savings", user_id=user_id).first():
+        logger.info("Creating demo transfer to savings")
+        transfer1 = Expense(
+            description="Transfer to savings",
+            amount=500.00,
+            date=datetime.utcnow() - timedelta(days=10),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=savings.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer1)
+    
+    if not Expense.query.filter_by(description="Credit card payment", user_id=user_id).first():
+        logger.info("Creating demo credit card payment")
+        transfer2 = Expense(
+            description="Credit card payment",
+            amount=750.00,
+            date=datetime.utcnow() - timedelta(days=12),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=credit.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer2)
+    
+    if not Expense.query.filter_by(description="Investment contribution", user_id=user_id).first():
+        logger.info("Creating demo investment transfer")
+        transfer3 = Expense(
+            description="Investment contribution",
+            amount=1000.00,
+            date=datetime.utcnow() - timedelta(days=20),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=investment.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer3)
+    
+    # 4. Create recurring expenses
+    netflix_recurring = RecurringExpense.query.filter_by(
+        description="Netflix Subscription", user_id=user_id).first()
+    if not netflix_recurring:
+        logger.info("Creating demo Netflix recurring expense")
+        recurring1 = RecurringExpense(
+            description="Netflix Subscription",
+            amount=14.99,
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=entertainment_category.id if entertainment_category else None,
+            frequency="monthly",
+            start_date=datetime.utcnow() - timedelta(days=30),
+            active=True,
+            account_id=credit.id
+        )
+        db.session.add(recurring1)
+    
+    rent_recurring = RecurringExpense.query.filter_by(
+        description="Monthly Rent Payment", user_id=user_id).first()
+    if not rent_recurring:
+        logger.info("Creating demo rent recurring expense")
+        recurring2 = RecurringExpense(
+            description="Monthly Rent Payment",
+            amount=1200.00,
+            card_used="Demo Checking",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=housing_category.id if housing_category else None,
+            frequency="monthly",
+            start_date=datetime.utcnow() - timedelta(days=15),
+            active=True,
+            account_id=checking.id
+        )
+        db.session.add(recurring2)
+    
+    # 5. Create budgets
+    food_budget = Budget.query.filter_by(
+        name="Monthly Food", user_id=user_id).first()
+    if not food_budget:
+        logger.info("Creating demo food budget")
+        budget1 = Budget(
+            user_id=user_id,
+            category_id=food_category.id if food_category else None,
+            name="Monthly Food",
+            amount=600.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget1)
+    
+    transport_budget = Budget.query.filter_by(
+        name="Transportation Budget", user_id=user_id).first()
+    if not transport_budget:
+        logger.info("Creating demo transportation budget")
+        budget2 = Budget(
+            user_id=user_id,
+            category_id=transportation_category.id if transportation_category else None,
+            name="Transportation Budget",
+            amount=300.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget2)
+    
+    entertainment_budget = Budget.query.filter_by(
+        name="Entertainment Budget", user_id=user_id).first()
+    if not entertainment_budget:
+        logger.info("Creating demo entertainment budget")
+        budget3 = Budget(
+            user_id=user_id,
+            category_id=entertainment_category.id if entertainment_category else None,
+            name="Entertainment Budget",
+            amount=200.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget3)
+    
+    # Commit all changes
+    try:
+        db.session.commit()
+        logger.info("Demo data created/updated successfully")
+        return True
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating demo data: {str(e)}")
+        return False
+    
+def reset_demo_data(user_id):
+    """Reset all demo data for a user"""
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Resetting demo data for user {user_id}")
+    
+    try:
+        # Delete all expenses for this user
+        expense_count = Expense.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {expense_count} expenses")
+        
+        # Delete all recurring expenses
+        recurring_count = RecurringExpense.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {recurring_count} recurring expenses")
+        
+        # Delete all budgets
+        budget_count = Budget.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {budget_count} budgets")
+        
+        # Delete all accounts
+        account_count = Account.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {account_count} accounts")
+        
+        # Delete all tags
+        tag_count = Tag.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {tag_count} tags")
+        
+        # Commit the changes
+        db.session.commit()
+        logger.info("Demo data reset successful")
+        return True
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error resetting demo data: {str(e)}")
+        return False
+
+
 
 #--------------------
 # ROUTES: AUTHENTICATION
@@ -2522,6 +2973,8 @@ def home():
         return redirect(url_for('dashboard'))
     return render_template('landing.html')
 @app.route('/signup', methods=['GET', 'POST'])
+
+
 def signup():
     # Check if local login is disabled
     local_login_disabled = app.config.get('LOCAL_LOGIN_DISABLE', False) and app.config.get('OIDC_ENABLED', False)
@@ -2606,6 +3059,7 @@ def signup():
                           local_login_disabled=local_login_disabled)
 
 @app.route('/login', methods=['GET', 'POST'])
+@restrict_demo_access
 def login():
     # Check if we should show a logout message
     if session.pop('show_logout_message', False):
@@ -2696,22 +3150,55 @@ def login():
                           oidc_enabled=oidc_enabled,
                           local_login_disabled=local_login_disabled)
 
+
 @app.route('/logout')
 @login_required_dev
 def logout():
+    # If this is a demo user, handle demo-specific logout
+    demo_timeout = app.extensions.get('demo_timeout')
+    is_demo_user = False
+    
+    if (demo_timeout and 
+        current_user.is_authenticated and 
+        demo_timeout.is_demo_user(current_user.id)):
+        # Unregister the demo session
+        demo_timeout.unregister_demo_session(current_user.id)
+        
+        # Reset demo data
+        reset_demo_data(current_user.id)
+        
+        # Mark as demo user for redirection
+        is_demo_user = True
+    
     # If user was logged in via OIDC, use the OIDC logout route
     if hasattr(current_user, 'oidc_id') and current_user.oidc_id and app.config.get('OIDC_ENABLED', False):
         return redirect(url_for('logout_oidc'))
     
     # Standard logout for local accounts
     logout_user()
+    
+    # Set a flag to show logout message on next login
+    session['show_logout_message'] = True
+    
+    # Redirect demo users to thank you page
+    if is_demo_user:
+        return redirect(url_for('demo_thanks'))
+    
     return redirect(url_for('login'))
+
+
+
+
+
+
+
 
 #--------------------
 # ROUTES: DASHBOARD
 #--------------------
 @app.route('/dashboard')
 @login_required_dev
+@demo_time_limited
 def dashboard():
     now = datetime.now()
     base_currency = get_base_currency()
@@ -4811,6 +5298,7 @@ def set_default_currency():
 
 @app.route('/transactions')
 @login_required_dev
+@demo_time_limited
 def transactions():
     """Display all transactions with filtering capabilities"""
     # Fetch all expenses where the user is either the creator or a split participant
@@ -6264,6 +6752,7 @@ def sync_simplefin_for_user(user_id):
 
 @app.route('/category_mappings')
 @login_required_dev
+@demo_time_limited
 def manage_category_mappings():
     """View and manage category mappings for auto-categorization"""
     # Get all mappings for the current user
@@ -6281,6 +6770,7 @@ def manage_category_mappings():
                           categories=categories)
 @app.route('/category_mappings/create_defaults', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def create_default_mappings_route():
     """Create default category mappings for the current user (on demand)"""
     try:
@@ -6359,6 +6849,7 @@ def bulk_categorize_transactions():
 
 @app.route('/category_mappings/add', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def add_category_mapping():
     """Add a new category mapping rule"""
     keyword = request.form.get('keyword', '').strip()
@@ -6399,6 +6890,7 @@ def add_category_mapping():
 
 @app.route('/category_mappings/edit/<int:mapping_id>', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def edit_category_mapping(mapping_id):
     """Edit an existing category mapping rule"""
     mapping = CategoryMapping.query.get_or_404(mapping_id)
@@ -7086,6 +7578,7 @@ def delete_category(category_id):
 #--------------------
 @app.route('/budgets')
 @login_required_dev
+@demo_time_limited
 def budgets():
     """View and manage budgets"""
     from datetime import datetime  # Add this import if not already at the top
@@ -7724,6 +8217,7 @@ def budget_trends_data():
 
 @app.route('/budgets/transactions/<int:budget_id>')
 @login_required_dev
+@demo_time_limited
 def budget_transactions(budget_id):
     """Get transactions related to a specific budget"""
     # Get the budget
