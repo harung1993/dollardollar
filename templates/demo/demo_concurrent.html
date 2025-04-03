@@ -1,0 +1,87 @@
+<document_content>{% extends 'base.html' %}
+    {% block content %}
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h1 class="card-title text-warning mb-4">Oops! We're a bit crowded at the moment.</h1>
+                    <p class="card-text mb-4">We apologize, but it seems like we've reached the maximum number of concurrent users for our demo environment. We're working hard to accommodate everyone, but in the meantime, please try again later.</p>
+                    
+                    <div class="mb-5">
+                        <h2 class="h4 mb-4">While You Wait...</h2>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body">
+                                        <h3 class="card-title mb-2">
+                                            <i class="fas fa-code me-2"></i>
+                                            Explore Our GitHub
+                                        </h3>
+                                        <p class="card-text">Check out our open-source project and see what's under the hood!</p>
+                                        <a href="https://github.com/harung1993/dollardollar" class="btn btn-light">
+                                            View Repository
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body">
+                                        <h3 class="card-title mb-2">
+                                            <i class="fas fa-comments me-2"></i>
+                                            Chat with Our Community
+                                        </h3>
+                                        <p class="card-text">Join our Discord server and engage with fellow financial enthusiasts!</p>
+                                        <a href="https://discord.gg/7Z2EqVZYqm" class="btn btn-light">
+                                            Join Discord
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h2 class="h4 mb-4">Dollar Dollar Bill Y'all Features</h2>
+                        <div class="row justify-content-center">
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body d-flex flex-column align-items-center">
+                                        <i class="fas fa-money-bill-wave fa-3x text-success mb-3"></i>
+                                        <p class="card-text">Streamlined Expense Tracking</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body d-flex flex-column align-items-center">
+                                        <i class="fas fa-user-friends fa-3x text-primary mb-3"></i>
+                                        <p class="card-text">Collaborative Group Expenses</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body d-flex flex-column align-items-center">
+                                        <i class="fas fa-chart-line fa-3x text-info mb-3"></i>
+                                        <p class="card-text">Powerful Financial Insights</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <a href="{{ url_for('demo_login') }}" class="btn btn-primary">Try Again</a>
+                </div>
+                <div class="card-footer text-muted">
+                    Thank you for your interest in Dollar Dollar Bill Y'all!
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+    {% endblock %}
+    </document_content>

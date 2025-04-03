@@ -1515,8 +1515,50 @@ tr.bg-dark .collapse .p-3 {
         <!-- Page content will go here -->
         {% endblock %}
 
-        
-        <!-- Footer -->
+        {% if is_demo_user(current_user.id) %}
+        <div id="demo-timer" class="position-fixed bottom-0 end-0 p-3">
+            <div class="alert alert-warning d-flex align-items-center" role="alert">
+                <i class="fas fa-clock me-2"></i>
+                <div>
+                    <strong>Demo Mode:</strong> 
+                    <span id="timer-countdown">{{ get_remaining_time() // 60 }}:{{ '%02d' | format(get_remaining_time() % 60) }}</span> remaining
+                </div>
+            </div>
+        </div>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Get the initial remaining time from the server
+                let remainingSeconds = {{ get_remaining_time() }};
+                const timerElement = document.getElementById('timer-countdown');
+                
+                // Update timer every second
+                const timerInterval = setInterval(function() {
+                    remainingSeconds--;
+                    
+                    if (remainingSeconds <= 0) {
+                        clearInterval(timerInterval);
+                        // Redirect to logout or show expired message
+                        window.location.href = "{{ url_for('logout') }}?demo_expired=true";
+                        return;
+                    }
+                    
+                    // Calculate minutes and seconds
+                    const minutes = Math.floor(remainingSeconds / 60);
+                    const seconds = remainingSeconds % 60;
+                    
+                    // Update the timer display
+                    timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    // Change color when time is running out
+                    if (remainingSeconds < 60) {
+                        document.getElementById('demo-timer').querySelector('.alert').classList.remove('alert-warning');
+                        document.getElementById('demo-timer').querySelector('.alert').classList.add('alert-danger');
+                    }
+                }, 1000);
+            });
+        </script>
+        {% endif %}
+                <!-- Footer -->
         <footer>
             Made with ❤️ and caffeine using Flask & Bootstrap | v{{ app_version }}
         </footer>
