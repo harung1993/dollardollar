@@ -20,12 +20,14 @@
 ## 🌟 Why DollarDollar?
 
 Born from a desire to move beyond restrictive financial tracking platforms, this app empowers users with:
-- 🔐 Complete control over personal financial data
-- 💡 Flexible expense splitting mechanisms
-- 🏠 Self-hosted privacy
-- 🤝 Collaborative expense management
-- Integration with Simplefin (auto tracking accounts and transactions)
-- Budgets with notifications
+
+- 🔐 **Complete control over personal financial data**
+- 💡 **Flexible expense splitting mechanisms**
+- 🏠 **Self-hosted privacy**
+- 🤝 **Collaborative expense management**
+- 🔄 **Integration with Simplefin** (auto tracking accounts and transactions)
+- 💰 **Budgets with notifications**
+- 🖥️ **Seamless integration with Unraid** for easy installation and management via Unraid templates
 
   
 ## 🚀 Features
