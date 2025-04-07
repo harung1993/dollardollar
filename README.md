@@ -39,6 +39,7 @@ Born from a desire to move beyond restrictive financial tracking platforms, this
   - Recurring transactions with flexible scheduling
   - Auto-categorization with customizable rules
   - Transaction importing (CSV, SimpleFin)
+  - Transaction with multi category support
   - Multi-card and multi-account support
   - Date-based expense tracking
 
