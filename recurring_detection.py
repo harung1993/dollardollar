@@ -232,7 +232,7 @@ def create_recurring_expense_from_detection(user_id, candidate, start_date=None)
         currency_code=candidate.get('currency_code'),
         category_id=candidate.get('category_id'),
         account_id=candidate.get('account_id'),
-        transaction_type=candidate.get('transaction_type', 'expense')
+        transaction_type=candidate['transaction_type'] 
     )
     
     return recurring

@@ -1,0 +1,202 @@
+<form method="POST" action="{{ url_for('add_recurring') }}" id="recurringTransactionForm">
+    <!-- Transaction Type Selection -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <label class="form-label">Transaction Type</label>
+            <div class="btn-group w-100" role="group" id="transaction_type_group">
+                <input type="radio" class="btn-check" name="transaction_type" id="type_expense" value="expense" checked>
+                <label class="btn btn-outline-danger" for="type_expense">
+                    <i class="fas fa-shopping-cart me-1"></i>Expense
+                </label>
+                
+                <input type="radio" class="btn-check" name="transaction_type" id="type_income" value="income">
+                <label class="btn btn-outline-success" for="type_income">
+                    <i class="fas fa-money-bill-wave me-1"></i>Income
+                </label>
+                
+                <input type="radio" class="btn-check" name="transaction_type" id="type_transfer" value="transfer">
+                <label class="btn btn-outline-primary" for="type_transfer">
+                    <i class="fas fa-exchange-alt me-1"></i>Transfer
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="description" class="form-label">Description</label>
+            <input type="text" class="form-control bg-dark text-light" id="description" name="description" required>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="amount" class="form-label">Amount ({{ base_currency.symbol }})</label>
+            <input type="number" step="0.01" class="form-control bg-dark text-light" id="amount" name="amount" required>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="currency_code" class="form-label">Currency</label>
+            <select class="form-control bg-dark text-light" id="currency_code" name="currency_code">
+                {% for currency in currencies %}
+                    <option value="{{ currency.code }}" 
+                            {% if currency.code == current_user.default_currency_code %}selected{% endif %}>
+                        {{ currency.code }} ({{ currency.symbol }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="frequency" class="form-label">Frequency</label>
+            <select class="form-select bg-dark text-light" id="frequency" name="frequency" required>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Bi-weekly</option>
+                <option value="monthly" selected>Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Source Account -->
+        <div class="col-md-6 mb-3">
+            <label for="account_id" class="form-label" id="account_label">Account</label>
+            <select class="form-control bg-dark text-light" id="account_id" name="account_id" required>
+                <option value="">Select an account</option>
+                {% for account in current_user.accounts %}
+                    <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
+                {% endfor %}
+                
+                {% if current_user.accounts|length == 0 %}
+                    <option value="default">Default Account</option>
+                {% endif %}
+            </select>
+            
+            <small class="text-muted d-block mt-1">
+                {% if current_user.accounts|length == 0 %}
+                    No accounts created yet. <a href="{{ url_for('advanced') }}" class="text-warning">Create accounts</a> to better track your finances.
+                {% endif %}
+            </small>
+        </div>
+
+        <!-- Destination Account (for Transfers) -->
+        <div class="col-md-6 mb-3" id="destination_account_container" style="display: none;">
+            <label for="destination_account_id" class="form-label">To Account</label>
+            <select class="form-control bg-dark text-light" id="destination_account_id" name="destination_account_id">
+                <option value="">Select destination account</option>
+                {% for account in current_user.accounts %}
+                    <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="start_date" class="form-label">Start Date</label>
+            <input type="date" class="form-control bg-dark text-light" id="start_date" name="start_date" required>
+        </div>
+        <div class="col-md-6 mb-3">
+            <label for="end_date" class="form-label">End Date (Optional)</label>
+            <input type="date" class="form-control bg-dark text-light" id="end_date" name="end_date">
+            <small class="text-muted">Leave blank for no end date</small>
+        </div>
+    </div>
+    
+    <!-- Expense-specific fields (splitWith, paidBy, etc.) -->
+    <div id="expense_specific_fields">
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="paid_by" class="form-label">Paid By</label>
+                <select class="form-control bg-dark text-light" id="paid_by" name="paid_by">
+                    {% for user in users %}
+                        <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>
+                            {{ user.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <label for="split_with" class="form-label">Split With</label>
+                    <div class="form-check form-switch ms-2">
+                        <input class="form-check-input" type="checkbox" id="personal_expense_check" name="personal_expense">
+                        <label class="form-check-label" for="personal_expense_check">Personal expense</label>
+                    </div>
+                </div>
+                <select class="form-select bg-dark text-light enhanced-multi-select" id="split_with" name="split_with" multiple>
+                    {% for user in users %}
+                        <option value="{{ user.id }}">{{ user.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            <label for="split_method" class="form-label">Split Method</label>
+            <select class="form-select bg-dark text-light" id="split_method" name="split_method" required>
+                <option value="equal">Equal Split Among All</option>
+                <option value="percentage">Percentage Split for Each Person</option>
+                <option value="custom">Custom Amount for Each Person</option>
+            </select>
+        </div>
+        
+        <!-- Custom Split Values Container (Hidden by default) -->
+        <div id="custom_split_container" class="mb-3" style="display: none;">
+            <div class="card bg-dark border-secondary">
+                <div class="card-header">
+                    <h5 class="mb-0">Split Values</h5>
+                </div>
+                <div class="card-body">
+                    <div id="split_values_container">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                    <div class="d-flex justify-content-between mt-3">
+                        <span>Total: {{ base_currency.symbol }}<span id="split_total">0.00</span></span>
+                        <span class="badge bg-success" id="split_status">Balanced</span>
+                    </div>
+                </div>
+            </div>
+            <input type="hidden" id="split_details" name="split_details">
+        </div>
+
+        <!-- Group Selection -->
+        <div class="mb-3">
+            <label for="group_id" class="form-label">Group (Optional)</label>
+            <select class="form-control bg-dark text-light" id="group_id" name="group_id">
+                <option value="">No Group (Personal Transaction)</option>
+                {% for group in groups %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <!-- Category Selection - Shown for expenses and income, not for transfers -->
+    <div class="mb-3" id="category_container">
+        <label for="category_id" class="form-label">Category</label>
+        <select class="form-select bg-dark text-light" id="category_id" name="category_id">
+            <option value="">Select a category</option>
+            {% for category in categories %}
+                {% if not category.parent_id %}
+                    <optgroup label="{{ category.name }}">
+                        {% for subcat in category.subcategories %}
+                            <option value="{{ subcat.id }}" 
+                                    data-icon="{{ subcat.icon }}" 
+                                    data-color="{{ subcat.color }}">
+                                {{ subcat.name }}
+                            </option>
+                        {% endfor %}
+                    </optgroup>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    
+    <div class="d-flex justify-content-end mt-3">
+        <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('recurringTransactionPanel')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="submit_button">Add Recurring Transaction</button>
+    </div>
+    <div id="currency-data" data-symbol="{{ base_currency.symbol }}"></div>
+</form>

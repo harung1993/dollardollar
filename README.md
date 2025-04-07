@@ -14,6 +14,8 @@
     <a href="https://ddby.finforward.xyz">Demo</a>
     <a>|</a>
     <a href="https://discord.gg/7Z2EqVZYqm">Discord</a>
+    <a>|</a>
+    <a href="license.txt">License</a>
   </h3>
 </div>
 
@@ -88,7 +90,7 @@ python reset.py
 
 1. Clone the repository
    ```bash
-   git clone https://github.com/yourusername/dollardollar.git
+   git clone https://github.com/harung1993/dollardollar.git
    cd dollardollar
    ```
 
@@ -123,7 +125,7 @@ DISABLE_SIGNUPS=True      # Disable registration
 ```
 
 ### Additional Configuration
-For detailed configuration options, see the [.env.template](https://github.com/yourusername/dollardollar/blob/main/.env.template) file.
+For detailed configuration options, see the [.env.template](https://github.com/harung1993/dollardollar/blob/main/.env.template) file.
 
 ## 📸 Screenshots
 
@@ -135,6 +137,16 @@ For detailed configuration options, see the [.env.template](https://github.com/y
   <img width="45%" alt="Categories" src="https://github.com/user-attachments/assets/23d17592-b440-49f2-a0c5-dca9e8b57b2f" />
 </div>
 
+## 🤝 Development Approach
+
+This project explores AI-assisted open-source development:
+- Leveraging AI tools for rapid prototyping
+- Combining technological innovation with human creativity
+- Iterative development with large language models
+  - Local LLMs (qwen2.5, DeepSeek-V3)
+  - Claude AI
+  - Human domain expertise
+  
 ## 🤝 Contributing
 
 Contributions are welcome! Please check out our contributing guidelines.
@@ -151,7 +163,7 @@ Contributions are welcome! Please check out our contributing guidelines.
   
 ## 📜 License
 
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](license.txt) file for details.
 
 This license requires anyone who runs a modified version of this software, including running it on a server as a service, to make the complete source code available to users of that service.
 

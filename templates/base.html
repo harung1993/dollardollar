@@ -581,6 +581,94 @@
             border: 1px solid #444;
             color: white !important;
         }
+        .split-toggle {
+            cursor: pointer;
+            color: #0ea5e9;
+            display: inline-block;
+            margin-left: 4px;
+        }
+
+        .split-toggle:hover {
+            color: #0284c7;
+        }
+
+        .split-categories-detail {
+            margin-top: 8px;
+            animation: fadeIn 0.3s ease-in-out;
+            border-radius: 0.25rem;
+            overflow: hidden;
+            background-color: rgba(33, 37, 41, 0.5);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Style for the list group inside the split details */
+        .split-categories-detail .list-group-item {
+            padding: 0.5rem 0.75rem;
+            transition: background-color 0.2s;
+        }
+
+        .split-categories-detail .list-group-item:hover {
+            background-color: rgba(52, 58, 64, 0.8);
+        }
+
+        /* Badge styling */
+        .badge.bg-info {
+            background-color: #0ea5e9 !important;
+            cursor: default;
+        }
+
+        /* Category split container in form */
+        #category_splits_container {
+            transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+            overflow: hidden;
+        }
+
+        #category_splits_container.hidden {
+            max-height: 0;
+            opacity: 0;
+        }
+
+        #category_splits_container.visible {
+            max-height: 1000px;
+            opacity: 1;
+        }
+
+        /* Improve the appearance of split rows */
+        .split-row {
+            padding: 10px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .split-row:hover {
+            background-color: rgba(52, 58, 64, 0.8);
+        }
+
+        /* Split status badge animations */
+        #split_status {
+            transition: background-color 0.3s;
+        }
+
+        /* Improve the visual appearance of the transaction list category column */
+        td.category-cell {
+            min-width: 150px;
+        }
+
+        /* Add a small indicator for splits in the category column */
+        .category-split-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .category-split-indicator .badge {
+            font-size: 0.7em;
+            padding: 0.25em 0.4em;
+}
         
         .form-control:focus {
             background-color: #333 !important;
@@ -1440,12 +1528,12 @@ tr.bg-dark .collapse .p-3 {
                             <span class="nav-text">Auto-Categories</span>
                         </a>
                     </li>
-                    <li class="nav-item">
+                    <!-- <li class="nav-item">
                         <a href="{{ url_for('manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-tags"></i></span>
                             <span class="nav-text">Tags</span>
                         </a>
-                    </li>
+                    </li> -->
                     <li class="nav-item">
                         <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>

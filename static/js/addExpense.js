@@ -1,4 +1,5 @@
 // static/js/addExpense.js
+baseCurrencySymbol = '{{ base_currency.symbol }}';
 
 // Initialize form based on transaction type
 function initializeFormState() {

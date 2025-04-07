@@ -123,6 +123,13 @@ class DemoTimeout:
     
     def update_last_active(self, response):
         """Update the last active time after each request"""
+        user_id = None
+        if current_user.is_authenticated:
+            try:
+                user_id = current_user.id
+            except:
+                # Handle detached user case
+                return response
         if current_user.is_authenticated and self.is_demo_user(current_user.id):
             session['last_active'] = datetime.utcnow().timestamp()
         return response
