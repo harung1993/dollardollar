@@ -125,7 +125,7 @@ DISABLE_SIGNUPS=True      # Disable registration
 ```
 
 ### Additional Configuration
-For detailed configuration options, see the [.env.template](https://github.com/harung1993/dollardollar/blob/main/.env.template) file.
+For detailed configuration options, see the [.env.template](https://github.com/harung1993/dollardollar/blob/main/.env.example) file.
 
 ## 📸 Screenshots
 
