@@ -147,8 +147,8 @@ function handleTransactionTypeChange() {
         case 'transfer':
             // Hide expense-specific fields
             if (expenseFields) expenseFields.style.display = 'none';
-            // Hide category selection
-            if (categoryContainer) categoryContainer.style.display = 'none';
+            // Show category selection for transfers now
+            if (categoryContainer) categoryContainer.style.display = 'block';
             // Show destination account
             if (destinationAccountContainer) destinationAccountContainer.style.display = 'block';
             // Update account label
@@ -618,8 +618,8 @@ function populateRecurringForm(data) {
         }
     }
     
-    // Set category if available
-    if (data.category_id && transactionType !== 'transfer') {
+    // Set category if available - now for all transaction types
+    if (data.category_id) {
         const categorySelect = document.getElementById('category_id');
         if (categorySelect) categorySelect.value = data.category_id;
     }
@@ -813,9 +813,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 top: 0;
                 right: -100%;
                 width: 90%;
-                max-width: 700px;
+                max-width: 550px;
                 height: 100%;
-                background-color: #1e1e2d;
+                background-color: #212529;
                 z-index: 1050;
                 transition: right 0.3s ease;
                 display: flex;

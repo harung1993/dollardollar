@@ -165,17 +165,24 @@ function setupActionButtons() {
         });
     });
     
-    // Edit expense buttons
+    // Edit expense buttons - use TransactionModule if available
     document.querySelectorAll('.edit-expense-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
             const expenseId = this.getAttribute('data-expense-id');
             if (expenseId) {
-                openEditTransactionPanel(expenseId);
+                if (window.TransactionModule && typeof TransactionModule.openEditForm === 'function') {
+                    console.log("Using TransactionModule for edit");
+                    TransactionModule.openEditForm(expenseId);
+                } else {
+                    console.log("Fallback to original edit function");
+                    openEditTransactionPanel(expenseId);
+                }
             }
         });
     });
     
-    // Delete expense buttons
+    // Delete expense buttons remain unchanged
     document.querySelectorAll('.delete-expense-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const expenseId = this.getAttribute('data-expense-id');
@@ -199,7 +206,6 @@ function setupActionButtons() {
         });
     }
 }
-
 // Function to display split categories in the transactions table
 function setupCategorySplitDisplay() {
     // Find all transactions with split categories

@@ -513,7 +513,7 @@ class Expense(db.Model):
         
         elif self.split_method == 'custom':
             # Use per-user custom amounts if available in split_details
-            if split_details and isinstance(split_details, dict) and split_details.get('type') == 'amount':
+            if split_details and isinstance(split_details, dict) and split_details.get('type') in ['amount', 'custom']:
                 amounts = split_details.get('values', {})
                 total_assigned = 0
                 total_original_assigned = 0
@@ -3839,10 +3839,32 @@ def add_expense():
                 flash('Invalid date format. Please use YYYY-MM-DD format.')
                 return redirect(url_for('transactions'))
             
-            # Process split details if provided
+            # Carefully process split details
             split_details = None
-            if request.form.get('split_details'):
-                split_details = request.form.get('split_details')
+            split_method = 'equal'  # Default
+            
+            # Check for custom split details
+            raw_split_details = request.form.get('split_details')
+            if raw_split_details:
+                try:
+                    # Parse the JSON split details
+                    parsed_split_details = json.loads(raw_split_details)
+                    
+                    # Validate the split details structure
+                    if isinstance(parsed_split_details, dict):
+                        split_method = parsed_split_details.get('type', 'equal')
+                        split_details = raw_split_details
+                        
+                        # Additional validation for custom splits
+                        if split_method != 'equal':
+                            # Ensure we have valid split values
+                            split_values = parsed_split_details.get('values', {})
+                            if split_values and len(split_values) > 0:
+                                # Override default split method if custom values exist
+                                split_method = parsed_split_details['type']
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, fall back to default
+                    app.logger.warning(f"Failed to parse split details: {raw_split_details}")
             
             # Get currency information
             currency_code = request.form.get('currency_code', 'USD')
@@ -3897,6 +3919,9 @@ def add_expense():
                     flash('Source and destination accounts must be different for transfers.')
                     return redirect(url_for('transactions'))
             
+            # Determine paid_by (use from form or fallback to current user)
+            paid_by = request.form.get('paid_by', current_user.id)
+            
             # Create expense record
             expense = Expense(
                 description=request.form['description'],
@@ -3905,10 +3930,10 @@ def add_expense():
                 currency_code=currency_code,  # Store the original currency code
                 date=expense_date,
                 card_used=card_used,  # Default or legacy value
-                split_method=request.form.get('split_method', 'equal'),
-                split_value=float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0,
+                split_method=split_method,  # Use the carefully parsed split method
+                split_value=0,  # We'll use split_details for more complex splits
                 split_details=split_details,
-                paid_by=current_user.id,  # Always the current user
+                paid_by=paid_by,
                 user_id=current_user.id,
                 category_id=category_id,
                 group_id=request.form.get('group_id') if request.form.get('group_id') else None,
@@ -3917,9 +3942,6 @@ def add_expense():
                 account_id=account_id,
                 destination_account_id=destination_account_id
             )
-            
-            # Update account balances...
-            # [rest of the function remains the same]
             
             db.session.add(expense)
             db.session.commit()
@@ -3937,6 +3959,7 @@ def add_expense():
         except Exception as e:
             db.session.rollback()
             flash(f'Error: {str(e)}')
+            app.logger.error(f"Error adding expense: {str(e)}")
             
     return redirect(url_for('transactions'))
 

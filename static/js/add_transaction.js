@@ -270,7 +270,6 @@ function autoSelectPaidByUser() {
     }
 }
 
-// Setup event listeners for add transaction form
 function setupAddTransactionFormListeners() {
     // Transaction type change handler
     const transactionTypeSelect = document.getElementById('transaction_type');
@@ -329,6 +328,39 @@ function setupAddTransactionFormListeners() {
             }
         });
     }
+    
+    // Add form submission handler to ensure split details are properly included
+    const newTransactionForm = document.getElementById('newTransactionForm');
+    if (newTransactionForm) {
+        newTransactionForm.addEventListener('submit', function(e) {
+            // If this is a custom split, validate the split details are present
+            const splitMethod = document.getElementById('split_method')?.value;
+            const isPersonalExpense = document.getElementById('personal_expense')?.checked;
+            
+            if (!isPersonalExpense && splitMethod && splitMethod !== 'equal') {
+                const splitDetailsInput = document.getElementById('split_details');
+                
+                // Check if we have valid split details
+                if (!splitDetailsInput || !splitDetailsInput.value) {
+                    console.warn('Split details missing, regenerating...');
+                    // Force update split values one last time before submission
+                    updateSplitValues();
+                }
+                
+                // Double-check we have split details after the update
+                if (splitDetailsInput && !splitDetailsInput.value) {
+                    console.error('Failed to generate split details');
+                    e.preventDefault();
+                    alert('Error with split details. Please try again.');
+                    return false;
+                }
+                
+                console.log('Form submission with split details:', splitDetailsInput.value);
+            }
+        });
+    }
+    
+    ensureCustomSplitPersistence();
 }
 
 // Handle transaction type change
@@ -497,7 +529,12 @@ function updateSplitWithOptions() {
     splitWithSelect.dispatchEvent(new Event('change'));
 }
 
-// Update split values UI for add form
+// Updated split values handling functions
+
+/**
+ * Update split values UI for the add form
+ * FIXED: Custom amount split now properly allows custom values
+ */
 function updateSplitValues() {
     const splitMethodSelect = document.getElementById('split_method');
     if (!splitMethodSelect) return;
@@ -536,11 +573,25 @@ function updateSplitValues() {
         allParticipantIds.unshift(paidById);
     }
     
+    // Try to retrieve existing split values from the hidden input
+    let existingSplitValues = {};
+    if (splitDetailsInput && splitDetailsInput.value) {
+        try {
+            const splitDetails = JSON.parse(splitDetailsInput.value);
+            if (splitDetails && splitDetails.values) {
+                existingSplitValues = splitDetails.values;
+            }
+        } catch (e) {
+            console.warn('Could not parse existing split details', e);
+        }
+    }
+    
     splitValuesContainer.innerHTML = '';
     let splitValues = {};
     
     if (splitMethod === 'percentage') {
-        // Equal percentage for all participants
+        // For percentage split, we'll still initialize with equal percentages
+        // unless we already have values from previous interactions
         const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
         
         allParticipantIds.forEach(userId => {
@@ -548,6 +599,10 @@ function updateSplitValues() {
                 .find(opt => opt.value === userId)?.text || userId;
             
             const isPayerId = userId === paidById;
+            
+            // Use existing value if available, otherwise use equal percentage
+            const userPercentage = existingSplitValues[userId] !== undefined ? 
+                existingSplitValues[userId] : equalPercentage;
             
             // Create row for this user
             const row = document.createElement('div');
@@ -563,7 +618,7 @@ function updateSplitValues() {
                     <div class="input-group">
                         <input type="number" class="form-control bg-dark text-light split-value-input"
                             data-user-id="${userId}" step="0.1" min="0" max="100" 
-                            value="${equalPercentage.toFixed(1)}">
+                            value="${userPercentage.toFixed(1)}">
                         <span class="input-group-text bg-dark text-light">%</span>
                     </div>
                 </div>
@@ -571,17 +626,36 @@ function updateSplitValues() {
             splitValuesContainer.appendChild(row);
             
             // Save the initial value
-            splitValues[userId] = equalPercentage;
+            splitValues[userId] = userPercentage;
         });
     } else { // Custom amount
-        // Equal amounts
-        const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
+        // For custom amount split, if we're initially creating the form,
+        // set a reasonable default: payer pays 0, others split equally
         
         allParticipantIds.forEach(userId => {
             const userName = Array.from(paidBySelect.options)
                 .find(opt => opt.value === userId)?.text || userId;
             
             const isPayerId = userId === paidById;
+            
+            // Determine the default amount to show:
+            // 1. Use existing value if available
+            // 2. If this is the payer, default to 0 (they're paying for others)
+            // 3. Otherwise, calculate a fair share among non-payers
+            
+            let userAmount;
+            
+            if (existingSplitValues[userId] !== undefined) {
+                // Use existing value if available
+                userAmount = existingSplitValues[userId];
+            } else if (isPayerId) {
+                // Default payer amount to 0 (they're paying for others)
+                userAmount = 0;
+            } else {
+                // For non-payers, split the total amount among them
+                const nonPayerIds = allParticipantIds.filter(id => id !== paidById);
+                userAmount = nonPayerIds.length ? (totalAmount / nonPayerIds.length) : 0;
+            }
             
             // Create row for this user
             const row = document.createElement('div');
@@ -598,26 +672,60 @@ function updateSplitValues() {
                         <span class="input-group-text bg-dark text-light">${baseCurrencySymbol}</span>
                         <input type="number" class="form-control bg-dark text-light split-value-input"
                             data-user-id="${userId}" step="0.01" min="0" 
-                            value="${equalAmount.toFixed(2)}">
+                            value="${userAmount.toFixed(2)}">
                     </div>
                 </div>
             `;
             splitValuesContainer.appendChild(row);
             
             // Save the initial value
-            splitValues[userId] = equalAmount;
+            splitValues[userId] = userAmount;
         });
     }
     
     // Add event listeners to inputs and update split details
     setupSplitInputListeners(splitMethod, splitValues, totalAmount);
 }
+function updateSplitDetailsInput() {
+    const splitMethodSelect = document.getElementById('split_method');
+    const splitDetailsInput = document.getElementById('split_details');
+    const splitInputs = document.querySelectorAll('.split-value-input');
+    
+    if (!splitMethodSelect || !splitDetailsInput || splitInputs.length === 0) return;
+    
+    const splitMethod = splitMethodSelect.value;
+    const splitValues = {};
+    
+    splitInputs.forEach(input => {
+        const userId = input.getAttribute('data-user-id');
+        const value = parseFloat(input.value) || 0;
+        splitValues[userId] = value;
+    });
+    
+    const splitDetails = {
+        type: splitMethod,
+        values: splitValues
+    };
+    
+    // Set the hidden input with stringified split details
+    splitDetailsInput.value = JSON.stringify(splitDetails);
+    
+    console.log('Updated Split Details:', splitDetails);
+}
 
-// Setup input listeners for split values in add form
 function setupSplitInputListeners(splitMethod, splitValues, totalAmount) {
     const splitDetailsInput = document.getElementById('split_details');
     const splitTotalEl = document.getElementById('split_total');
     const splitStatusEl = document.getElementById('split_status');
+    
+    // Ensure the split_details hidden input has a value from the start
+    if (splitDetailsInput) {
+        splitDetailsInput.value = JSON.stringify({
+            type: splitMethod,
+            values: splitValues
+        });
+        console.log('Initial split details set:', splitDetailsInput.value);
+    }
     
     document.querySelectorAll('.split-value-input').forEach(input => {
         input.addEventListener('input', function() {
@@ -665,12 +773,14 @@ function setupSplitInputListeners(splitMethod, splitValues, totalAmount) {
                 }
             }
             
-            // Update hidden split details field
+            // Update hidden split details field - CRITICALLY IMPORTANT
             if (splitDetailsInput) {
-                splitDetailsInput.value = JSON.stringify({
+                const splitDetails = {
                     type: splitMethod,
                     values: splitValues
-                });
+                };
+                splitDetailsInput.value = JSON.stringify(splitDetails);
+                console.log('Updated split details:', splitDetailsInput.value);
             }
         });
         
@@ -678,6 +788,35 @@ function setupSplitInputListeners(splitMethod, splitValues, totalAmount) {
         input.dispatchEvent(new Event('input'));
     });
 }
+
+// Ensure this function is called after creating split inputs
+function ensureCustomSplitPersistence() {
+    const splitMethodSelect = document.getElementById('split_method');
+    const splitWithSelect = document.getElementById('split_with');
+    const amountInput = document.getElementById('amount');
+    
+    if (splitMethodSelect) {
+        splitMethodSelect.addEventListener('change', function() {
+            // When split method changes, re-apply split values
+            updateSplitValues();
+        });
+    }
+    
+    if (splitWithSelect) {
+        splitWithSelect.addEventListener('change', function() {
+            // When split participants change, re-apply split values
+            updateSplitValues();
+        });
+    }
+    
+    if (amountInput) {
+        amountInput.addEventListener('input', function() {
+            // When amount changes, re-apply split values
+            updateSplitValues();
+        });
+    }
+}
+
 
 // Explicitly make these functions globally available
 window.addMultiSelectStyles = addMultiSelectStyles;

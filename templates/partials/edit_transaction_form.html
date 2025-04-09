@@ -169,7 +169,7 @@
         
         <div class="mb-3">
             <label for="edit_split_with" class="form-label">Split With</label>
-            <select class="form-select bg-dark text-light" id="edit_split_with" name="split_with" multiple 
+            <select class="form-select bg-dark text-light enhanced-multi-select" id="edit_split_with" name="split_with" multiple 
                     {% if not expense.split_with %}disabled{% endif %}>
                 {% for user in users %}
                     {% if user.id != expense.paid_by %}
@@ -180,7 +180,7 @@
                     {% endif %}
                 {% endfor %}
             </select>
-            <small class="form-text text-muted">Hold Ctrl to select multiple people</small>
+            <small class="form-text text-muted">Use ctrl to select multiple people</small>
         </div>
         
         <div class="mb-3">

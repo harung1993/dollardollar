@@ -4,7 +4,10 @@
 
 {% block styles %}
 <!-- Add any page-specific CSS here -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/transaction-module.css') }}">
 <style>
+    
+
     .split-categories-detail {
         max-height: 250px;
         overflow-y: auto;
@@ -397,12 +400,44 @@
     // Explicitly stringify the symbol
     window.baseCurrencySymbol = "{{ base_currency.symbol }}";
 </script>
-<!-- Include the modularized JavaScript files -->
+
+<!-- Include utils.js and transactions.js for core functionality -->
 <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
 <script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
-<script src="{{ url_for('static', filename='js/add_transaction.js') }}"></script>
-<script src="{{ url_for('static', filename='js/edit_transaction.js') }}"></script>
-<script src="{{ url_for('static', filename='js/category_splits.js') }}"></script>
-<script src="{{ url_for('static', filename='js/split_category_fix.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transaction_module.js') }}"></script>
+<!-- Add this script at the end of your HTML, after all other scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Log what functions are available in TransactionModule
+      if (window.TransactionModule) {
+        console.log("TransactionModule functions available:", Object.keys(TransactionModule));
+      } else {
+        console.log("TransactionModule not found");
+      }
+      
+      // Create direct link between edit buttons and panel opening
+      document.querySelectorAll('.edit-expense-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const expenseId = this.getAttribute('data-expense-id');
+          
+          
+          // Try accessing through TransactionModule
+          if (window.TransactionModule) {
+            if (typeof TransactionModule.openEditTransactionPanel === 'function') {
+             
+              TransactionModule.openEditTransactionPanel(expenseId);
+            } else if (typeof TransactionModule.openEditForm === 'function') {
+        
+              TransactionModule.openEditForm(expenseId);
+            } else {
+              console.log("Function names available:", Object.keys(TransactionModule));
+            }
+          } else {
+            console.error("TransactionModule not available");
+          }
+        });
+      });
+    });
+  </script>
 
 {% endblock %}
