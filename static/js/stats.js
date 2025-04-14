@@ -1052,7 +1052,7 @@ function runComparison(config) {
         runBtn.disabled = false;
     });
 }
-/* 
+/**
  * Generate month labels for the given number of months
  * @param {number} count - Number of months to generate
  * @returns {string[]} Array of month labels
@@ -1065,9 +1065,13 @@ function generateMonthLabels(count) {
     
     const labels = [];
     for (let i = count - 1; i >= 0; i--) {
+        // Calculate the month index going backwards from current month
         const monthIndex = (currentMonth - i + 12) % 12;
-        const yearOffset = Math.floor((currentMonth - i) / 12);
+        
+        // Calculate the year offset correctly
+        const yearOffset = Math.floor((i - currentMonth) / 12);
         const year = currentYear - yearOffset;
+        
         labels.push(`${months[monthIndex]} ${year}`);
     }
     
