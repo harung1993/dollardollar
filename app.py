@@ -9748,7 +9748,7 @@ def stats():
             query_filters.append(Expense.group_id == group_id)
     
     # Execute the query with all filters
-    expenses = Expense.query.filter(and_(*query_filters)).order_by(Expense.date).all()
+    expenses = Expense.query.filter(and_(*query_filters)).order_by(Expense.date.desc()).all()
     
     # Get all settlements in the date range
     settlement_filters = [
@@ -10045,7 +10045,7 @@ def stats():
         group_totals.append(group_total)
     
     # Top expenses for the table - show user's portion
-    top_expenses = sorted(current_user_expenses, key=lambda x: x['user_portion'], reverse=True)[:10]  # Top 10
+    top_expenses = sorted(current_user_expenses, key=lambda x: x['date'], reverse=True)[:10]
 
     user_categories = {}
     
