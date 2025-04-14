@@ -4454,7 +4454,9 @@ def add_recurring():
             recurring_expense.split_method = 'equal'
             recurring_expense.split_details = None
             recurring_expense.group_id = None
-            recurring_expense.category_id = None
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring_expense.category_id = int(category_id)
             
             # Set destination account if provided
             dest_account_id = request.form.get('destination_account_id')
@@ -4664,7 +4666,11 @@ def update_recurring(recurring_id):
             recurring.split_details = None
             recurring.split_method = 'equal'
             recurring.group_id = None
-            recurring.category_id = None
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring.category_id = int(category_id)
+            else:
+                recurring.category_id = None
             
             # Handle destination account
             dest_account_id = request.form.get('destination_account_id')
