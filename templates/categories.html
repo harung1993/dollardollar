@@ -73,8 +73,9 @@
                     <label for="color" class="form-label">Color</label>
                     <div class="input-group">
                         <input type="color" class="form-control form-control-color bg-dark" id="color" name="color" value="#6c757d">
-                        <input type="text" class="form-control bg-dark text-light" id="colorHex" value="#6c757d" readonly>
+                        <input type="text" class="form-control bg-dark text-light" id="colorHex" value="#6c757d">
                     </div>
+                    <small class="text-muted">You can enter a HEX code directly or use the color picker</small>
                 </div>
             </div>
 
@@ -142,8 +143,9 @@
                             <label for="edit_color{{ category.id }}" class="form-label">Color</label>
                             <div class="input-group">
                                 <input type="color" class="form-control form-control-color bg-dark edit-category-color" id="edit_color{{ category.id }}" name="color" value="{{ category.color }}" data-hex-id="edit_colorHex{{ category.id }}">
-                                <input type="text" class="form-control bg-dark text-light" id="edit_colorHex{{ category.id }}" value="{{ category.color }}" readonly>
+                                <input type="text" class="form-control bg-dark text-light" id="edit_colorHex{{ category.id }}" value="{{ category.color }}">
                             </div>
+                            <small class="text-muted">Enter HEX code or use color picker</small>
                         </div>
                         <div class="d-flex justify-content-end">
                             <button type="button" class="btn btn-secondary me-2" onclick="toggleEditCategoryForm({{ category.id }})">Cancel</button>
@@ -209,8 +211,9 @@
                                             <label for="edit_subcolor{{ subcategory.id }}" class="form-label">Color</label>
                                             <div class="input-group">
                                                 <input type="color" class="form-control form-control-color bg-dark edit-subcategory-color" id="edit_subcolor{{ subcategory.id }}" name="color" value="{{ subcategory.color }}" data-hex-id="edit_subcolorHex{{ subcategory.id }}">
-                                                <input type="text" class="form-control bg-dark text-light" id="edit_subcolorHex{{ subcategory.id }}" value="{{ subcategory.color }}" readonly>
+                                                <input type="text" class="form-control bg-dark text-light" id="edit_subcolorHex{{ subcategory.id }}" value="{{ subcategory.color }}">
                                             </div>
+                                            <small class="text-muted">Enter HEX code or use color picker</small>
                                         </div>
                                         <div class="d-flex justify-content-end">
                                             <button type="button" class="btn btn-secondary me-2" onclick="toggleEditSubcategoryForm({{ subcategory.id }})">Cancel</button>
@@ -257,8 +260,9 @@
                                 <label for="subcategory_color{{ category.id }}" class="form-label">Color</label>
                                 <div class="input-group">
                                     <input type="color" class="form-control form-control-color bg-dark subcategory-color" id="subcategory_color{{ category.id }}" name="color" value="#6c757d" data-hex-id="subcategory_colorHex{{ category.id }}">
-                                    <input type="text" class="form-control bg-dark text-light" id="subcategory_colorHex{{ category.id }}" value="#6c757d" readonly>
+                                    <input type="text" class="form-control bg-dark text-light" id="subcategory_colorHex{{ category.id }}" value="#6c757d">
                                 </div>
+                                <small class="text-muted">Enter HEX code or use color picker</small>
                             </div>
                             <div class="d-flex justify-content-end">
                                 <button type="button" class="btn btn-secondary me-2 cancel-subcategory-btn" data-category-id="{{ category.id }}">Cancel</button>
@@ -327,6 +331,9 @@
         const previewId = select.dataset.previewId;
         setupIconPreview(select.id, previewId);
     });
+
+    // Make hex fields editable
+    setupEditableHexFields();
 });
 
 function toggleCategoryForm() {
@@ -346,6 +353,9 @@ function toggleCategoryForm() {
 
 function toggleEditCategoryForm(categoryId) {
     const editForm = document.getElementById(`editCategoryForm${categoryId}`);
+    
+    // Store current scroll position
+    const scrollPosition = window.scrollY;
     
     // Close any other open edit forms first
     document.querySelectorAll('[id^="editCategoryForm"]').forEach(form => {
@@ -367,14 +377,36 @@ function toggleEditCategoryForm(categoryId) {
     // Toggle this form
     if (editForm.style.display === 'none') {
         editForm.style.display = 'block';
+        
+        // After the form is displayed, scroll to it
+        setTimeout(() => {
+            // Calculate element's position
+            const rect = editForm.getBoundingClientRect();
+            const elementTop = rect.top + window.scrollY;
+            
+            // Scroll to the element with a small offset
+            window.scrollTo({
+                top: elementTop - 100,
+                behavior: 'smooth'
+            });
+        }, 10);
     } else {
         editForm.style.display = 'none';
+        
+        // Restore scroll position
+        window.scrollTo({
+            top: scrollPosition,
+            behavior: 'auto'
+        });
     }
 }
 
 function toggleEditSubcategoryForm(subcategoryId) {
     const editForm = document.getElementById(`editSubcategoryForm${subcategoryId}`);
     const itemDisplay = document.getElementById(`subcategory-item-${subcategoryId}`);
+    
+    // Store current scroll position
+    const scrollPosition = window.scrollY;
     
     // Close any other open edit forms first
     document.querySelectorAll('[id^="editSubcategoryForm"]').forEach(form => {
@@ -396,9 +428,28 @@ function toggleEditSubcategoryForm(subcategoryId) {
     if (editForm.style.display === 'none') {
         editForm.style.display = 'block';
         if (itemDisplay) itemDisplay.style.display = 'none';
+        
+        // After the form is displayed, scroll to it
+        setTimeout(() => {
+            // Calculate element's position
+            const rect = editForm.getBoundingClientRect();
+            const elementTop = rect.top + window.scrollY;
+            
+            // Scroll to the element with a small offset
+            window.scrollTo({
+                top: elementTop - 100,
+                behavior: 'smooth'
+            });
+        }, 10);
     } else {
         editForm.style.display = 'none';
         if (itemDisplay) itemDisplay.style.display = 'flex';
+        
+        // Restore scroll position
+        window.scrollTo({
+            top: scrollPosition,
+            behavior: 'auto'
+        });
     }
 }
 
@@ -407,6 +458,9 @@ function setupSubcategoryButtons() {
     document.querySelectorAll('.add-subcategory-btn').forEach(button => {
         button.addEventListener('click', function() {
             const categoryId = this.dataset.categoryId;
+            
+            // Store current scroll position
+            const scrollPosition = window.scrollY;
             
             // Close any open edit forms first
             document.querySelectorAll('[id^="editCategoryForm"], [id^="editSubcategoryForm"]').forEach(form => {
@@ -428,8 +482,22 @@ function setupSubcategoryButtons() {
                 }
             });
             
-            document.getElementById(`subcategoryForm${categoryId}`).style.display = 'block';
+            const subcategoryForm = document.getElementById(`subcategoryForm${categoryId}`);
+            subcategoryForm.style.display = 'block';
             this.style.display = 'none';
+            
+            // After the form is displayed, scroll to it
+            setTimeout(() => {
+                // Calculate element's position
+                const rect = subcategoryForm.getBoundingClientRect();
+                const elementTop = rect.top + window.scrollY;
+                
+                // Scroll to the element with a small offset
+                window.scrollTo({
+                    top: elementTop - 50,
+                    behavior: 'smooth'
+                });
+            }, 10);
         });
     });
 
@@ -443,16 +511,7 @@ function setupSubcategoryButtons() {
     });
 }
 
-function setupColorPicker(colorId, hexId) {
-    const colorPicker = document.getElementById(colorId);
-    const colorHex = document.getElementById(hexId);
 
-    if (colorPicker && colorHex) {
-        colorPicker.addEventListener('input', function() {
-            colorHex.value = this.value;
-        });
-    }
-}
 
 function setupIconPreview(iconId, previewId) {
     const iconSelect = document.getElementById(iconId);
@@ -468,6 +527,83 @@ function setupIconPreview(iconId, previewId) {
         const initialIconClass = iconSelect.value;
         iconPreview.innerHTML = `<i class="fas ${initialIconClass}"></i>`;
     }
+}
+function setupColorPicker(colorId, hexId) {
+    const colorPicker = document.getElementById(colorId);
+    const colorHex = document.getElementById(hexId);
+
+    if (colorPicker && colorHex) {
+        // Update hex when color picker changes
+        colorPicker.addEventListener('input', function() {
+            colorHex.value = this.value;
+        });
+        
+        // Update color picker when hex input changes
+        colorHex.addEventListener('input', function() {
+            // Validate the hex color format
+            const hexValue = this.value.trim();
+            const isValidHex = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(hexValue);
+            
+            if (isValidHex) {
+                colorPicker.value = hexValue;
+            }
+        });
+        
+        // When hex field loses focus, ensure it has proper formatting
+        colorHex.addEventListener('blur', function() {
+            // If the field doesn't start with #, add it
+            if (!this.value.startsWith('#')) {
+                this.value = '#' + this.value;
+            }
+            
+            // If still not valid, reset to color picker value
+            const hexValue = this.value.trim();
+            const isValidHex = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(hexValue);
+            
+            if (!isValidHex) {
+                this.value = colorPicker.value;
+            }
+        });
+        
+        // Initialize with current value
+        colorHex.value = colorPicker.value;
+        
+        // Remove readonly attribute if present
+        colorHex.removeAttribute('readonly');
+    }
+}
+
+// This function is no longer needed since setupColorPicker now handles everything
+function setupEditableHexFields() {
+    // Find all hex input fields that aren't already handled
+    document.querySelectorAll('[id$="colorHex"], [id$="subcolorHex"]').forEach(hexField => {
+        // Find the corresponding color picker
+        let colorPicker;
+        let colorPickerId;
+        
+        if (hexField.id.includes('edit_')) {
+            // For edit forms
+            colorPickerId = hexField.id.replace('Hex', '');
+        } else if (hexField.id.includes('subcategory_')) {
+            // For subcategory forms
+            const categoryId = hexField.id.replace('subcategory_colorHex', '');
+            colorPickerId = `subcategory_color${categoryId}`;
+        } else {
+            // For main form
+            colorPickerId = 'color';
+        }
+        
+        colorPicker = document.getElementById(colorPickerId);
+        
+        // If we found both elements and they haven't been set up yet
+        if (colorPicker && hexField && !hexField.hasAttribute('data-setup-complete')) {
+            // Set up two-way binding
+            setupColorPicker(colorPickerId, hexField.id);
+            
+            // Mark as set up
+            hexField.setAttribute('data-setup-complete', 'true');
+        }
+    });
 }
 </script>
 {% endblock %}

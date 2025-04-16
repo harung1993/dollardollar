@@ -56,6 +56,23 @@
                         </div>
                         
                         <div class="mb-3">
+                            <label for="delimiter" class="form-label">Delimiter</label>
+                            <select class="form-select bg-dark text-light" id="delimiter" name="delimiter">
+                                <option value="comma" selected>Comma (,)</option>
+                                <option value="tab">Tab (\t)</option>
+                                <option value="semicolon">Semicolon (;)</option>
+                                <option value="pipe">Pipe (|)</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                        </div>
+
+                        <!-- Custom delimiter input (hidden by default) -->
+                        <div class="mb-3" id="custom_delimiter_container" style="display: none;">
+                            <label for="custom_delimiter" class="form-label">Custom Delimiter</label>
+                            <input type="text" class="form-control bg-dark text-light" id="custom_delimiter" name="custom_delimiter" maxlength="5" placeholder="Enter custom delimiter">
+                            <small class="text-muted">Enter a single character or escape sequence (e.g., \t for tab)</small>
+                        </div>
+                         <div class="mb-3">
                             <label class="form-label">CSV Columns Mapping</label>
                             <div class="card bg-dark border-secondary">
                                 <div class="card-body">
@@ -435,12 +452,27 @@ Date,Amount,Description,Category,Type
             });
         }
     });
-    
+    // Handle delimiter selection
+        const delimiterSelect = document.getElementById('delimiter');
+        const customDelimiterContainer = document.getElementById('custom_delimiter_container');
+
+        if (delimiterSelect && customDelimiterContainer) {
+            delimiterSelect.addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    customDelimiterContainer.style.display = 'block';
+                } else {
+                    customDelimiterContainer.style.display = 'none';
+                }
+            });
+        }
     // CSV parsing function
     function tryPreviewCsvHeaders(file) {
         // Show "analyzing" message
         const previewContainer = document.getElementById('csv_preview');
         const columnMappingForm = document.getElementById('column_mapping_form');
+        const delimiterSelect = document.getElementById('delimiter');
+        const selectedDelimiter = delimiterSelect ? delimiterSelect.value : 'comma';
+   
         
         if (previewContainer) {
             previewContainer.innerHTML = '<div class="d-flex justify-content-center my-3"><div class="spinner-border text-primary" role="status"></div><span class="ms-2">Analyzing CSV file...</span></div>';
@@ -463,7 +495,7 @@ Date,Amount,Description,Category,Type
                 }
                 
                 // Assume first line is headers
-                const headers = parseCSVLine(lines[0]);
+                const headers = parseCSVLine(lines[0], selectedDelimiter);
                 
                 // Update column mapping fields
                 updateCsvHeaderFields(headers);
@@ -483,7 +515,7 @@ Date,Amount,Description,Category,Type
                 // Data rows
                 for (let i = 1; i <= previewRows; i++) {
                     if (lines[i].trim()) {
-                        const rowData = parseCSVLine(lines[i]);
+                        const rowData = parseCSVLine(lines[i], selectedDelimiter);
                         previewHTML += '<tr>';
                         for (let j = 0; j < headers.length; j++) {
                             const cellValue = j < rowData.length ? rowData[j] : '';
@@ -530,31 +562,50 @@ Date,Amount,Description,Category,Type
     }
 
     // Helper functions for CSV parsing
-    function parseCSVLine(line) {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
-            
-            if (char === '"') {
-                // Toggle quote state
-                inQuotes = !inQuotes;
-            } else if (char === ',' && !inQuotes) {
-                // End of field
-                result.push(current.trim());
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        
-        // Add the last field
-        result.push(current.trim());
-        
-        return result;
+    function parseCSVLine(line, delimiter = ',') {
+    // Set actual delimiter character based on selection
+    let actualDelimiter;
+    switch (delimiter) {
+        case 'tab':
+            actualDelimiter = '\t';
+            break;
+        case 'semicolon':
+            actualDelimiter = ';';
+            break;
+        case 'pipe':
+            actualDelimiter = '|';
+            break;
+        case 'custom':
+            actualDelimiter = document.getElementById('custom_delimiter').value || ',';
+            break;
+        default:
+            actualDelimiter = ',';
     }
+    
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+            // Toggle quote state
+            inQuotes = !inQuotes;
+        } else if (char === actualDelimiter && !inQuotes) {
+            // End of field
+            result.push(current.trim());
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    
+    // Add the last field
+    result.push(current.trim());
+    
+    return result;
+}
 
     // Helper function to safely escape HTML
     function escapeHtml(str) {

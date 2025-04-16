@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0"><i class="fas fa-clock me-2"></i>Demo Session Expired</h4>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-hourglass-end fa-4x text-danger mb-3"></i>
+                        <h3>Your demo session has ended</h3>
+                        <p class="lead">Thank you for trying DollarDollar Bill Y'all!</p>
+                    </div>
+                    
+                    <div class="alert alert-secondary">
+                        <h5><i class="fas fa-heart me-2"></i>Did you enjoy the demo?</h5>
+                        <p>Here are your options to continue using DollarDollar Bill Y'all:</p>
+                        <ul>
+                            <li>Start a new demo session to explore more features</li>
+                            <li>Install your own instance using the instructions in our documentation</li>
+                            <li>Contact us to learn about extended trials or hosting options</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="d-flex justify-content-center mt-4">
+                        <a href="{{ url_for('demo_login') }}" class="btn btn-primary me-3">
+                            <i class="fas fa-redo me-2"></i>Start New Demo
+                        </a>
+                        <a href="https://github.com/yourusername/dollardollar" target="_blank" class="btn btn-outline-dark">
+                            <i class="fab fa-github me-2"></i>View on GitHub
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

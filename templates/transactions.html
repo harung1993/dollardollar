@@ -1,5 +1,120 @@
 {% extends "base.html" %}
 
+{% block title %}Transactions - Dollar Dollar Bill Y'all{% endblock %}
+
+{% block styles %}
+<!-- Add any page-specific CSS here -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/transaction-module.css') }}">
+<style>
+    
+
+    .split-categories-detail {
+        max-height: 250px;
+        overflow-y: auto;
+    }
+    
+    .category-split-container .split-toggle {
+        cursor: pointer;
+    }
+    
+    .split-row {
+        transition: all 0.3s ease;
+    }
+    
+    tr.deleting {
+        background-color: rgba(220, 53, 69, 0.1);
+    }
+    
+    .slide-panel {
+        position: fixed;
+        top: 0;
+        right: -100%;
+        width: 90%;
+        max-width: 550px;
+        height: 100%;
+        background-color: #212529;
+        z-index: 1050;
+        transition: right 0.3s ease-out;
+        box-shadow: -2px 0 10px rgba(0, 0, 0, 0.2);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .slide-panel.active {
+        right: 0;
+    }
+    
+    .slide-panel-header {
+        padding: 1rem;
+        border-bottom: 1px solid #343a40;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .slide-panel-content {
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+    
+    .slide-panel-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1040;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease-out;
+    }
+    
+    .slide-panel-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+    
+    .custom-multiselect-wrapper {
+        max-height: 200px;
+        overflow-y: auto;
+        border: 1px solid #444;
+        border-radius: 0.25rem;
+        background-color: #2d2d2d;
+    }
+    
+    .custom-multiselect-item {
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+    }
+    
+    .hidden {
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .visible {
+        opacity: 1;
+        transition: opacity 0.3s ease;
+    }
+    /* Ultra-specific rule to force white text */
+    .list-group-item .text-white,
+    .list-group-item span[style*="color"],
+    .list-group-item .debug-category-name {
+        color: white !important;
+        -webkit-text-fill-color: white !important;
+        display: inline-block;
+    }
+    
+    .category-name-text {
+    color: white !important;
+}
+
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <div class="row mb-4">
@@ -94,11 +209,24 @@
     <!-- Transactions Table -->
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Transaction History</h5>
-            <span class="badge bg-secondary" id="resultCount">{{ expenses|length }} transactions</span>
+            <h5 class="mb-0">Transaction History <span class="badge bg-secondary ms-2" id="resultCount">{{ expenses|length }} transactions</span></h5>
+            <div class="input-group" style="width: 300px;">
+                <span class="input-group-text bg-dark text-light border-secondary">
+                    <i class="fas fa-search"></i>
+                </span>
+                <input type="text" 
+                       id="globalSearchInput" 
+                       class="form-control bg-dark text-light" 
+                       placeholder="Search transactions..."
+                       autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" id="clearSearchBtn" style="display:none;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
         </div>
         <div class="card-body">
             <div class="table-responsive">
+                <!-- Updated transactions table to show split categories -->
                 <table class="table" id="transactionsTable">
                     <thead>
                         <tr>
@@ -117,7 +245,7 @@
                                 {% set splits = expense_splits[expense.id] %}
                                 <tr data-expense-id="{{ expense.id }}" 
                                     data-transaction-type="{{ expense.transaction_type|default('expense') }}"
-                                    data-category-id="{{ expense.category_id|default('none') }}">
+                                    data-category-id="{% if expense.category_id %}{{ expense.category_id }}{% else %}none{% endif %}">
                                     <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
                                     <td>
                                         {% if expense.is_income %}
@@ -148,8 +276,21 @@
                                             {{ expense.card_used }}
                                         {% endif %}
                                     </td>
-                                    <td>
-                                        {% if expense.category %}
+                                    <td class="category-cell">
+                                        {% if expense.has_category_splits %}
+                                            <!-- Show split indicator for category splits -->
+                                            <div class="category-split-container" data-has-splits="true" data-expense-id="{{ expense.id }}">
+                                                <span class="badge bg-info" title="Multiple categories">
+                                                    <i class="fas fa-layer-group"></i> Split
+                                                </span>
+                                                <span class="split-toggle" data-expense-id="{{ expense.id }}">
+                                                    <i class="fas fa-chevron-down ms-1"></i>
+                                                </span>
+                                                <div class="split-categories-detail mt-2" id="split-categories-{{ expense.id }}" style="display: none;">
+                                                    <div class="loading">Loading splits...</div>
+                                                </div>
+                                            </div>
+                                        {% elif expense.category %}
                                             <span class="badge" style="background-color: {{ expense.category.color }};">
                                                 <i class="fas {{ expense.category.icon }}"></i>
                                                 {{ expense.category.name }}
@@ -208,6 +349,23 @@
                         {% endif %}
                     </tbody>
                 </table>
+
+                <!-- Hidden template for category data -->
+                <div id="category-data" style="display: none;">
+                    {% for category in categories %}
+                        <div data-category-id="{{ category.id }}" 
+                            data-category-name="{{ category.name }}"
+                            data-category-color="{{ category.color }}"
+                            data-category-icon="{{ category.icon }}"></div>
+                        
+                        {% for subcategory in category.subcategories %}
+                            <div data-category-id="{{ subcategory.id }}" 
+                                data-category-name="{{ subcategory.name }}"
+                                data-category-color="{{ subcategory.color }}"
+                                data-category-icon="{{ subcategory.icon }}"></div>
+                        {% endfor %}
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>
@@ -234,1937 +392,52 @@
 
 <!-- Slide panel overlay (shared) -->
 <div id="slide-panel-overlay" class="slide-panel-overlay"></div>
-
 {% endblock %}
 
 {% block scripts %}
+<!-- Set base currency symbol for JavaScript -->
 <script>
-    // Store current expense ID for deletion
-    let currentExpenseId = null;
-    let baseCurrencySymbol = '{{ base_currency.symbol }}';
-
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize date fields
-        initializeDates();
-        
-        // Set up event handlers for filter buttons
-        setupFilterButtons();
-        
-        // Set up event handlers for transaction actions
-        setupActionButtons();
-        
-        // Set up add transaction button
-        const openAddTransactionBtn = document.getElementById('openAddTransactionBtn');
-        if (openAddTransactionBtn) {
-            openAddTransactionBtn.addEventListener('click', function() {
-                openAddTransactionPanel();
-            });
-        }
-        const sourceAccountSelect = document.getElementById('edit_account_id');
-    if (sourceAccountSelect) {
-        sourceAccountSelect.addEventListener('change', function() {
-            // Only update if the transaction type is transfer
-            const transactionType = document.getElementById('edit_transaction_type')?.value;
-            if (transactionType === 'transfer') {
-                updateDestinationAccountOptions();
-            }
-        });
-    }
-    
-    // Setup transaction type change listener
-    const transactionTypeSelect = document.getElementById('edit_transaction_type');
-    if (transactionTypeSelect) {
-        transactionTypeSelect.addEventListener('change', handleEditTransactionTypeChange);
-        
-        // Initialize form state based on initial transaction type
-        setTimeout(() => {
-            handleEditTransactionTypeChange();
-        }, 100);
-    }
-        // Apply filters on page load
-        applyFilters();
-    });
-    
-    // Initialize date inputs with sensible defaults
-    function initializeDates() {
-        const today = new Date();
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(today.getDate() - 30);
-        
-        const endDateInput = document.getElementById('endDate');
-        const startDateInput = document.getElementById('startDate');
-        
-        if (endDateInput) {
-            endDateInput.value = today.toISOString().split('T')[0];
-        }
-        
-        if (startDateInput) {
-            startDateInput.value = thirtyDaysAgo.toISOString().split('T')[0];
-        }
-    }
-    
-    // Set up filter buttons
-    function setupFilterButtons() {
-        const applyFiltersBtn = document.getElementById('applyFiltersBtn');
-        if (applyFiltersBtn) {
-            applyFiltersBtn.addEventListener('click', applyFilters);
-        }
-        
-        const clearFiltersBtn = document.getElementById('clearFiltersBtn');
-        if (clearFiltersBtn) {
-            clearFiltersBtn.addEventListener('click', clearFilters);
-        }
-        
-        const exportDataBtn = document.getElementById('exportDataBtn');
-        if (exportDataBtn) {
-            exportDataBtn.addEventListener('click', exportTransactions);
-        }
-        
-        const bulkCategorizeBtn = document.getElementById('bulkCategorizeBtn');
-        if (bulkCategorizeBtn) {
-            bulkCategorizeBtn.addEventListener('click', bulkCategorize);
-        }
-    }
-    
-    // Set up action buttons for transactions
-    function setupActionButtons() {
-        // View split details buttons
-        document.querySelectorAll('.view-split-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const expenseId = this.getAttribute('data-expense-id');
-                if (expenseId) {
-                    const splitDetails = document.getElementById(`split-${expenseId}`);
-                    if (splitDetails) {
-                        splitDetails.style.display = splitDetails.style.display === 'none' ? 'block' : 'none';
-                    }
-                }
-            });
-        });
-        
-        // Edit expense buttons
-        document.querySelectorAll('.edit-expense-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const expenseId = this.getAttribute('data-expense-id');
-                if (expenseId) {
-                    openEditTransactionPanel(expenseId);
-                }
-            });
-        });
-        
-        // Delete expense buttons
-        document.querySelectorAll('.delete-expense-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const expenseId = this.getAttribute('data-expense-id');
-                if (expenseId) {
-                    showDeleteConfirmation(expenseId);
-                }
-            });
-        });
-        
-        // Confirm delete button
-        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-        if (confirmDeleteBtn) {
-            confirmDeleteBtn.addEventListener('click', function() {
-                if (currentExpenseId) {
-                    deleteExpense(currentExpenseId);
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
-                }
-            });
-        }
-    }
-    
-    function showDeleteConfirmation(expenseId) {
-    // Store the expense ID
-    currentExpenseId = expenseId;
-    
-    // Find the expense description for better UX
-    const row = document.querySelector(`tr[data-expense-id="${expenseId}"]`);
-    const description = row ? row.cells[2].textContent.trim() : 'this transaction';
-    
-    // Create toast container if it doesn't exist
-    let toastContainer = document.querySelector('.toast-container');
-    if (!toastContainer) {
-        toastContainer = document.createElement('div');
-        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
-        document.body.appendChild(toastContainer);
-    }
-    
-    // Create unique ID for this toast
-    const toastId = `delete-toast-${Date.now()}`;
-    
-    // Create the confirm delete toast with buttons
-    const toastHtml = `
-        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="false">
-            <div class="toast-header bg-danger text-white">
-                <strong class="me-auto"><i class="fas fa-trash me-2"></i>Confirm Deletion</strong>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-            </div>
-            <div class="toast-body">
-                <p>Are you sure you want to delete "${description}"?</p>
-                <p class="text-danger small mb-2">This action cannot be undone.</p>
-                <div class="mt-2 pt-2 border-top d-flex justify-content-end">
-                    <button type="button" class="btn btn-secondary btn-sm me-2" data-bs-dismiss="toast">Cancel</button>
-                    <button type="button" class="btn btn-danger btn-sm delete-confirm-btn">Delete</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // Add the toast to the container
-    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-    
-    // Get the toast element
-    const toastEl = document.getElementById(toastId);
-    
-    // Add delete confirmation button handler
-    toastEl.querySelector('.delete-confirm-btn').addEventListener('click', function() {
-        // Hide the toast
-        const bsToast = bootstrap.Toast.getInstance(toastEl);
-        if (bsToast) bsToast.hide();
-        
-        // Delete the expense
-        deleteExpense(currentExpenseId);
-    });
-    
-    // Initialize and show the toast
-    const toast = new bootstrap.Toast(toastEl);
-    toast.show();
-    
-    // Clean up the toast element when hidden
-    toastEl.addEventListener('hidden.bs.toast', function() {
-        toastEl.remove();
-    });
-}
-    
-    // Delete expense
-    function deleteExpense(expenseId) {
-        // Show loading state on the row
-        const row = document.querySelector(`tr[data-expense-id="${expenseId}"]`);
-        if (row) {
-            row.classList.add('deleting');
-            row.style.opacity = '0.5';
-        }
-        
-        fetch(`/delete_expense/${expenseId}`, {
-            method: 'POST',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Remove row with animation
-                if (row) {
-                    row.style.height = row.offsetHeight + 'px';
-                    row.style.transition = 'all 0.3s ease-out';
-                    
-                    setTimeout(() => {
-                        row.style.height = '0';
-                        row.style.opacity = '0';
-                        row.style.overflow = 'hidden';
-                        
-                        // Remove row after animation
-                        setTimeout(() => {
-                            row.remove();
-                            
-                            // Update the counter
-                            const resultCount = document.getElementById('resultCount');
-                            if (resultCount) {
-                                const count = parseInt(resultCount.textContent);
-                                if (!isNaN(count)) {
-                                    resultCount.textContent = (count - 1) + ' transactions';
-                                }
-                            }
-                        }, 300);
-                    }, 100);
-                }
-            } else {
-                // Show error and reset row
-                showMessage(data.message || 'Failed to delete transaction', 'error');
-                if (row) {
-                    row.classList.remove('deleting');
-                    row.style.opacity = '1';
-                }
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showMessage('Error deleting transaction: ' + error.message, 'error');
-            
-            // Reset row
-            if (row) {
-                row.classList.remove('deleting');
-                row.style.opacity = '1';
-            }
-        });
-    }
-    
-    // Apply filters to transactions table
-    function applyFilters() {
-        const startDate = document.getElementById('startDate')?.value;
-        const endDate = document.getElementById('endDate')?.value;
-        const transactionType = document.getElementById('transactionTypeFilter')?.value || 'all';
-        const categoryId = document.getElementById('categoryFilter')?.value || 'all';
-        const description = (document.getElementById('descriptionFilter')?.value || '').toLowerCase();
-        const minAmount = document.getElementById('minAmount')?.value;
-        const maxAmount = document.getElementById('maxAmount')?.value;
-        
-        let visibleCount = 0;
-        
-        // Get all rows
-        const rows = document.querySelectorAll('#transactionsTable tbody tr[data-expense-id]');
-        if (!rows.length) return;
-        
-        rows.forEach(row => {
-            const rowDate = row.cells[0].textContent.trim();
-            const rowType = row.querySelector('.badge')?.textContent.toLowerCase() || '';
-            const rowDescription = row.cells[2].textContent.trim().toLowerCase();
-            const rowCategory = row.getAttribute('data-category-id') || 'none';
-            
-            // Extract amount from the amount cell (removing currency symbol and formatting)
-            const amountText = row.cells[3].textContent.trim();
-            const rowAmount = parseFloat(amountText.replace(/[^\d.-]/g, '')) || 0;
-            
-            let visible = true;
-            
-            // Date filter
-            if (startDate && new Date(rowDate) < new Date(startDate)) visible = false;
-            if (endDate && new Date(rowDate) > new Date(endDate)) visible = false;
-            
-            // Transaction type filter
-            if (transactionType !== 'all') {
-                if (transactionType === 'expense' && !rowType.includes('expense')) visible = false;
-                if (transactionType === 'income' && !rowType.includes('income')) visible = false;
-                if (transactionType === 'transfer' && !rowType.includes('transfer')) visible = false;
-            }
-            
-            // Category filter
-            if (categoryId === 'none' && rowCategory !== 'none') visible = false;
-            if (categoryId !== 'all' && categoryId !== 'none' && rowCategory !== categoryId) visible = false;
-            
-            // Description filter
-            if (description && !rowDescription.includes(description)) visible = false;
-            
-            // Amount filter
-            if (minAmount && !isNaN(parseFloat(minAmount)) && Math.abs(rowAmount) < parseFloat(minAmount)) visible = false;
-            if (maxAmount && !isNaN(parseFloat(maxAmount)) && Math.abs(rowAmount) > parseFloat(maxAmount)) visible = false;
-            
-            // Show/hide row
-            row.style.display = visible ? '' : 'none';
-            if (visible) visibleCount++;
-        });
-        
-        // Update result count
-        const resultCountEl = document.getElementById('resultCount');
-        if (resultCountEl) {
-            resultCountEl.textContent = `${visibleCount} transaction${visibleCount !== 1 ? 's' : ''}`;
-        }
-        
-        // Show/hide the "no results" message
-        const tbody = document.querySelector('#transactionsTable tbody');
-        let noResultsRow = document.querySelector('#transactionsTable tbody tr.no-results');
-        
-        if (visibleCount === 0) {
-            // Add "no results" row if none exists
-            if (!noResultsRow && tbody) {
-                noResultsRow = document.createElement('tr');
-                noResultsRow.className = 'no-results';
-                noResultsRow.innerHTML = '<td colspan="7" class="text-center">No transactions match your filters</td>';
-                tbody.appendChild(noResultsRow);
-            }
-        } else if (noResultsRow) {
-            // Remove "no results" row if we have visible rows
-            noResultsRow.remove();
-        }
-    }
-    
-    // Clear all filters
-    function clearFilters() {
-        // Reset filter form fields
-        const form = document.getElementById('filterForm');
-        if (form) form.reset();
-        
-        // Re-initialize date range
-        initializeDates();
-        
-        // Apply the cleared filters
-        applyFilters();
-    }
-    
-    // Export transactions as CSV
-    function exportTransactions() {
-        // Collect filter data from form
-        const filters = {
-            startDate: document.getElementById('startDate')?.value,
-            endDate: document.getElementById('endDate')?.value,
-            transactionType: document.getElementById('transactionTypeFilter')?.value,
-            categoryId: document.getElementById('categoryFilter')?.value,
-            minAmount: document.getElementById('minAmount')?.value,
-            maxAmount: document.getElementById('maxAmount')?.value,
-            description: document.getElementById('descriptionFilter')?.value
-        };
-
-        // Show loading state
-        const exportBtn = document.getElementById('exportDataBtn');
-        if (exportBtn) {
-            exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Exporting...';
-            exportBtn.disabled = true;
-        }
-
-        // Perform AJAX request to export
-        fetch('/export_transactions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(filters)
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Export failed');
-            }
-            return response.blob();
-        })
-        .then(blob => {
-            // Create a download link
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
-            a.href = url;
-            a.download = `transactions_${timestamp}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-        })
-        .catch(error => {
-            console.error('Export error:', error);
-            showMessage('Failed to export transactions. Please try again.', 'error');
-        })
-        .finally(() => {
-            // Reset button state
-            if (exportBtn) {
-                exportBtn.innerHTML = '<i class="fas fa-file-export me-2"></i>Export';
-                exportBtn.disabled = false;
-            }
-        });
-    }
-    
-    // Bulk categorize transactions
-    
-    // Bulk categorize transactions
-function bulkCategorize() {
-    // Show a confirmation toast instead of browser alert
-    showMessage('This will attempt to categorize all uncategorized transactions based on your category mapping rules.', 'warning', {
-        autoHide: false,
-        actionButtons: [
-            {
-                text: 'Cancel',
-                class: 'btn-outline-secondary',
-                onClick: function(toast) {
-                    // Just close the toast
-                    toast.hide();
-                }
-            },
-            {
-                text: 'Continue',
-                class: 'btn-warning',
-                onClick: function(toast) {
-                    toast.hide();
-                    performBulkCategorization();
-                }
-            }
-        ]
-    });
-}
-
-// Function to perform the actual categorization
-    // Function to perform the actual categorization
-function performBulkCategorization() {
-    // Show loading state
-    const bulkBtn = document.getElementById('bulkCategorizeBtn');
-    if (bulkBtn) {
-        bulkBtn.disabled = true;
-        bulkBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Categorizing...';
-    }
-    
-    // Perform AJAX request
-    fetch('/bulk_categorize_transactions', {
-        method: 'POST',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Bulk categorization failed');
-        }
-        // Just get the response text instead of expecting JSON
-        return response.text();
-    })
-    .then(data => {
-        // Show success message
-        showMessage('Auto-categorization complete! Page will reload to show changes.', 'success', {
-            autoHide: true,
-            delay: 3000,
-            onClose: function() {
-                // Reload page to show changes
-                window.location.reload();
-            }
-        });
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showMessage(`Error during categorization: ${error.message}`, 'error');
-        
-        // Reset button state
-        if (bulkBtn) {
-            bulkBtn.disabled = false;
-            bulkBtn.innerHTML = '<i class="fas fa-tags me-2"></i>Auto-Categorize';
-        }
-    });
-}
-    // Show a message toast
-    function showMessage(message, type = 'success', options = {}) {
-    // Default options
-    const defaultOptions = {
-        autoHide: true,
-        delay: 5000,
-        actionButtons: [],
-        onClose: null
-    };
-    
-    // Merge options
-    const finalOptions = {...defaultOptions, ...options};
-    
-    // Check if we can use Bootstrap toast
-    if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
-        // Create toast container if it doesn't exist
-        let toastContainer = document.querySelector('.toast-container');
-        if (!toastContainer) {
-            toastContainer = document.createElement('div');
-            toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
-            document.body.appendChild(toastContainer);
-        }
-        
-        // Create toast
-        const toastId = `toast-${Date.now()}`;
-        const iconClass = type === 'error' ? 'fa-exclamation-circle' : 
-                          type === 'warning' ? 'fa-exclamation-triangle' : 'fa-check-circle';
-        const bgColor = type === 'error' ? 'bg-danger' : 
-                        type === 'warning' ? 'bg-warning text-dark' : 'bg-success';
-        
-        // Create action buttons HTML if provided
-        let actionButtonsHtml = '';
-        if (finalOptions.actionButtons && finalOptions.actionButtons.length > 0) {
-            actionButtonsHtml = `
-                <div class="mt-2 pt-2 border-top d-flex justify-content-end">
-                    ${finalOptions.actionButtons.map(btn => 
-                        `<button type="button" class="btn ${btn.class || 'btn-secondary'} btn-sm me-2 action-btn" 
-                            data-action="${btn.text}">${btn.text}</button>`
-                    ).join('')}
-                </div>
-            `;
-        }
-        
-        // Create toast HTML
-        const toastHtml = `
-            <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true" 
-                ${finalOptions.autoHide ? `data-bs-delay="${finalOptions.delay}"` : 'data-bs-autohide="false"'}>
-                <div class="toast-header ${bgColor} ${type !== 'warning' ? 'text-white' : ''}">
-                    <i class="fas ${iconClass} me-2"></i>
-                    <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
-                    <button type="button" class="btn-close ${type !== 'warning' ? 'btn-close-white' : ''}" 
-                        data-bs-dismiss="toast" aria-label="Close"></button>
-                </div>
-                <div class="toast-body">
-                    ${message}
-                    ${actionButtonsHtml}
-                </div>
-            </div>
-        `;
-        
-        // Add toast to container
-        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-        
-        // Get toast element
-        const toastEl = document.getElementById(toastId);
-        
-        // Add action button event listeners
-        if (finalOptions.actionButtons && finalOptions.actionButtons.length > 0) {
-            const actionBtns = toastEl.querySelectorAll('.action-btn');
-            actionBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    const actionText = this.getAttribute('data-action');
-                    const actionBtn = finalOptions.actionButtons.find(b => b.text === actionText);
-                    
-                    if (actionBtn && typeof actionBtn.onClick === 'function') {
-                        // Create toast instance reference to pass to handlers
-                        const bsToast = bootstrap.Toast.getInstance(toastEl);
-                        actionBtn.onClick(bsToast);
-                    }
-                });
-            });
-        }
-        
-        // Initialize and show toast
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
-        
-        // Handle close event
-        toastEl.addEventListener('hidden.bs.toast', function() {
-            if (typeof finalOptions.onClose === 'function') {
-                finalOptions.onClose();
-            }
-            // Remove toast from DOM
-            toastEl.remove();
-        });
-        
-        return toast;
-    } else {
-        // Fallback to alert
-        alert(message);
-        
-        // Call onClose if provided
-        if (typeof finalOptions.onClose === 'function') {
-            finalOptions.onClose();
-        }
-    }
-}
-    
-
-function openAddTransactionPanel() {
-    // Create the slide panel first
-    const panel = openSlidePanel('addTransactionPanel', {
-        title: 'Add New Transaction',
-        icon: 'fa-plus',
-        iconColor: '#0ea5e9',
-        loadingContent: '<div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>'
-    });
-    
-    // Then fetch the form contents
-    fetch('/get_transaction_form_html')
-        .then(response => response.text())
-        .then(html => {
-            const contentDiv = panel.querySelector('.slide-panel-content');
-            if (contentDiv) {
-                contentDiv.innerHTML = html;
-                
-                // Initialize date with today's date
-                const dateInput = document.getElementById('date');
-                if (dateInput) {
-                    dateInput.value = new Date().toISOString().split('T')[0];
-                }
-                
-                // Set up event listeners for form controls
-                setupAddTransactionFormListeners();
-                
-                // Make split_with select user-friendly (no need for Ctrl+click)
-                initializeSelectWithoutCtrl('split_with');
-            }
-        })
-        .catch(error => {
-            console.error('Error loading form:', error);
-            showMessage('Error loading transaction form. Please try again.', 'error');
-        });
-}
-    
-    // Open Edit Transaction Panel
-function openEditTransactionPanel(expenseId) {
-    // Show a loading panel first
-    const panel = openSlidePanel('editTransactionPanel', {
-        title: 'Edit Transaction',
-        icon: 'fa-edit',
-        iconColor: '#0ea5e9',
-        loadingContent: '<div class="d-flex justify-content-center py-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>'
-    });
-    
-    // Fetch expense data
-    fetch(`/get_expense_edit_form/${expenseId}`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Failed to retrieve expense data');
-            }
-            return response.text();
-        })
-        .then(html => {
-            const contentDiv = panel.querySelector('.slide-panel-content');
-            if (contentDiv) {
-                contentDiv.innerHTML = html;
-                
-                // Set up event listeners
-                setupEditTransactionFormListeners();
-                
-                // Make split_with select user-friendly (no need for Ctrl+click)
-                initializeSelectWithoutCtrl('edit_split_with');
-                
-                // Initialize UI state based on data
-                toggleEditPersonalExpense();
-                toggleEditSplitOptions();
-                
-                // Setup form submission
-                const editForm = document.getElementById('editTransactionForm');
-                if (editForm) {
-                    editForm.addEventListener('submit', function(e) {
-                        e.preventDefault();
-                        logFormValues(); // Add this line
-                        submitEditForm(this, expenseId);
-                    });
-                }
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showMessage(`Error loading expense data: ${error.message}`, 'error');
-            closeSlidePanel('editTransactionPanel');
-        });
-}
-    
-    // Populate edit panel with expense data
-    function populateEditPanel(expense, expenseId) {
-        // Create edit form HTML
-        const formHtml = `
-            <form method="POST" action="/update_expense/${expenseId}" id="editTransactionForm">
-                <div class="row">
-                    <div class="col-md-12 mb-3">
-                        <label for="edit_description" class="form-label">Description</label>
-                        <input type="text" class="form-control bg-dark text-light" id="edit_description" name="description" value="${expense.description || ''}" required>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="edit_amount" class="form-label">Amount (${baseCurrencySymbol})</label>
-                        <input type="number" step="0.01" class="form-control bg-dark text-light" id="edit_amount" name="amount" value="${expense.amount || 0}" required>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="edit_date" class="form-label">Date</label>
-                        <input type="date" class="form-control bg-dark text-light" id="edit_date" name="date" value="${expense.date || ''}" required>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="edit_category_id" class="form-label">Category</label>
-                        <select class="form-select bg-dark text-light" id="edit_category_id" name="category_id">
-                            <option value="">Select a category</option>
-                            {% for category in categories %}
-                                {% if not category.parent_id %}
-                                    <optgroup label="{{ category.name }}">
-                                        {% for subcat in category.subcategories %}
-                                            <option value="{{ subcat.id }}" 
-                                                    data-icon="{{ subcat.icon }}" 
-                                                    data-color="{{ subcat.color }}"
-                                                    ${expense.category_id == {{ subcat.id }} ? 'selected' : ''}>
-                                                {{ subcat.name }}
-                                            </option>
-                                        {% endfor %}
-                                    </optgroup>
-                                {% endif %}
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <label for="edit_paid_by" class="form-label">Paid By</label>
-                        <select class="form-select bg-dark text-light" id="edit_paid_by" name="paid_by">
-                            {% for user in users %}
-                                <option value="{{ user.id }}" ${expense.paid_by == "{{ user.id }}" ? 'selected' : ''}>
-                                    {{ user.name }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label for="edit_group_id" class="form-label">Group (Optional)</label>
-                        <select class="form-select bg-dark text-light" id="edit_group_id" name="group_id">
-                            <option value="">No Group (Personal Transaction)</option>
-                            {% for group in groups %}
-                                <option value="{{ group.id }}" ${expense.group_id == {{ group.id }} ? 'selected' : ''}>
-                                    {{ group.name }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="form-check form-switch mt-4">
-                            <input class="form-check-input" type="checkbox" id="edit_personal_expense" name="personal_expense" ${!expense.split_with || expense.split_with.length === 0 ? 'checked' : ''}>
-                            <label class="form-check-label" for="edit_personal_expense">Personal expense (no splitting)</label>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="edit-expense-only-fields">
-                    <div class="mb-3">
-                        <label for="edit_split_with" class="form-label">Split With</label>
-                        <select class="form-select bg-dark text-light" id="edit_split_with" name="split_with" multiple>
-                            {% for user in users %}
-                                <option value="{{ user.id }}">{{ user.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="edit_split_method" class="form-label">Split Method</label>
-                        <select class="form-select bg-dark text-light" id="edit_split_method" name="split_method" required>
-                            <option value="equal" ${expense.split_method === 'equal' ? 'selected' : ''}>Equal Split Among All</option>
-                            <option value="percentage" ${expense.split_method === 'percentage' ? 'selected' : ''}>Percentage Split for Each Person</option>
-                            <option value="custom" ${expense.split_method === 'custom' ? 'selected' : ''}>Custom Amount for Each Person</option>
-                        </select>
-                    </div>
-                    
-                    <div id="edit_custom_split_container" style="display: none;" class="mb-3">
-                        <div class="card bg-dark border-secondary">
-                            <div class="card-header">
-                                <h5 class="mb-0">Split Values</h5>
-                            </div>
-                            <div class="card-body">
-                                <div id="edit_split_values_container"></div>
-                                <div class="d-flex justify-content-between mt-3">
-                                    <span>Total: ${baseCurrencySymbol}<span id="edit_split_total">0.00</span></span>
-                                    <span class="badge bg-success" id="edit_split_status">Balanced</span>
-                                </div>
-                            </div>
-                        </div>
-                        <input type="hidden" id="edit_split_details" name="split_details" value='${expense.split_details || ""}'>
-                    </div>
-                </div>
-                
-                <div class="d-flex justify-content-end mt-3">
-                    <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('editTransactionPanel')">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                </div>
-            </form>
-        `;
-        
-        // Update the panel content
-        const slidePanelContent = document.querySelector('#editTransactionPanel .slide-panel-content');
-        if (slidePanelContent) {
-            slidePanelContent.innerHTML = formHtml;
-        }
-        
-        // Set category and select values
-        setTimeout(() => {
-            const categorySelect = document.getElementById('edit_category_id');
-            if (categorySelect) {
-                for (let i = 0; i < categorySelect.options.length; i++) {
-                    if (categorySelect.options[i].value == expense.category_id) {
-                        categorySelect.options[i].selected = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Set paid by
-            const paidBySelect = document.getElementById('edit_paid_by');
-            if (paidBySelect) {
-                for (let i = 0; i < paidBySelect.options.length; i++) {
-                    if (paidBySelect.options[i].value == expense.paid_by) {
-                        paidBySelect.options[i].selected = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Set split with (multi-select)
-            const splitWithSelect = document.getElementById('edit_split_with');
-            if (splitWithSelect && expense.split_with) {
-                const splitWithIds = Array.isArray(expense.split_with) ? 
-                    expense.split_with : expense.split_with.split(',');
-                
-                for (let i = 0; i < splitWithSelect.options.length; i++) {
-                    splitWithSelect.options[i].selected = splitWithIds.includes(splitWithSelect.options[i].value);
-                }
-            }
-            
-            // Setup event listeners
-            setupEditTransactionFormListeners();
-            
-            // Initialize UI state based on data
-            toggleEditPersonalExpense();
-            toggleEditSplitOptions();
-            
-            // Setup form submission
-            const editForm = document.getElementById('editTransactionForm');
-            if (editForm) {
-                editForm.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    submitEditForm(this, expenseId);
-                });
-            }
-        }, 100);
-    }
-    function logFormValues() {
-            const categorySelect = document.getElementById('edit_category_id');
-            const formElement = document.getElementById('editTransactionForm');
-            
-            if (categorySelect && formElement) {
-                console.log('Current category ID value:', categorySelect.value);
-                console.log('Form has category_id field:', formElement.elements['category_id'] !== undefined);
-            }
-    }
-    // Setup event listeners for add transaction form
-    function setupAddTransactionFormListeners() {
-        // Transaction type change handler
-        const transactionTypeSelect = document.getElementById('transaction_type');
-        if (transactionTypeSelect) {
-            transactionTypeSelect.addEventListener('change', handleTransactionTypeChange);
-            // Initialize UI based on default transaction type
-            handleTransactionTypeChange();
-        }
-        
-        // Personal expense toggle
-        const personalExpenseCheck = document.getElementById('personal_expense');
-        if (personalExpenseCheck) {
-            personalExpenseCheck.addEventListener('change', togglePersonalExpense);
-        }
-        
-        // Split method change handler
-        const splitMethodSelect = document.getElementById('split_method');
-        if (splitMethodSelect) {
-            splitMethodSelect.addEventListener('change', toggleSplitOptions);
-        }
-        
-        // Amount field change handler
-        const amountField = document.getElementById('amount');
-        if (amountField) {
-            amountField.addEventListener('input', function() {
-                // Only update split values if a split method is selected
-                const splitMethod = document.getElementById('split_method')?.value;
-                if (splitMethod && splitMethod !== 'equal') {
-                    updateSplitValues();
-                }
-            });
-        }
-        
-        // Paid by change handler
-        const paidBySelect = document.getElementById('paid_by');
-        if (paidBySelect) {
-            paidBySelect.addEventListener('change', function() {
-                updateSplitWithOptions();
-                
-                // Only update split values if a split method is selected
-                const splitMethod = document.getElementById('split_method')?.value;
-                if (splitMethod && splitMethod !== 'equal') {
-                    updateSplitValues();
-                }
-            });
-        }
-        
-        // Split with change handler
-        const splitWithSelect = document.getElementById('split_with');
-        if (splitWithSelect) {
-            splitWithSelect.addEventListener('change', function() {
-                // Only update split values if a split method is selected
-                const splitMethod = document.getElementById('split_method')?.value;
-                if (splitMethod && splitMethod !== 'equal') {
-                    updateSplitValues();
-                }
-            });
-        }
-    }
-    
-    // Setup event listeners for edit transaction form
-    function setupEditTransactionFormListeners() {
-    // Add transaction type change handler
-    const transactionTypeSelect = document.getElementById('edit_transaction_type');
-    if (transactionTypeSelect) {
-        transactionTypeSelect.addEventListener('change', handleEditTransactionTypeChange);
-        // Initialize UI based on current transaction type
-        handleEditTransactionTypeChange();
-    }
-    
-    // Personal expense toggle
-    const personalExpenseCheck = document.getElementById('edit_personal_expense');
-    if (personalExpenseCheck) {
-        personalExpenseCheck.addEventListener('change', toggleEditPersonalExpense);
-    }
-    
-    // Ensure proper category selection handling
-    const categorySelect = document.getElementById('edit_category_id');
-    if (categorySelect) {
-        // Add a change event listener to log selection changes
-        categorySelect.addEventListener('change', function() {
-            console.log('Category changed to:', this.value);
-        });
-        
-        // Ensure the category select isn't disabled
-        categorySelect.disabled = false;
-    }
-    
-    // Split method change handler
-    const splitMethodSelect = document.getElementById('edit_split_method');
-    if (splitMethodSelect) {
-        splitMethodSelect.addEventListener('change', toggleEditSplitOptions);
-    }
-    
-    // Amount field change handler
-    const amountField = document.getElementById('edit_amount');
-    if (amountField) {
-        amountField.addEventListener('input', function() {
-            // Only update split values if a split method is selected
-            const splitMethod = document.getElementById('edit_split_method')?.value;
-            if (splitMethod && splitMethod !== 'equal') {
-                updateEditSplitValues();
-            }
-        });
-    }
-    
-    // Paid by change handler
-    const paidBySelect = document.getElementById('edit_paid_by');
-    if (paidBySelect) {
-        paidBySelect.addEventListener('change', function() {
-            updateEditSplitWithOptions();
-            
-            // Only update split values if a split method is selected
-            const splitMethod = document.getElementById('edit_split_method')?.value;
-            if (splitMethod && splitMethod !== 'equal') {
-                updateEditSplitValues();
-            }
-        });
-    }
-    
-    // Split with change handler
-    const splitWithSelect = document.getElementById('edit_split_with');
-    if (splitWithSelect) {
-        splitWithSelect.addEventListener('change', function() {
-            // Only update split values if a split method is selected
-            const splitMethod = document.getElementById('edit_split_method')?.value;
-            if (splitMethod && splitMethod !== 'equal') {
-                updateEditSplitValues();
-            }
-        });
-    }
-}
-
-        // Function to handle transaction type changes in edit mode
-        function handleEditTransactionTypeChange() {
-    const transactionTypeSelect = document.getElementById('edit_transaction_type');
-    if (!transactionTypeSelect) return;
-    
-    const transactionType = transactionTypeSelect.value;
-    const expenseOnlyFields = document.querySelector('.edit-expense-only-fields');
-    const toAccountContainer = document.getElementById('edit_to_account_container');
-    const accountLabel = document.getElementById('edit_account_label');
-    
-    // Show/hide fields based on transaction type
-    if (transactionType === 'expense') {
-        // Show splitting options for expenses
-        if (expenseOnlyFields) expenseOnlyFields.style.display = 'block';
-        if (toAccountContainer) toAccountContainer.style.display = 'none';
-        
-        // Update account label
-        if (accountLabel) accountLabel.textContent = 'Payment Account';
-        
-        // Make sure the destination account is cleared
-        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-        if (destinationAccountSelect) {
-            destinationAccountSelect.value = '';
-        }
-    } 
-    else if (transactionType === 'income') {
-        // Hide splitting options for income
-        if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
-        if (toAccountContainer) toAccountContainer.style.display = 'none';
-        
-        // Update account label
-        if (accountLabel) accountLabel.textContent = 'Deposit Account';
-        
-        // Make sure the destination account is cleared
-        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-        if (destinationAccountSelect) {
-            destinationAccountSelect.value = '';
-        }
-    }
-    else if (transactionType === 'transfer') {
-        // Hide splitting options for transfers
-        if (expenseOnlyFields) expenseOnlyFields.style.display = 'none';
-        
-        // Show destination account
-        if (toAccountContainer) toAccountContainer.style.display = 'block';
-        
-        // Update account label
-        if (accountLabel) accountLabel.textContent = 'From Account';
-        
-        // Update destination account options to exclude the selected source account
-        updateDestinationAccountOptions();
-    }
-}
-
-        // Function to update destination account options to exclude the selected source account
-        function updateDestinationAccountOptions() {
-            const sourceAccountSelect = document.getElementById('edit_account_id');
-            const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-            
-            if (!sourceAccountSelect || !destinationAccountSelect) return;
-            
-            const sourceAccountId = sourceAccountSelect.value;
-            
-            // Enable all options first
-            for (let i = 0; i < destinationAccountSelect.options.length; i++) {
-                destinationAccountSelect.options[i].disabled = false;
-            }
-            
-            // If a source account is selected, disable it in the destination select
-            if (sourceAccountId) {
-                for (let i = 0; i < destinationAccountSelect.options.length; i++) {
-                    if (destinationAccountSelect.options[i].value === sourceAccountId) {
-                        destinationAccountSelect.options[i].disabled = true;
-                        
-                        // If this was the selected destination, clear the selection
-                        if (destinationAccountSelect.options[i].selected) {
-                            destinationAccountSelect.value = '';
-                        }
-                        
-                        break;
-                    }
-                }
-            }
-    }
-
-    // Submit edit form
-    // Modify the submitEditForm function to ensure category_id is properly included
-    function submitEditForm(form, expenseId) {
-    // Show loading state
-    const submitBtn = form.querySelector('button[type="submit"]');
-    if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
-    }
-    
-    // Create FormData from the form
-    const formData = new FormData(form);
-    
-    // Handle destination_account_id for transfers
-    const transactionTypeSelect = document.getElementById('edit_transaction_type');
-    if (transactionTypeSelect && transactionTypeSelect.value === 'transfer') {
-        const destinationAccountSelect = document.getElementById('edit_destination_account_id');
-        // If destination account is empty or not selected, make it null instead of empty string
-        if (!destinationAccountSelect || !destinationAccountSelect.value) {
-            formData.delete('destination_account_id');
-            formData.append('destination_account_id', 'null');
-        }
-    }
-    
-    // Explicitly add the category_id from the select element
-    const categorySelect = document.getElementById('edit_category_id');
-    if (categorySelect) {
-        // Remove any existing category_id entries to avoid duplicates
-        formData.delete('category_id');
-        
-        // Add the selected category_id, ensuring it's never sent as an empty string
-        const categoryId = categorySelect.value || null;
-        formData.append('category_id', categoryId);
-        
-        // Log for debugging
-        console.log('Category ID selected:', categoryId);
-    }
-    
-    // Add proper handling for transaction type
-    if (transactionTypeSelect) {
-        formData.delete('transaction_type');
-        formData.append('transaction_type', transactionTypeSelect.value);
-    }
-    
-    // Send AJAX request
-    fetch(`/update_expense/${expenseId}`, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`Failed to update transaction: ${response.status} ${response.statusText}`);
-        }
-        return response.text();
-    })
-    .then(() => {
-        // Success - close panel and reload
-        closeSlidePanel('editTransactionPanel');
-        showMessage('Transaction updated successfully');
-        window.location.reload();
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showMessage(`Error updating transaction: ${error.message}`, 'error');
-        
-        // Reset button state
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = 'Save Changes';
-        }
-    });
-}
-
-    
-    // Handle transaction type change
-    function handleTransactionTypeChange() {
-        const transactionTypeSelect = document.getElementById('transaction_type');
-        if (!transactionTypeSelect) return;
-        
-        const transactionType = transactionTypeSelect.value;
-        const expenseOnlyFields = document.querySelectorAll('.expense-only-fields');
-        const toAccountContainer = document.getElementById('to_account_container');
-        const accountLabel = document.getElementById('account_label');
-        const personalExpenseCheck = document.getElementById('personal_expense');
-        
-        // Show/hide fields based on transaction type
-        if (transactionType === 'expense') {
-            // Show splitting options for expenses
-            expenseOnlyFields.forEach(el => el.style.display = 'block');
-            if (toAccountContainer) toAccountContainer.style.display = 'none';
-            
-            // Update account label
-            if (accountLabel) accountLabel.textContent = 'Payment Account';
-            
-            // Enable personal expense toggle
-            if (personalExpenseCheck) {
-                personalExpenseCheck.disabled = false;
-                const switchContainer = personalExpenseCheck.closest('.form-check');
-                if (switchContainer) switchContainer.style.opacity = '1';
-            }
-        } 
-        else if (transactionType === 'income') {
-            // Hide splitting options for income
-            expenseOnlyFields.forEach(el => el.style.display = 'none');
-            if (toAccountContainer) toAccountContainer.style.display = 'none';
-            
-            // Update account label
-            if (accountLabel) accountLabel.textContent = 'Deposit Account';
-        }
-        else if (transactionType === 'transfer') {
-            // Hide splitting options for transfers
-            expenseOnlyFields.forEach(el => el.style.display = 'none');
-            
-            // Show destination account
-            if (toAccountContainer) toAccountContainer.style.display = 'block';
-            
-            // Update account label
-            if (accountLabel) accountLabel.textContent = 'From Account';
-        }
-    }
-    
-    // Toggle personal expense mode for add form
-    function togglePersonalExpense() {
-        const personalExpenseCheck = document.getElementById('personal_expense');
-        if (!personalExpenseCheck) return;
-        
-        const splitWithSelect = document.getElementById('split_with');
-        const splitMethodContainer = document.getElementById('split_method')?.parentNode;
-        const customSplitContainer = document.getElementById('custom_split_container');
-        
-        if (personalExpenseCheck.checked) {
-            // This is a personal expense - simplify the form
-            if (splitMethodContainer) splitMethodContainer.style.opacity = '0.5';
-            if (customSplitContainer) customSplitContainer.style.display = 'none';
-            
-            // Clear any existing split_with selections
-            if (splitWithSelect) {
-                for (let i = 0; i < splitWithSelect.options.length; i++) {
-                    splitWithSelect.options[i].selected = false;
-                }
-                splitWithSelect.disabled = true;
-                splitWithSelect.parentNode.style.opacity = '0.5';
-            }
-        } else {
-            // This is a shared expense - enable the split options
-            if (splitMethodContainer) splitMethodContainer.style.opacity = '1';
-            if (splitWithSelect) {
-                splitWithSelect.disabled = false;
-                splitWithSelect.parentNode.style.opacity = '1';
-            }
-            
-            // Show custom split container if needed
-            const splitMethodSelect = document.getElementById('split_method');
-            if (splitMethodSelect && splitMethodSelect.value !== 'equal' && customSplitContainer) {
-                customSplitContainer.style.display = 'block';
-            }
-        }
-        
-        // Update split values if needed
-        updateSplitValues();
-    }
-    
-    // Toggle personal expense mode for edit form
-    function toggleEditPersonalExpense() {
-        const personalExpenseCheck = document.getElementById('edit_personal_expense');
-        if (!personalExpenseCheck) return;
-        
-        const splitWithSelect = document.getElementById('edit_split_with');
-        const splitMethodContainer = document.getElementById('edit_split_method')?.parentNode;
-        const customSplitContainer = document.getElementById('edit_custom_split_container');
-        
-        if (personalExpenseCheck.checked) {
-            // This is a personal expense - disable split options
-            if (splitMethodContainer) splitMethodContainer.style.opacity = '0.5';
-            if (customSplitContainer) customSplitContainer.style.display = 'none';
-            
-            // Clear any existing split_with selections
-            if (splitWithSelect) {
-                for (let i = 0; i < splitWithSelect.options.length; i++) {
-                    splitWithSelect.options[i].selected = false;
-                }
-                splitWithSelect.disabled = true;
-                splitWithSelect.parentNode.style.opacity = '0.5';
-            }
-        } else {
-            // This is a shared expense - enable split options
-            if (splitMethodContainer) splitMethodContainer.style.opacity = '1';
-            if (splitWithSelect) {
-                splitWithSelect.disabled = false;
-                splitWithSelect.parentNode.style.opacity = '1';
-            }
-            
-            // Show custom split container if needed
-            const splitMethodSelect = document.getElementById('edit_split_method');
-            if (splitMethodSelect && splitMethodSelect.value !== 'equal' && customSplitContainer) {
-                customSplitContainer.style.display = 'block';
-            }
-        }
-        
-        // Update split values if needed
-        updateEditSplitValues();
-    }
-    
-    // Toggle split options in add form
-    function toggleSplitOptions() {
-        const splitMethodSelect = document.getElementById('split_method');
-        if (!splitMethodSelect) return;
-        
-        const splitMethod = splitMethodSelect.value;
-        const customSplitContainer = document.getElementById('custom_split_container');
-        const personalExpenseCheck = document.getElementById('personal_expense');
-        
-        if (!customSplitContainer) return;
-        
-        // Don't show custom split container for personal expenses
-        if (personalExpenseCheck && personalExpenseCheck.checked) {
-            customSplitContainer.style.display = 'none';
-            return;
-        }
-        
-        if (splitMethod === 'equal') {
-            customSplitContainer.style.display = 'none';
-        } else {
-            customSplitContainer.style.display = 'block';
-            
-            // Update the split values UI
-            updateSplitValues();
-        }
-    }
-    
-    // Toggle split options in edit form
-    function toggleEditSplitOptions() {
-        const splitMethodSelect = document.getElementById('edit_split_method');
-        if (!splitMethodSelect) return;
-        
-        const splitMethod = splitMethodSelect.value;
-        const customSplitContainer = document.getElementById('edit_custom_split_container');
-        const personalExpenseCheck = document.getElementById('edit_personal_expense');
-        
-        if (!customSplitContainer) return;
-        
-        // Don't show custom split container for personal expenses
-        if (personalExpenseCheck && personalExpenseCheck.checked) {
-            customSplitContainer.style.display = 'none';
-            return;
-        }
-        
-        if (splitMethod === 'equal') {
-            customSplitContainer.style.display = 'none';
-        } else {
-            customSplitContainer.style.display = 'block';
-            
-            // Update the split values UI
-            updateEditSplitValues();
-        }
-    }
-    
-    // Update split_with options for add form
-    function updateSplitWithOptions() {
-        const paidById = document.getElementById('paid_by')?.value;
-        const splitWithSelect = document.getElementById('split_with');
-        
-        if (!splitWithSelect || !paidById) return;
-        
-        // Remember currently selected options
-        const selectedOptions = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-        
-        // Enable/disable payer option
-        for (let i = 0; i < splitWithSelect.options.length; i++) {
-            const option = splitWithSelect.options[i];
-            if (option.value === paidById) {
-                // Don't allow selecting the payer
-                option.disabled = true;
-                option.selected = false;
-            } else {
-                option.disabled = false;
-            }
-        }
-        
-        // Restore selections (except payer)
-        for (let i = 0; i < splitWithSelect.options.length; i++) {
-            const option = splitWithSelect.options[i];
-            if (option.value !== paidById && selectedOptions.includes(option.value)) {
-                option.selected = true;
-            }
-        }
-    }
-    
-    // Update split_with options for edit form
-    function updateEditSplitWithOptions() {
-        const paidById = document.getElementById('edit_paid_by')?.value;
-        const splitWithSelect = document.getElementById('edit_split_with');
-        
-        if (!splitWithSelect || !paidById) return;
-        
-        // Remember currently selected options
-        const selectedOptions = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-        
-        // Enable/disable payer option
-        for (let i = 0; i < splitWithSelect.options.length; i++) {
-            const option = splitWithSelect.options[i];
-            if (option.value === paidById) {
-                // Don't allow selecting the payer
-                option.disabled = true;
-                option.selected = false;
-            } else {
-                option.disabled = false;
-            }
-        }
-        
-        // Restore selections (except payer)
-        for (let i = 0; i < splitWithSelect.options.length; i++) {
-            const option = splitWithSelect.options[i];
-            if (option.value !== paidById && selectedOptions.includes(option.value)) {
-                option.selected = true;
-            }
-        }
-    }
-    
-    // Update split values UI for add form
-    function updateSplitValues() {
-        const splitMethodSelect = document.getElementById('split_method');
-        if (!splitMethodSelect) return;
-        
-        const splitMethod = splitMethodSelect.value;
-        if (splitMethod === 'equal') return;
-        
-        // Skip if personal expense is checked
-        const personalExpenseCheck = document.getElementById('personal_expense');
-        if (personalExpenseCheck && personalExpenseCheck.checked) return;
-        
-        const amountInput = document.getElementById('amount');
-        const paidBySelect = document.getElementById('paid_by');
-        const splitWithSelect = document.getElementById('split_with');
-        const splitTotalEl = document.getElementById('split_total');
-        const splitValuesContainer = document.getElementById('split_values_container');
-        const splitDetailsInput = document.getElementById('split_details');
-        
-        if (!amountInput || !paidBySelect || !splitWithSelect || !splitTotalEl || !splitValuesContainer) return;
-        
-        const totalAmount = parseFloat(amountInput.value) || 0;
-        const paidById = paidBySelect.value;
-        
-        // Get selected users to split with
-        const splitWithIds = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-        
-        // If no participants, show a message
-        if (splitWithIds.length === 0) {
-            splitValuesContainer.innerHTML = '<p class="text-center text-warning">Please select people to split with</p>';
-            return;
-        }
-        
-        // Get all participant IDs (include payer only if they aren't already in the split list)
-        const allParticipantIds = [...splitWithIds];
-        if (!allParticipantIds.includes(paidById)) {
-            allParticipantIds.unshift(paidById);
-        }
-        
-        splitValuesContainer.innerHTML = '';
-        let splitValues = {};
-        
-        if (splitMethod === 'percentage') {
-            // Equal percentage for all participants
-            const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const userName = Array.from(paidBySelect.options)
-                    .find(opt => opt.value === userId)?.text || userId;
-                
-                const isPayerId = userId === paidById;
-                
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <input type="number" class="form-control bg-dark text-light split-value-input"
-                                data-user-id="${userId}" step="0.1" min="0" max="100" 
-                                value="${equalPercentage.toFixed(1)}">
-                            <span class="input-group-text bg-dark text-light">%</span>
-                        </div>
-                    </div>
-                `;
-                splitValuesContainer.appendChild(row);
-                
-                // Save the initial value
-                splitValues[userId] = equalPercentage;
-            });
-        } else { // Custom amount
-            // Equal amounts
-            const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const userName = Array.from(paidBySelect.options)
-                    .find(opt => opt.value === userId)?.text || userId;
-                
-                const isPayerId = userId === paidById;
-                
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <span class="input-group-text bg-dark text-light">${baseCurrencySymbol}</span>
-                            <input type="number" class="form-control bg-dark text-light split-value-input"
-                                data-user-id="${userId}" step="0.01" min="0" 
-                                value="${equalAmount.toFixed(2)}">
-                        </div>
-                    </div>
-                `;
-                splitValuesContainer.appendChild(row);
-                
-                // Save the initial value
-                splitValues[userId] = equalAmount;
-            });
-        }
-        
-        // Add event listeners to inputs and update split details
-        setupSplitInputListeners(splitMethod, splitValues, totalAmount);
-    }
-    
-    // Update split values UI for edit form
-    function updateEditSplitValues() {
-        const splitMethodSelect = document.getElementById('edit_split_method');
-        if (!splitMethodSelect) return;
-        
-        const splitMethod = splitMethodSelect.value;
-        if (splitMethod === 'equal') return;
-        
-        // Skip if personal expense is checked
-        const personalExpenseCheck = document.getElementById('edit_personal_expense');
-        if (personalExpenseCheck && personalExpenseCheck.checked) return;
-        
-        const amountInput = document.getElementById('edit_amount');
-        const paidBySelect = document.getElementById('edit_paid_by');
-        const splitWithSelect = document.getElementById('edit_split_with');
-        const splitTotalEl = document.getElementById('edit_split_total');
-        const splitValuesContainer = document.getElementById('edit_split_values_container');
-        const splitDetailsInput = document.getElementById('edit_split_details');
-        
-        if (!amountInput || !paidBySelect || !splitWithSelect || !splitTotalEl || !splitValuesContainer) return;
-        
-        const totalAmount = parseFloat(amountInput.value) || 0;
-        const paidById = paidBySelect.value;
-        
-        // Get selected users to split with
-        const splitWithIds = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-        
-        // If no participants, show a message
-        if (splitWithIds.length === 0) {
-            splitValuesContainer.innerHTML = '<p class="text-center text-warning">Please select people to split with</p>';
-            return;
-        }
-        
-        // Get all participant IDs (include payer only if they aren't already in the split list)
-        const allParticipantIds = [...splitWithIds];
-        if (!allParticipantIds.includes(paidById)) {
-            allParticipantIds.unshift(paidById);
-        }
-        
-        splitValuesContainer.innerHTML = '';
-        let splitValues = {};
-        
-        // Try to load existing split details
-        try {
-            if (splitDetailsInput && splitDetailsInput.value) {
-                const details = JSON.parse(splitDetailsInput.value);
-                if (details && details.values) {
-                    splitValues = details.values;
-                }
-            }
-        } catch (e) {
-            console.warn('Could not parse existing split details', e);
-        }
-        
-        if (splitMethod === 'percentage') {
-            // Start with equal percentages or use existing values
-            const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const userName = Array.from(paidBySelect.options)
-                    .find(opt => opt.value === userId)?.text || userId;
-                
-                const isPayerId = userId === paidById;
-                const userPercentage = splitValues[userId] !== undefined ? splitValues[userId] : equalPercentage;
-                
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <input type="number" class="form-control bg-dark text-light edit-split-value-input"
-                                data-user-id="${userId}" step="0.1" min="0" max="100" 
-                                value="${userPercentage.toFixed(1)}">
-                            <span class="input-group-text bg-dark text-light">%</span>
-                        </div>
-                    </div>
-                `;
-                splitValuesContainer.appendChild(row);
-                
-                // Initialize or use existing value
-                splitValues[userId] = userPercentage;
-            });
-        } else { // Custom amount
-            // Start with equal amounts or use existing values
-            const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const userName = Array.from(paidBySelect.options)
-                    .find(opt => opt.value === userId)?.text || userId;
-                
-                const isPayerId = userId === paidById;
-                const userAmount = splitValues[userId] !== undefined ? splitValues[userId] : equalAmount;
-                
-                // Create row for this user
-                const row = document.createElement('div');
-                row.className = 'row mb-2 align-items-center';
-                row.innerHTML = `
-                    <div class="col-md-6">
-                        <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                            ${isPayerId ? '💰' : ''} ${userName}
-                        </span>
-                        ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                    </div>
-                    <div class="col-md-6">
-                        <div class="input-group">
-                            <span class="input-group-text bg-dark text-light">${baseCurrencySymbol}</span>
-                            <input type="number" class="form-control bg-dark text-light edit-split-value-input"
-                                data-user-id="${userId}" step="0.01" min="0" 
-                                value="${userAmount.toFixed(2)}">
-                        </div>
-                    </div>
-                `;
-                splitValuesContainer.appendChild(row);
-                
-                // Initialize or use existing value
-                splitValues[userId] = userAmount;
-            });
-        }
-        
-        // Add event listeners to inputs and update split details
-        setupEditSplitInputListeners(splitMethod, splitValues, totalAmount);
-    }
-    
-    // Setup input listeners for split values in add form
-    function setupSplitInputListeners(splitMethod, splitValues, totalAmount) {
-        const splitDetailsInput = document.getElementById('split_details');
-        const splitTotalEl = document.getElementById('split_total');
-        const splitStatusEl = document.getElementById('split_status');
-        
-        document.querySelectorAll('.split-value-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const userId = this.getAttribute('data-user-id');
-                const value = parseFloat(this.value) || 0;
-                splitValues[userId] = value;
-                
-                // Calculate total
-                const total = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                
-                // Update UI
-                if (splitTotalEl) {
-                    if (splitMethod === 'percentage') {
-                        splitTotalEl.textContent = total.toFixed(1) + '%';
-                        
-                        // Update status
-                        if (splitStatusEl) {
-                            if (Math.abs(total - 100) < 0.1) {
-                                splitStatusEl.textContent = 'Balanced';
-                                splitStatusEl.className = 'badge bg-success';
-                            } else if (total < 100) {
-                                splitStatusEl.textContent = 'Underfunded';
-                                splitStatusEl.className = 'badge bg-warning';
-                            } else {
-                                splitStatusEl.textContent = 'Overfunded';
-                                splitStatusEl.className = 'badge bg-danger';
-                            }
-                        }
-                    } else { // Custom amount
-                        splitTotalEl.textContent = total.toFixed(2);
-                        
-                        // Update status
-                        if (splitStatusEl) {
-                            if (Math.abs(total - totalAmount) < 0.01) {
-                                splitStatusEl.textContent = 'Balanced';
-                                splitStatusEl.className = 'badge bg-success';
-                            } else if (total < totalAmount) {
-                                splitStatusEl.textContent = 'Underfunded';
-                                splitStatusEl.className = 'badge bg-warning';
-                            } else {
-                                splitStatusEl.textContent = 'Overfunded';
-                                splitStatusEl.className = 'badge bg-danger';
-                            }
-                        }
-                    }
-                }
-                
-                // Update hidden split details field
-                if (splitDetailsInput) {
-                    splitDetailsInput.value = JSON.stringify({
-                        type: splitMethod,
-                        values: splitValues
-                    });
-                }
-            });
-            
-            // Trigger input event to initialize values
-            input.dispatchEvent(new Event('input'));
-        });
-    }
-    // Function to initialize a select without requiring Ctrl+click
-function initializeSelectWithoutCtrl(selectId) {
-    const select = document.getElementById(selectId);
-    if (!select || !select.multiple) return;
-    
-    // Replace the standard multiple select with a custom one
-    const wrapper = document.createElement('div');
-    wrapper.className = 'custom-multiselect-wrapper';
-    wrapper.style.maxHeight = '200px';
-    wrapper.style.overflowY = 'auto';
-    wrapper.style.border = '1px solid #444';
-    wrapper.style.borderRadius = '0.25rem';
-    wrapper.style.backgroundColor = '#2d2d2d';
-    
-    // Hide the original select
-    select.style.display = 'none';
-    select.parentNode.insertBefore(wrapper, select.nextSibling);
-    
-    // Create checkbox options for each option in the select
-    Array.from(select.options).forEach(option => {
-        if (option.disabled) return;
-        
-        const item = document.createElement('div');
-        item.className = 'custom-multiselect-item';
-        item.style.padding = '0.5rem 1rem';
-        item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
-        item.style.cursor = 'pointer';
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'form-check-input me-2';
-        checkbox.checked = option.selected;
-        checkbox.value = option.value;
-        
-        const label = document.createElement('label');
-        label.className = 'form-check-label';
-        label.style.cursor = 'pointer';
-        label.style.userSelect = 'none';
-        label.style.marginLeft = '8px';
-        label.textContent = option.textContent;
-        
-        item.appendChild(checkbox);
-        item.appendChild(label);
-        wrapper.appendChild(item);
-        
-        // Add event listener to update the original select when checkbox is clicked
-        checkbox.addEventListener('change', function() {
-            option.selected = checkbox.checked;
-            // Trigger change event on original select
-            const event = new Event('change', { bubbles: true });
-            select.dispatchEvent(event);
-        });
-        
-        // Also make the whole item clickable
-        item.addEventListener('click', function(e) {
-            if (e.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
-                option.selected = checkbox.checked;
-                // Trigger change event on original select
-                const event = new Event('change', { bubbles: true });
-                select.dispatchEvent(event);
-            }
-        });
-    });
-}
-    // Setup input listeners for split values in edit form
-    function setupEditSplitInputListeners(splitMethod, splitValues, totalAmount) {
-        const splitDetailsInput = document.getElementById('edit_split_details');
-        const splitTotalEl = document.getElementById('edit_split_total');
-        const splitStatusEl = document.getElementById('edit_split_status');
-        
-        document.querySelectorAll('.edit-split-value-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const userId = this.getAttribute('data-user-id');
-                const value = parseFloat(this.value) || 0;
-                splitValues[userId] = value;
-                
-                // Calculate total
-                const total = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                
-                // Update UI
-                if (splitTotalEl) {
-                    if (splitMethod === 'percentage') {
-                        splitTotalEl.textContent = total.toFixed(1) + '%';
-                        
-                        // Update status
-                        if (splitStatusEl) {
-                            if (Math.abs(total - 100) < 0.1) {
-                                splitStatusEl.textContent = 'Balanced';
-                                splitStatusEl.className = 'badge bg-success';
-                            } else if (total < 100) {
-                                splitStatusEl.textContent = 'Underfunded';
-                                splitStatusEl.className = 'badge bg-warning';
-                            } else {
-                                splitStatusEl.textContent = 'Overfunded';
-                                splitStatusEl.className = 'badge bg-danger';
-                            }
-                        }
-                    } else { // Custom amount
-                        splitTotalEl.textContent = total.toFixed(2);
-                        
-                        // Update status
-                        if (splitStatusEl) {
-                            if (Math.abs(total - totalAmount) < 0.01) {
-                                splitStatusEl.textContent = 'Balanced';
-                                splitStatusEl.className = 'badge bg-success';
-                            } else if (total < totalAmount) {
-                                splitStatusEl.textContent = 'Underfunded';
-                                splitStatusEl.className = 'badge bg-warning';
-                            } else {
-                                splitStatusEl.textContent = 'Overfunded';
-                                splitStatusEl.className = 'badge bg-danger';
-                            }
-                        }
-                    }
-                }
-                
-                // Update hidden split details field
-                if (splitDetailsInput) {
-                    splitDetailsInput.value = JSON.stringify({
-                        type: splitMethod,
-                        values: splitValues
-                    });
-                }
-            });
-            
-            // Trigger input event to initialize values
-            input.dispatchEvent(new Event('input'));
-        });
-    }
-    
-    // Open slide panel
-    function openSlidePanel(panelId, options = {}) {
-        // Check if panel already exists
-        let panel = document.getElementById(panelId);
-        
-        // Create panel if it doesn't exist
-        if (!panel) {
-            panel = document.createElement('div');
-            panel.id = panelId;
-            panel.className = 'slide-panel';
-            
-            // Create panel header
-            const header = document.createElement('div');
-            header.className = 'slide-panel-header';
-            header.innerHTML = `
-                <h4 class="mb-0">
-                    <i class="fas ${options.icon || 'fa-info-circle'} me-2" style="color: ${options.iconColor || '#15803d'}"></i>
-                    ${options.title || 'Panel'}
-                </h4>
-                <button type="button" class="btn-close btn-close-white" onclick="closeSlidePanel('${panelId}')"></button>
-            `;
-            
-            // Create panel content
-            const content = document.createElement('div');
-            content.className = 'slide-panel-content';
-            
-            // Add loading content if provided
-            if (options.loadingContent) {
-                content.innerHTML = options.loadingContent;
-            } else if (options.content) {
-                content.innerHTML = options.content;
-            }
-            
-            // Assemble panel
-            panel.appendChild(header);
-            panel.appendChild(content);
-            
-            // Add to DOM
-            document.body.appendChild(panel);
-        }
-        
-        // Show overlay
-        const overlay = document.getElementById('slide-panel-overlay');
-        if (overlay) {
-            overlay.classList.add('active');
-            overlay.onclick = function() {
-                closeSlidePanel(panelId);
-            };
-        }
-        
-        // Show panel with animation
-        setTimeout(() => {
-            panel.classList.add('active');
-        }, 10);
-        
-        // Prevent body scrolling
-        document.body.style.overflow = 'hidden';
-        
-        return panel;
-    }
-    
-    // Close slide panel
-    function closeSlidePanel(panelId) {
-        const panel = document.getElementById(panelId);
-        if (panel) {
-            panel.classList.remove('active');
-        }
-        
-        // Hide overlay
-        const overlay = document.getElementById('slide-panel-overlay');
-        if (overlay) {
-            overlay.classList.remove('active');
-        }
-        
-        // Re-enable body scrolling
-        document.body.style.overflow = '';
-    }
+    // Explicitly stringify the symbol
+    window.baseCurrencySymbol = "{{ base_currency.symbol }}";
 </script>
+
+<!-- Include utils.js and transactions.js for core functionality -->
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transaction_module.js') }}"></script>
+<!-- Add this script at the end of your HTML, after all other scripts -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Log what functions are available in TransactionModule
+      if (window.TransactionModule) {
+        console.log("TransactionModule functions available:", Object.keys(TransactionModule));
+      } else {
+        console.log("TransactionModule not found");
+      }
+      
+      // Create direct link between edit buttons and panel opening
+      document.querySelectorAll('.edit-expense-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const expenseId = this.getAttribute('data-expense-id');
+          
+          
+          // Try accessing through TransactionModule
+          if (window.TransactionModule) {
+            if (typeof TransactionModule.openEditTransactionPanel === 'function') {
+             
+              TransactionModule.openEditTransactionPanel(expenseId);
+            } else if (typeof TransactionModule.openEditForm === 'function') {
+        
+              TransactionModule.openEditForm(expenseId);
+            } else {
+              console.log("Function names available:", Object.keys(TransactionModule));
+            }
+          } else {
+            console.error("TransactionModule not available");
+          }
+        });
+      });
+    });
+  </script>
+
 {% endblock %}

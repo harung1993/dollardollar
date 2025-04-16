@@ -1,9 +1,8 @@
-<!-- Updated edit_transaction_form.html partial template with transaction type selector -->
 <form id="editTransactionForm" action="/update_expense/{{ expense.id }}" method="POST">
     <div class="row">
-        <!-- Add transaction type field at the top -->
+        <!-- Transaction type field -->
         <div class="col-md-12 mb-3">
-            <label for="transaction_type" class="form-label">Transaction Type</label>
+            <label for="edit_transaction_type" class="form-label">Transaction Type</label>
             <select class="form-select bg-dark text-light" id="edit_transaction_type" name="transaction_type">
                 <option value="expense" {% if expense.transaction_type == 'expense' or not expense.transaction_type %}selected{% endif %}>Expense</option>
                 <option value="income" {% if expense.transaction_type == 'income' %}selected{% endif %}>Income</option>
@@ -21,7 +20,7 @@
     
     <div class="row">
         <div class="col-md-6 mb-3">
-            <label for="amount" class="form-label">Amount</label>
+            <label for="edit_amount" class="form-label">Amount</label>
             <div class="input-group">
                 <span class="input-group-text bg-dark text-light">{{ base_currency.symbol }}</span>
                 <input type="number" step="0.01" class="form-control bg-dark text-light" id="edit_amount" name="amount" value="{{ expense.amount }}" required>
@@ -35,7 +34,7 @@
     
     <div class="row">
         <div class="col-md-6 mb-3">
-            <label for="category_id" class="form-label">Category</label>
+            <label for="edit_category_id" class="form-label">Category</label>
             <select class="form-select bg-dark text-light" id="edit_category_id" name="category_id">
                 <option value="">Select a category</option>
                 {% for category in categories %}
@@ -52,10 +51,9 @@
                 {% endfor %}
             </select>
         </div>
-
-        <!-- Account section - changed to accommodate transaction type -->
+        
         <div class="col-md-6 mb-3">
-            <label for="account_id" class="form-label" id="edit_account_label">Account</label>
+            <label for="edit_account_id" class="form-label" id="edit_account_label">Account</label>
             <select class="form-select bg-dark text-light" id="edit_account_id" name="account_id">
                 <option value="">Select account</option>
                 <!-- Use a conditional to check if expense.account exists -->
@@ -77,11 +75,43 @@
             </select>
         </div>
     </div>
+
+    <!-- Category Split Toggle -->
+    <div class="mb-3">
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="enable_category_split" name="enable_category_split" 
+                  {% if expense.has_category_splits %}checked{% endif %}>
+            <label class="form-check-label" for="enable_category_split">Split this transaction into multiple categories</label>
+        </div>
+    </div>
     
-    <!-- Destination account for transfers - initially hidden unless transfer type -->
+    <!-- Category Splits Container -->
+    <div id="category_splits_container" class="mb-3 {% if expense.has_category_splits %}visible{% else %}hidden{% endif %}" 
+         style="display: {% if expense.has_category_splits %}block{% else %}none{% endif %};">
+        <div class="card bg-dark border-secondary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Category Splits</h5>
+                <button type="button" class="btn btn-sm btn-primary" id="add_split_btn">
+                    <i class="fas fa-plus"></i> Add Split
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="category_splits_list" class="mb-3">
+                    <!-- Category splits will be added here dynamically -->
+                </div>
+                <div class="d-flex justify-content-between mt-3">
+                    <span>Total: {{ base_currency.symbol }}<span id="split_total">0.00</span>/<span id="transaction_total">0.00</span></span>
+                    <span class="badge bg-success" id="split_status">Balanced</span>
+                </div>
+            </div>
+        </div>
+        <input type="hidden" id="category_splits_data" name="category_splits_data" value="{{ expense.category_splits_data|default('') }}">
+    </div>
+
+    <!-- Destination account for transfers -->
     <div class="row" id="edit_to_account_container" style="display: {% if expense.is_transfer %}block{% else %}none{% endif %};">
         <div class="col-md-12 mb-3">
-            <label for="destination_account_id" class="form-label">To Account</label>
+            <label for="edit_destination_account_id" class="form-label">To Account</label>
             <select class="form-select bg-dark text-light" id="edit_destination_account_id" name="destination_account_id">
                 <option value="">Select destination account</option>
                 <!-- Show current destination account if it exists -->
@@ -101,11 +131,11 @@
         </div>
     </div>
 
-    <!-- Only show these fields for expense type transactions -->
+    <!-- Expense-specific fields -->
     <div class="edit-expense-only-fields" style="display: {% if expense.is_expense %}block{% else %}none{% endif %};">
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="paid_by" class="form-label">Paid By</label>
+                <label for="edit_paid_by" class="form-label">Paid By</label>
                 <select class="form-select bg-dark text-light" id="edit_paid_by" name="paid_by">
                     {% for user in users %}
                         <option value="{{ user.id }}" 
@@ -139,7 +169,7 @@
         
         <div class="mb-3">
             <label for="edit_split_with" class="form-label">Split With</label>
-            <select class="form-select bg-dark text-light" id="edit_split_with" name="split_with" multiple 
+            <select class="form-select bg-dark text-light enhanced-multi-select" id="edit_split_with" name="split_with" multiple 
                     {% if not expense.split_with %}disabled{% endif %}>
                 {% for user in users %}
                     {% if user.id != expense.paid_by %}
@@ -150,7 +180,7 @@
                     {% endif %}
                 {% endfor %}
             </select>
-            <small class="form-text text-muted">Hold Ctrl to select multiple people</small>
+            <small class="form-text text-muted">Use ctrl to select multiple people</small>
         </div>
         
         <div class="mb-3">
@@ -179,9 +209,32 @@
             <input type="hidden" id="edit_split_details" name="split_details" value='{{ expense.split_details }}'>
         </div>
     </div>
-    
+
     <div class="d-flex justify-content-end mt-3">
         <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('editTransactionPanel')">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
     </div>
 </form>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Global base currency symbol variable (needed for dynamic UI creation)
+        window.baseCurrencySymbol = '{{ base_currency.symbol }}';
+        
+        // Check if has_category_splits is true but no category_splits_data (handle edge case)
+        const hasSplits = {% if expense.has_category_splits %}true{% else %}false{% endif %};
+        const splitsData = '{{ expense.category_splits_data|default('') }}';
+        
+        if (hasSplits && !splitsData) {
+            // If marked as having splits but no data, create default splits data
+            const amount = parseFloat(document.getElementById('edit_amount').value) || 0;
+            
+            // Clear splits list
+            document.getElementById('category_splits_list').innerHTML = '';
+            
+            // Create a default split with the full amount
+            addCategorySplit(amount);
+            updateSplitTotals();
+        }
+    });
+</script>

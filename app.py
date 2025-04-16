@@ -42,11 +42,89 @@ import base64
 import pytz
 from config import get_config
 from extensions import db, login_manager, mail, migrate, scheduler
+import csv
+import re
+import io
+import json
+import uuid
+import base64
+import pytz
+import secrets
+import logging
+import hashlib
+import requests
+import calendar
+from functools import wraps
+from datetime import datetime, date, timedelta
+
+import ssl
+import ssl
+
+from dotenv import load_dotenv
+from flask import Flask, render_template, send_file, request, jsonify, url_for, flash, redirect, session
+from flask_apscheduler import APScheduler
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_mail import Mail, Message
+from flask_migrate import Migrate
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import func, or_, and_, inspect, text
+
+from recurring_detection import detect_recurring_transactions, create_recurring_expense_from_detection
+from oidc_auth import setup_oidc_config, register_oidc_routes
+from oidc_user import extend_user_model
+from simplefin_client import SimpleFin
+
+from session_timeout import DemoTimeout, demo_time_limited
+
+from flask import (
+    Flask,
+    render_template,
+    send_file,
+    request,
+    jsonify,
+    redirect,
+    url_for,
+    flash,
+    session,
+)
+import re
+from flask_login import (
+    UserMixin,
+    login_user,
+    login_required,
+    logout_user,
+    current_user,
+)
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+import calendar
+from functools import wraps
+import logging
+from sqlalchemy import func, or_, and_
+import secrets
+from flask_mail import Message
+from flask_migrate import Migrate
+import ssl
+import requests
+from sqlalchemy import inspect, text
+from oidc_auth import setup_oidc_config, register_oidc_routes
+from oidc_user import extend_user_model
+from datetime import datetime, timedelta
+from simplefin_client import SimpleFin
+from flask import session, request, jsonify, url_for, flash, redirect
+from datetime import datetime, timedelta
+import base64
+import pytz
+from config import get_config
+from extensions import db, login_manager, mail, migrate, scheduler
 
 # Development user credentials from environment
 DEV_USER_EMAIL = os.getenv('DEV_USER_EMAIL', 'dev@example.com')
 DEV_USER_PASSWORD = os.getenv('DEV_USER_PASSWORD', 'dev')
 os.environ["OPENSSL_LEGACY_PROVIDER"] = "1"
+
+APP_VERSION = "4.2"
 
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -72,7 +150,27 @@ def create_app(config_object=None):
 
 app = create_app()
 logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
+app.config['SIMPLEFIN_ENABLED'] = os.getenv('SIMPLEFIN_ENABLED', 'True').lower() == 'true'
+app.config['SIMPLEFIN_SETUP_TOKEN_URL'] = os.getenv('SIMPLEFIN_SETUP_TOKEN_URL', 'https://beta-bridge.simplefin.org/setup-token')
 
+
+
+# Email configuration from environment variables
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
+app.config['MAIL_USE_SSL'] = os.getenv('MAIL_USE_SSL', 'False').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', os.getenv('MAIL_USERNAME'))
+
+app.config['TIMEZONE'] = 'EST'  # Default timezone
+
+# Initialize scheduler
+scheduler = APScheduler()
+scheduler.timezone = pytz.timezone('EST') # Explicitly set scheduler to use EST
+scheduler.init_app(app)
+logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
 @scheduler.task('cron', id='monthly_reports', day=1, hour=1, minute=0)
 def scheduled_monthly_reports():
     """Run on the 1st day of each month at 1:00 AM"""
@@ -86,6 +184,27 @@ scheduler.start()
 simplefin_client = SimpleFin(app)
 
 oidc_enabled = setup_oidc_config(app)
+db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+
+migrate = Migrate(app, db)
+
+
+# Initialize demo timeout middleware
+demo_timeout = DemoTimeout(
+    timeout_minutes=int(os.getenv('DEMO_TIMEOUT_MINUTES', 10)),
+    demo_users=[
+        'demo@example.com',
+        'demo1@example.com',
+        'demo2@example.com',
+        # Add any specific demo accounts here
+    ]
+)
+demo_timeout.init_app(app)
+app.extensions['demo_timeout'] = demo_timeout  # Store for access in decorator
 
 #--------------------
 # DATABASE MODELS
@@ -212,7 +331,18 @@ class Category(db.Model):
 
     def __repr__(self):
         return f"<Category: {self.name}>"
+
+class CategorySplit(db.Model):
+    __tablename__ = 'category_splits'
+    id = db.Column(db.Integer, primary_key=True)
+    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    description = db.Column(db.String(200), nullable=True)
     
+    # Relationships
+    expense = db.relationship('Expense', backref=db.backref('category_splits', cascade='all, delete-orphan'))
+    category = db.relationship('Category', backref=db.backref('splits', lazy=True))
 
 class Account(db.Model):
     __tablename__ = 'accounts'
@@ -271,6 +401,8 @@ class Expense(db.Model):
     destination_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', name='fk_destination_account'), nullable=True)
     destination_account = db.relationship('Account', foreign_keys=[destination_account_id], backref=db.backref('incoming_transfers', lazy=True))
     
+    # Add to Expense class:
+    has_category_splits = db.Column(db.Boolean, default=False)
     
     @property
     def is_income(self):
@@ -422,7 +554,7 @@ class Expense(db.Model):
         
         elif self.split_method == 'custom':
             # Use per-user custom amounts if available in split_details
-            if split_details and isinstance(split_details, dict) and split_details.get('type') == 'amount':
+            if split_details and isinstance(split_details, dict) and split_details.get('type') in ['amount', 'custom']:
                 amounts = split_details.get('values', {})
                 total_assigned = 0
                 total_original_assigned = 0
@@ -707,7 +839,6 @@ class Budget(db.Model):
         start_date, end_date = self.get_current_period_dates()
         
         # Base query: find all expenses in the relevant date range for this user
-        # that have this category or are in subcategories (if include_subcategories is True)
         from sqlalchemy import or_
         
         if self.include_subcategories:
@@ -724,6 +855,7 @@ class Budget(db.Model):
             # Only include this specific category
             category_filter = (Expense.category_id == self.category_id)
         
+        # Get all expenses that match our criteria
         expenses = Expense.query.filter(
             Expense.user_id == self.user_id,
             Expense.date >= start_date,
@@ -732,48 +864,91 @@ class Budget(db.Model):
         ).all()
         
         # Calculate the total spent for these expenses
-        # We only want to count the user's portion of shared expenses
         total_spent = 0.0
+        
+        # Process each expense to calculate the user's portion
         for expense in expenses:
+            # If the expense has category splits, we need a different approach
+            if expense.has_category_splits:
+                # Handle category splits separately
+                continue
+                
+            # Get the split information for this expense
             splits = expense.calculate_splits()
             
-            if expense.paid_by == self.user_id:
-                # If user paid, add their own portion
+            # If the user is the payer and not in the splits, add their portion
+            if expense.paid_by == self.user_id and (not expense.split_with or self.user_id not in expense.split_with.split(',')):
                 total_spent += splits['payer']['amount']
             else:
-                # If someone else paid, find user's portion from splits
+                # Check if the current user is in the splits
                 for split in splits['splits']:
                     if split['email'] == self.user_id:
                         total_spent += split['amount']
+                        break
+        
+        # Handle expenses with category splits
+        if self.include_subcategories:
+            category_ids = [self.category_id] + [subcat.id for subcat in subcategories]
+        else:
+            category_ids = [self.category_id]
+        
+        # Find all category splits for relevant categories
+        category_splits = CategorySplit.query.join(
+            Expense, CategorySplit.expense_id == Expense.id
+        ).filter(
+            Expense.user_id == self.user_id,
+            Expense.date >= start_date,
+            Expense.date <= end_date,
+            CategorySplit.category_id.in_(category_ids)
+        ).all()
+        
+        # Process each category split
+        for cat_split in category_splits:
+            expense = Expense.query.get(cat_split.expense_id)
+            if not expense:
+                continue
+                
+            # Get the split information for this expense
+            splits = expense.calculate_splits()
+            
+            # Calculate the user's share of this category split
+            if expense.paid_by == self.user_id and (not expense.split_with or self.user_id not in expense.split_with.split(',')):
+                # User is the payer and not in splits - add their portion
+                if expense.amount > 0:
+                    user_ratio = splits['payer']['amount'] / expense.amount
+                    total_spent += cat_split.amount * user_ratio
+            else:
+                # Check if the user is in the splits
+                for split in splits['splits']:
+                    if split['email'] == self.user_id:
+                        if expense.amount > 0:
+                            user_ratio = split['amount'] / expense.amount
+                            total_spent += cat_split.amount * user_ratio
                         break
         
         return total_spent
     
     def get_remaining_amount(self):
         """Calculate remaining budget amount"""
-        spent = self.calculate_spent_amount()
-        return self.amount - spent
+        return self.amount - self.calculate_spent_amount()
     
     def get_progress_percentage(self):
-        """Calculate budget usage as a percentage"""
-        if self.amount <= 0:
-            return 100  # Avoid division by zero
-            
-        spent = self.calculate_spent_amount()
-        percentage = (spent / self.amount) * 100
-        return min(percentage, 100)  # Cap at 100%
-    
+            spent = self.calculate_spent_amount()
+            if self.amount <= 0:
+                return 100  # Avoid division by zero
+            percentage = (spent / self.amount) * 100
+            return min(percentage, 100)  # Cap at 100%
+        
     def get_status(self):
         """Return the budget status: 'under', 'approaching', 'over'"""
         percentage = self.get_progress_percentage()
-        
         if percentage >= 100:
             return 'over'
-        elif percentage >= 85:
+        elif percentage >= 80:
             return 'approaching'
         else:
             return 'under'
-        
+            
 
 
 #--------------------
@@ -829,7 +1004,14 @@ def init_db():
             print("Development user created:", DEV_USER_EMAIL)
 
 
-
+def restrict_demo_access(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if current_user.is_authenticated and demo_timeout.is_demo_user(current_user.id):
+            flash('Demo users cannot access this page.')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 #--------------------
@@ -1219,40 +1401,6 @@ def extract_keywords(description):
     return max(filtered_words, key=len)
 
 
-
-def determine_transaction_type(row):
-    """Determine transaction type based on row data from CSV import"""
-    type_column = request.form.get('type_column')
-    negative_is_expense = 'negative_is_expense' in request.form
-    
-    # Check if there's a specific transaction type column
-    if type_column and type_column in row:
-        type_value = row[type_column].strip().lower()
-        
-        # Map common terms to transaction types
-        if type_value in ['expense', 'debit', 'purchase', 'payment', 'withdrawal']:
-            return 'expense'
-        elif type_value in ['income', 'credit', 'deposit', 'refund']:
-            return 'income'
-        elif type_value in ['transfer', 'move']:
-            return 'transfer'
-    
-    # If no type column or unknown value, try to determine from amount sign
-    amount_str = row[request.form.get('amount_column', 'Amount')].strip().replace('$', '').replace(',', '')
-    try:
-        amount = float(amount_str)
-        # Determine type based on amount sign and settings
-        if amount < 0 and negative_is_expense:
-            return 'expense'
-        elif amount > 0 and negative_is_expense:
-            return 'income'
-        elif amount < 0 and not negative_is_expense:
-            return 'income'  # In some systems, negative means money coming in
-        else:
-            return 'expense'  # Default to expense for positive amounts
-    except ValueError:
-        # If amount can't be parsed, default to expense
-        return 'expense'
 
 def get_category_id(category_name, description=None, user_id=None):
     """Find, create, or auto-suggest a category based on name and description"""
@@ -2510,6 +2658,589 @@ def get_transaction_details(other_user_id):
 
     return jsonify(transactions)
 
+#--------------------
+# ROUTES: DEMO
+#--------------------
+@app.route('/demo')
+@app.route('/')
+def demo_login():
+    """Auto-login as demo user with session timeout"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Check if demo mode is enabled
+    if not os.getenv('DEMO_MODE', 'False').lower() == 'true':
+        # If demo mode is not enabled, use default route
+        return home()
+    
+    # Get demo timeout instance
+    demo_timeout = app.extensions.get('demo_timeout')
+    
+    # Check concurrent session limit
+    max_sessions = int(os.getenv('MAX_CONCURRENT_DEMO_SESSIONS', 5))
+    current_sessions = demo_timeout.get_active_demo_sessions()  # Remove 'if demo_timeout else 0'
+    
+    if current_sessions >= max_sessions:
+        flash(f'Maximum number of demo sessions ({max_sessions}) has been reached. Please try again later.')
+        return redirect(url_for('demo_max_users'))
+    
+    # Find or create demo user
+    demo_user = User.query.filter_by(id='demo@example.com').first()
+    if not demo_user:
+        logger.info("Creating new demo user")
+        demo_user = User(
+            id='demo@example.com',
+            name='Demo User',
+            is_admin=False
+        )
+        demo_user.set_password('demo')
+        db.session.add(demo_user)
+        db.session.commit()
+    else:
+        logger.info("Using existing demo user")
+    
+    # Try to register the demo session
+    if not demo_timeout.register_demo_session(demo_user.id):
+        flash(f'Maximum number of demo sessions ({max_sessions}) has been reached. Please try again later.')
+        return redirect(url_for('login'))
+    
+    # Always reset demo data for each new session
+    logger.info("Resetting demo data for new session")
+    reset_demo_data(demo_user.id)
+    
+    # Create demo data
+    result = create_demo_data(demo_user.id)
+    logger.info(f"Demo data creation result: {result}")
+    
+    # Login as demo user
+    login_user(demo_user)
+    
+    # Set demo start time and expiry time
+    demo_timeout_minutes = int(os.getenv('DEMO_TIMEOUT_MINUTES', 10))
+    session['demo_start_time'] = datetime.utcnow().timestamp()
+    session['demo_expiry_time'] = (datetime.utcnow() + timedelta(minutes=demo_timeout_minutes)).timestamp()
+    
+    flash(f'Welcome to the demo! Your session will expire in {demo_timeout_minutes} minutes.')
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/demo_max_users')
+def demo_max_users():
+    return render_template('demo/demo_concurrent.html')
+
+@app.route('/demo_expired')
+def demo_expired():
+    """Handle expired demo sessions"""
+    return render_template('demo/demo_expired.html')
+
+@app.route('/demo-thanks')
+def demo_thanks():
+    """Page to thank users after demo session"""
+    return render_template('demo/demo_thanks.html')
+
+# Demo data creation function
+def create_demo_data(user_id):
+    """Create comprehensive sample data for demo users with proper checking"""
+    from datetime import datetime, timedelta
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Starting demo data creation for user {user_id}")
+    
+    # First create default categories
+    create_default_categories(user_id)
+    db.session.flush()
+    
+    # Check if demo data already exists
+    existing_accounts = Account.query.filter_by(user_id=user_id).all()
+    if existing_accounts:
+        logger.info(f"Found {len(existing_accounts)} existing accounts for user {user_id}")
+        # We'll still continue to create any missing data
+    
+    # Create sample accounts if they don't exist
+    checking = Account.query.filter_by(name="Demo Checking", user_id=user_id).first()
+    if not checking:
+        logger.info("Creating demo checking account")
+        checking = Account(
+            name="Demo Checking",
+            type="checking",
+            institution="Demo Bank",
+            balance=2543.87,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(checking)
+    
+    savings = Account.query.filter_by(name="Demo Savings", user_id=user_id).first()
+    if not savings:
+        logger.info("Creating demo savings account")
+        savings = Account(
+            name="Demo Savings",
+            type="savings",
+            institution="Demo Bank",
+            balance=8750.25,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(savings)
+    
+    credit = Account.query.filter_by(name="Demo Credit Card", user_id=user_id).first()
+    if not credit:
+        logger.info("Creating demo credit card account")
+        credit = Account(
+            name="Demo Credit Card",
+            type="credit",
+            institution="Demo Bank",
+            balance=-1250.30,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(credit)
+    
+    investment = Account.query.filter_by(name="Demo Investment", user_id=user_id).first()
+    if not investment:
+        logger.info("Creating demo investment account")
+        investment = Account(
+            name="Demo Investment",
+            type="investment",
+            institution="Vanguard",
+            balance=15000.00,
+            user_id=user_id,
+            currency_code="USD"
+        )
+        db.session.add(investment)
+    
+    db.session.flush()
+    
+    # Get categories
+    food_category = Category.query.filter_by(name="Food", user_id=user_id).first()
+    housing_category = Category.query.filter_by(name="Housing", user_id=user_id).first()
+    transportation_category = Category.query.filter_by(name="Transportation", user_id=user_id).first()
+    entertainment_category = Category.query.filter_by(name="Entertainment", user_id=user_id).first()
+    
+    # Create sample transactions if they don't exist
+    # 1. Regular expenses
+    if not Expense.query.filter_by(description="Grocery shopping", user_id=user_id).first():
+        logger.info("Creating demo grocery expense")
+        expense1 = Expense(
+            description="Grocery shopping",
+            amount=125.75,
+            date=datetime.utcnow(),
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=food_category.id if food_category else None,
+            split_with=None,
+            group_id=None,
+            account_id=credit.id,
+            transaction_type="expense"
+        )
+        db.session.add(expense1)
+    
+    if not Expense.query.filter_by(description="Monthly rent", user_id=user_id).first():
+        logger.info("Creating demo rent expense")
+        expense2 = Expense(
+            description="Monthly rent",
+            amount=1200.00,
+            date=datetime.utcnow() - timedelta(days=7),
+            card_used="Demo Checking",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=housing_category.id if housing_category else None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="expense"
+        )
+        db.session.add(expense2)
+    
+    # 2. Income transactions
+    if not Expense.query.filter_by(description="Salary deposit", user_id=user_id).first():
+        logger.info("Creating demo salary income")
+        income1 = Expense(
+            description="Salary deposit",
+            amount=3500.00,
+            date=datetime.utcnow() - timedelta(days=15),
+            card_used="Direct Deposit",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="income"
+        )
+        db.session.add(income1)
+    
+    if not Expense.query.filter_by(description="Side gig payment", user_id=user_id).first():
+        logger.info("Creating demo side income")
+        income2 = Expense(
+            description="Side gig payment",
+            amount=250.00,
+            date=datetime.utcnow() - timedelta(days=8),
+            card_used="PayPal",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            transaction_type="income"
+        )
+        db.session.add(income2)
+    
+
+    # Add expenses with category splits
+    if not Expense.query.filter_by(description="Shopping trip (mixed)", user_id=user_id).first():
+        logger.info("Creating demo category split expense - shopping")
+        
+        # Get additional categories
+        shopping_category = Category.query.filter_by(name="Shopping", user_id=user_id).first()
+        personal_category = Category.query.filter_by(name="Personal", user_id=user_id).first()
+        
+        # Create the main expense with has_category_splits=True
+        split_expense1 = Expense(
+            description="Shopping trip (mixed)",
+            amount=183.50,
+            date=datetime.utcnow() - timedelta(days=3),
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,  # No main category when using splits
+            split_with=None,
+            group_id=None,
+            account_id=credit.id,
+            transaction_type="expense",
+            has_category_splits=True  # This is the key flag
+        )
+        db.session.add(split_expense1)
+        db.session.flush()  # Get the expense ID
+        
+        # Add category splits
+        if shopping_category:
+            cat_split1 = CategorySplit(
+                expense_id=split_expense1.id,
+                category_id=shopping_category.id,
+                amount=120.00,
+                description="Clothing items"
+            )
+            db.session.add(cat_split1)
+        
+        if food_category:
+            cat_split2 = CategorySplit(
+                expense_id=split_expense1.id,
+                category_id=food_category.id,
+                amount=38.50,
+                description="Groceries"
+            )
+            db.session.add(cat_split2)
+        
+        if personal_category:
+            cat_split3 = CategorySplit(
+                expense_id=split_expense1.id,
+                category_id=personal_category.id,
+                amount=25.00,
+                description="Personal care items"
+            )
+            db.session.add(cat_split3)
+
+# Add another split expense example - travel related
+    if not Expense.query.filter_by(description="Weekend trip expenses", user_id=user_id).first():
+        logger.info("Creating demo category split expense - travel")
+        
+        # Create the main expense
+        split_expense2 = Expense(
+            description="Weekend trip expenses",
+            amount=342.75,
+            date=datetime.utcnow() - timedelta(days=14),
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=credit.id,
+            transaction_type="expense",
+            has_category_splits=True
+        )
+        db.session.add(split_expense2)
+        db.session.flush()
+        
+        # Add category splits - assuming we have transportation and entertainment categories
+        if transportation_category:
+            cat_split4 = CategorySplit(
+                expense_id=split_expense2.id,
+                category_id=transportation_category.id,
+                amount=95.50,
+                description="Gas and tolls"
+            )
+            db.session.add(cat_split4)
+        
+        if food_category:
+            cat_split5 = CategorySplit(
+                expense_id=split_expense2.id,
+                category_id=food_category.id,
+                amount=127.25,
+                description="Dining out"
+            )
+            db.session.add(cat_split5)
+        
+        if entertainment_category:
+            cat_split6 = CategorySplit(
+                expense_id=split_expense2.id,
+                category_id=entertainment_category.id,
+                amount=120.00,
+                description="Activities and entertainment"
+            )
+            db.session.add(cat_split6)
+    
+    # 3. Transfers between accounts
+    if not Expense.query.filter_by(description="Transfer to savings", user_id=user_id).first():
+        logger.info("Creating demo transfer to savings")
+        transfer1 = Expense(
+            description="Transfer to savings",
+            amount=500.00,
+            date=datetime.utcnow() - timedelta(days=10),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=savings.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer1)
+    
+    if not Expense.query.filter_by(description="Credit card payment", user_id=user_id).first():
+        logger.info("Creating demo credit card payment")
+        transfer2 = Expense(
+            description="Credit card payment",
+            amount=750.00,
+            date=datetime.utcnow() - timedelta(days=12),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=credit.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer2)
+    
+    if not Expense.query.filter_by(description="Investment contribution", user_id=user_id).first():
+        logger.info("Creating demo investment transfer")
+        transfer3 = Expense(
+            description="Investment contribution",
+            amount=1000.00,
+            date=datetime.utcnow() - timedelta(days=20),
+            card_used="Internal Transfer",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=None,
+            split_with=None,
+            group_id=None,
+            account_id=checking.id,
+            destination_account_id=investment.id,
+            transaction_type="transfer"
+        )
+        db.session.add(transfer3)
+    
+    # 4. Create recurring expenses
+    netflix_recurring = RecurringExpense.query.filter_by(
+        description="Netflix Subscription", user_id=user_id).first()
+    if not netflix_recurring:
+        logger.info("Creating demo Netflix recurring expense")
+        recurring1 = RecurringExpense(
+            description="Netflix Subscription",
+            amount=14.99,
+            card_used="Demo Credit Card",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=entertainment_category.id if entertainment_category else None,
+            frequency="monthly",
+            start_date=datetime.utcnow() - timedelta(days=30),
+            active=True,
+            account_id=credit.id
+        )
+        db.session.add(recurring1)
+    
+    rent_recurring = RecurringExpense.query.filter_by(
+        description="Monthly Rent Payment", user_id=user_id).first()
+    if not rent_recurring:
+        logger.info("Creating demo rent recurring expense")
+        recurring2 = RecurringExpense(
+            description="Monthly Rent Payment",
+            amount=1200.00,
+            card_used="Demo Checking",
+            split_method="equal",
+            paid_by=user_id,
+            user_id=user_id,
+            category_id=housing_category.id if housing_category else None,
+            frequency="monthly",
+            start_date=datetime.utcnow() - timedelta(days=15),
+            active=True,
+            account_id=checking.id
+        )
+        db.session.add(recurring2)
+    
+    # 5. Create budgets
+    food_budget = Budget.query.filter_by(
+        name="Monthly Food", user_id=user_id).first()
+    if not food_budget:
+        logger.info("Creating demo food budget")
+        budget1 = Budget(
+            user_id=user_id,
+            category_id=food_category.id if food_category else None,
+            name="Monthly Food",
+            amount=600.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget1)
+    
+    transport_budget = Budget.query.filter_by(
+        name="Transportation Budget", user_id=user_id).first()
+    if not transport_budget:
+        logger.info("Creating demo transportation budget")
+        budget2 = Budget(
+            user_id=user_id,
+            category_id=transportation_category.id if transportation_category else None,
+            name="Transportation Budget",
+            amount=300.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget2)
+    
+    entertainment_budget = Budget.query.filter_by(
+        name="Entertainment Budget", user_id=user_id).first()
+    if not entertainment_budget:
+        logger.info("Creating demo entertainment budget")
+        budget3 = Budget(
+            user_id=user_id,
+            category_id=entertainment_category.id if entertainment_category else None,
+            name="Entertainment Budget",
+            amount=200.00,
+            period="monthly",
+            include_subcategories=True,
+            start_date=datetime.utcnow().replace(day=1),
+            is_recurring=True,
+            active=True
+        )
+        db.session.add(budget3)
+    
+    # Commit all changes
+    try:
+        db.session.commit()
+        logger.info("Demo data created/updated successfully")
+        return True
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error creating demo data: {str(e)}")
+        return False
+    
+def reset_demo_data(user_id):
+    """Reset all demo data for a user with comprehensive relationship handling"""
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Resetting demo data for user {user_id}")
+    
+    try:
+        # Start a transaction
+        db.session.begin()
+        
+        # 1. Get all expenses for this user
+        expenses = Expense.query.filter_by(user_id=user_id).all()
+        expense_ids = [expense.id for expense in expenses]
+        
+        # 2. Delete category splits referencing these expenses
+        if expense_ids:
+            split_count = CategorySplit.query.filter(CategorySplit.expense_id.in_(expense_ids)).delete(synchronize_session=False)
+            logger.info(f"Deleted {split_count} category splits")
+            
+        # 3. Delete tags associations for these expenses
+        if expense_ids:
+            from sqlalchemy import text
+            db.session.execute(text("""
+                DELETE FROM expense_tags 
+                WHERE expense_id IN :expense_ids
+            """), {'expense_ids': tuple(expense_ids) if len(expense_ids) > 1 else f"({expense_ids[0]})"})
+            logger.info(f"Deleted expense tag associations")
+        
+        # 4. Now delete expenses
+        expense_count = Expense.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {expense_count} expenses")
+        
+        # 5. Delete recurring expenses
+        recurring_count = RecurringExpense.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {recurring_count} recurring expenses")
+        
+        # 6. Delete budgets
+        budget_count = Budget.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {budget_count} budgets")
+        
+        # 7. Delete category mappings
+        mapping_count = CategoryMapping.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {mapping_count} category mappings")
+        
+        # 8. Delete ignored patterns
+        pattern_count = IgnoredRecurringPattern.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {pattern_count} ignored patterns")
+        
+        # 9. Delete SimpleFin settings
+        simplefin_count = SimpleFin.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {simplefin_count} SimpleFin settings")
+        
+        # 10. Delete settlements
+        from sqlalchemy import or_
+        settlement_count = Settlement.query.filter(
+            or_(Settlement.payer_id == user_id, Settlement.receiver_id == user_id)
+        ).delete(synchronize_session=False)
+        logger.info(f"Deleted {settlement_count} settlements")
+        
+        # 11. Delete all accounts
+        account_count = Account.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {account_count} accounts")
+        
+        # 12. Delete all tags
+        tag_count = Tag.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {tag_count} tags")
+        
+        # 13. Delete all categories
+        category_count = Category.query.filter_by(user_id=user_id).delete()
+        logger.info(f"Deleted {category_count} categories")
+        
+        # Commit the transaction
+        db.session.commit()
+        logger.info("Demo data reset successful")
+        return True
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error resetting demo data: {str(e)}")
+        return False
+
+
 
 #--------------------
 # ROUTES: AUTHENTICATION
@@ -2521,6 +3252,8 @@ def home():
         return redirect(url_for('dashboard'))
     return render_template('landing.html')
 @app.route('/signup', methods=['GET', 'POST'])
+
+
 def signup():
     # Check if local login is disabled
     local_login_disabled = app.config.get('LOCAL_LOGIN_DISABLE', False) and app.config.get('OIDC_ENABLED', False)
@@ -2605,6 +3338,7 @@ def signup():
                           local_login_disabled=local_login_disabled)
 
 @app.route('/login', methods=['GET', 'POST'])
+@restrict_demo_access
 def login():
     # Check if we should show a logout message
     if session.pop('show_logout_message', False):
@@ -2695,22 +3429,55 @@ def login():
                           oidc_enabled=oidc_enabled,
                           local_login_disabled=local_login_disabled)
 
+
 @app.route('/logout')
 @login_required_dev
 def logout():
+    # If this is a demo user, handle demo-specific logout
+    demo_timeout = app.extensions.get('demo_timeout')
+    is_demo_user = False
+    
+    if (demo_timeout and 
+        current_user.is_authenticated and 
+        demo_timeout.is_demo_user(current_user.id)):
+        # Unregister the demo session
+        demo_timeout.unregister_demo_session(current_user.id)
+        
+        # Reset demo data
+        reset_demo_data(current_user.id)
+        
+        # Mark as demo user for redirection
+        is_demo_user = True
+    
     # If user was logged in via OIDC, use the OIDC logout route
     if hasattr(current_user, 'oidc_id') and current_user.oidc_id and app.config.get('OIDC_ENABLED', False):
         return redirect(url_for('logout_oidc'))
     
     # Standard logout for local accounts
     logout_user()
+    
+    # Set a flag to show logout message on next login
+    session['show_logout_message'] = True
+    
+    # Redirect demo users to thank you page
+    if is_demo_user:
+        return redirect(url_for('demo_thanks'))
+    
     return redirect(url_for('login'))
+
+
+
+
+
+
+
 
 #--------------------
 # ROUTES: DASHBOARD
 #--------------------
 @app.route('/dashboard')
 @login_required_dev
+@demo_time_limited
 def dashboard():
     now = datetime.now()
     base_currency = get_base_currency()
@@ -2841,7 +3608,7 @@ def dashboard():
     current_month_total = 0
     current_month_expenses_only = 0  # NEW: For expenses only
     current_month = now.strftime('%Y-%m')
-
+    
     for expense in expenses:
         # Skip if not in current month
         if expense.date.strftime('%Y-%m') != current_month:
@@ -2920,10 +3687,12 @@ def dashboard():
     # Calculate asset and debt trends
     asset_debt_trends = calculate_asset_debt_trends(current_user)
 
+    base_currency = get_base_currency()
 
     return render_template('dashboard.html', 
                          expenses=expenses,
                          expense_splits=expense_splits,
+                         top_categories = get_category_spending(expenses, expense_splits),
                          monthly_totals=monthly_totals,
                          total_expenses=total_expenses,
                          total_expenses_only=total_expenses_only,  # NEW: For expenses only
@@ -2951,6 +3720,63 @@ def dashboard():
                          net_worth=asset_debt_trends['net_worth'],
                          now=now)
 
+from datetime import datetime
+
+def get_category_spending(expenses, expense_splits):
+    current_month = datetime.now().month
+    current_year = datetime.now().year
+    
+    category_totals = {}
+    
+    for expense in expenses:
+        # Skip non-expenses
+        if hasattr(expense, 'transaction_type') and expense.transaction_type != 'expense':
+            continue
+        
+        # Filter expenses for the current month and year
+        if expense.date.month != current_month or expense.date.year != current_year:
+            continue
+        
+        # Handle category splits first
+        if expense.category_splits:
+            for split in expense.category_splits:
+                if split.category:
+                    category_name = split.category.name
+                    if category_name not in category_totals:
+                        category_totals[category_name] = {
+                            'amount': 0,
+                            'color': split.category.color,
+                            'icon': split.category.icon
+                        }
+                    category_totals[category_name]['amount'] += split.amount
+        
+        # Handle regular category if no splits
+        elif expense.category:
+            category_name = expense.category.name
+            if category_name not in category_totals:
+                category_totals[category_name] = {
+                    'amount': 0,
+                    'color': expense.category.color,
+                    'icon': expense.category.icon
+                }
+            category_totals[category_name]['amount'] += expense.amount
+    
+    # Sort and return top categories
+    sorted_categories = sorted(
+        [
+            {
+                'name': name, 
+                'amount': data['amount'], 
+                'color': data['color'],
+                'icon': data['icon']
+            } 
+            for name, data in category_totals.items()
+        ], 
+        key=lambda x: x['amount'],
+        reverse=True
+    )[:6]
+    
+    return sorted_categories
 
 #--------------------
 # ROUTES: timezone MANAGEMENT
@@ -3020,14 +3846,13 @@ def timezone_processor():
 #--------------------
 # ROUTES: EXPENSES MANAGEMENT
 #--------------------
+# In app.py, modify the add_expense route to properly handle empty category_id:
+
 @app.route('/add_expense', methods=['POST'])
 @login_required_dev
 def add_expense():
     """Add a new transaction (expense, income, or transfer)"""
-    print("Request method:", request.method)
     if request.method == 'POST':
-        print("Form data:", request.form)
-        
         try:
             # Get transaction type
             transaction_type = request.form.get('transaction_type', 'expense')
@@ -3055,10 +3880,32 @@ def add_expense():
                 flash('Invalid date format. Please use YYYY-MM-DD format.')
                 return redirect(url_for('transactions'))
             
-            # Process split details if provided
+            # Carefully process split details
             split_details = None
-            if request.form.get('split_details'):
-                split_details = request.form.get('split_details')
+            split_method = 'equal'  # Default
+            
+            # Check for custom split details
+            raw_split_details = request.form.get('split_details')
+            if raw_split_details:
+                try:
+                    # Parse the JSON split details
+                    parsed_split_details = json.loads(raw_split_details)
+                    
+                    # Validate the split details structure
+                    if isinstance(parsed_split_details, dict):
+                        split_method = parsed_split_details.get('type', 'equal')
+                        split_details = raw_split_details
+                        
+                        # Additional validation for custom splits
+                        if split_method != 'equal':
+                            # Ensure we have valid split values
+                            split_values = parsed_split_details.get('values', {})
+                            if split_values and len(split_values) > 0:
+                                # Override default split method if custom values exist
+                                split_method = parsed_split_details['type']
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, fall back to default
+                    app.logger.warning(f"Failed to parse split details: {raw_split_details}")
             
             # Get currency information
             currency_code = request.form.get('currency_code', 'USD')
@@ -3080,43 +3927,41 @@ def add_expense():
             # Convert original amount to base currency
             amount = original_amount * selected_currency.rate_to_base
             
-            # Process category - either use the provided category or auto-categorize
+            # Process category - properly handle empty strings for category_id
             category_id = request.form.get('category_id')
             if not category_id or category_id.strip() == '':
-                # Check if auto-categorization is enabled (this preference could be stored in user settings)
-                auto_categorize_enabled = True  # You can make this a user preference
-                
-                if auto_categorize_enabled:
-                    # Try to auto-categorize based on description
-                    auto_category_id = auto_categorize_transaction(request.form['description'], current_user.id)
-                    if auto_category_id:
-                        category_id = auto_category_id
-                
-                # If still no category_id, use "Other" category as fallback
-                if not category_id or category_id.strip() == '':
-                    # Find the "Other" category for this user
-                    other_category = Category.query.filter_by(
-                        name='Other',
-                        user_id=current_user.id,
-                        is_system=True
-                    ).first()
-                    
-                    # If "Other" category doesn't exist, leave as None
-                    category_id = other_category.id if other_category else None
-            
-            # Get account information
+                category_id = None  # Set to None instead of empty string
+            else:
+                # Make sure it's an integer if provided
+                category_id = int(category_id)
+
+            # Get account information - handle empty strings
             account_id = request.form.get('account_id')
+            if not account_id or account_id.strip() == '':
+                account_id = None
+            else:
+                # Make sure it's an integer if provided
+                account_id = int(account_id)
+                
             card_used = "No card"  # Default fallback
             
-            # For transfers, get destination account
+            # For transfers, get destination account - handle empty strings
             destination_account_id = None
             if transaction_type == 'transfer':
                 destination_account_id = request.form.get('destination_account_id')
+                if not destination_account_id or destination_account_id.strip() == '':
+                    destination_account_id = None
+                else:
+                    # Make sure it's an integer if provided
+                    destination_account_id = int(destination_account_id)
                 
                 # Validate different source and destination accounts
                 if account_id == destination_account_id:
                     flash('Source and destination accounts must be different for transfers.')
                     return redirect(url_for('transactions'))
+            
+            # Determine paid_by (use from form or fallback to current user)
+            paid_by = request.form.get('paid_by', current_user.id)
             
             # Create expense record
             expense = Expense(
@@ -3126,10 +3971,10 @@ def add_expense():
                 currency_code=currency_code,  # Store the original currency code
                 date=expense_date,
                 card_used=card_used,  # Default or legacy value
-                split_method=request.form.get('split_method', 'equal'),
-                split_value=float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0,
+                split_method=split_method,  # Use the carefully parsed split method
+                split_value=0,  # We'll use split_details for more complex splits
                 split_details=split_details,
-                paid_by=current_user.id,  # Always the current user
+                paid_by=paid_by,
                 user_id=current_user.id,
                 category_id=category_id,
                 group_id=request.form.get('group_id') if request.form.get('group_id') else None,
@@ -3138,31 +3983,6 @@ def add_expense():
                 account_id=account_id,
                 destination_account_id=destination_account_id
             )
-            
-            # Update account balances
-            if account_id:
-                from_account = Account.query.get(account_id)
-                if from_account and from_account.user_id == current_user.id:
-                    if transaction_type == 'expense':
-                        from_account.balance -= amount
-                    elif transaction_type == 'income':
-                        from_account.balance += amount
-                    elif transaction_type == 'transfer' and destination_account_id:
-                        # For transfers, subtract from source account
-                        from_account.balance -= amount
-                        
-                        # And add to destination account
-                        to_account = Account.query.get(destination_account_id)
-                        if to_account and to_account.user_id == current_user.id:
-                            to_account.balance += amount
-            
-            # Handle tags if present
-            tag_ids = request.form.getlist('tags')
-            if tag_ids:
-                for tag_id in tag_ids:
-                    tag = Tag.query.get(int(tag_id))
-                    if tag and tag.user_id == current_user.id:
-                        expense.tags.append(tag)
             
             db.session.add(expense)
             db.session.commit()
@@ -3177,11 +3997,10 @@ def add_expense():
             else:
                 flash('Transaction added successfully!')
                 
-            print("Transaction added successfully")
-            
         except Exception as e:
-            print("Error adding transaction:", str(e))
+            db.session.rollback()
             flash(f'Error: {str(e)}')
+            app.logger.error(f"Error adding expense: {str(e)}")
             
     return redirect(url_for('transactions'))
 
@@ -3282,10 +4101,11 @@ def get_expense(expense_id):
             'message': f'Error: {str(e)}'
         }), 500
 
+
 @app.route('/update_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def update_expense(expense_id):
-    """Update an existing expense with improved error handling"""
+    """Update an existing expense with improved category split handling"""
     try:
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
@@ -3318,16 +4138,70 @@ def update_expense(expense_id):
             # Keep existing date if conversion fails
             pass
         
-        # Handle category_id safely (allow null values)
-        category_id = request.form.get('category_id')
-        if category_id == 'null' or category_id == '':
+        # Handle category splits toggle - this determines which category approach to use
+        enable_category_split = request.form.get('enable_category_split') == 'on'
+        expense.has_category_splits = enable_category_split
+        
+        if enable_category_split:
+            # When using splits, the main category becomes optional
             expense.category_id = None
-        elif category_id is not None:
+            
+            # Clear any existing splits
+            CategorySplit.query.filter_by(expense_id=expense.id).delete()
+            
+            # Get split data from form
+            split_data = request.form.get('category_splits_data', '[]')
+            
             try:
-                expense.category_id = int(category_id)
-            except ValueError:
-                # Keep existing category if conversion fails
-                app.logger.warning(f"Invalid category_id value: {category_id}")
+                splits = json.loads(split_data)
+                
+                # Create new splits
+                for split in splits:
+                    category_id = split.get('category_id')
+                    amount = float(split.get('amount', 0))
+                    
+                    if category_id and amount > 0:
+                        category_split = CategorySplit(
+                            expense_id=expense.id,
+                            category_id=category_id,
+                            amount=amount
+                        )
+                        db.session.add(category_split)
+                
+                # Validate that splits add up to the total
+                total_splits = sum(float(split.get('amount', 0)) for split in splits)
+                if abs(total_splits - expense.amount) > 0.01:
+                    app.logger.warning(f"Split total {total_splits} doesn't match expense amount {expense.amount}")
+                    
+            except Exception as e:
+                app.logger.error(f"Error processing category splits: {str(e)}")
+                # If split processing fails, disable splits and fall back to main category
+                expense.has_category_splits = False
+                
+                # Try to use the original category
+                category_id = request.form.get('category_id')
+                if category_id and category_id != 'null' and category_id.strip():
+                    try:
+                        expense.category_id = int(category_id)
+                    except ValueError:
+                        expense.category_id = None
+                else:
+                    expense.category_id = None
+        else:
+            # If not using splits, just update the main category
+            # Handle category_id safely (allow null values)
+            category_id = request.form.get('category_id')
+            if category_id == 'null' or category_id == '':
+                expense.category_id = None
+            elif category_id is not None:
+                try:
+                    expense.category_id = int(category_id)
+                except ValueError:
+                    # Keep existing category if conversion fails
+                    app.logger.warning(f"Invalid category_id value: {category_id}")
+            
+            # Clear any existing splits when not using splits
+            CategorySplit.query.filter_by(expense_id=expense.id).delete()
         
         # Handle account_id safely
         account_id = request.form.get('account_id')
@@ -3392,6 +4266,7 @@ def update_expense(expense_id):
             expense.split_method = 'equal'
             expense.paid_by = current_user.id
             expense.group_id = None
+            expense.has_category_splits = False
             
             # Set transfer-specific fields - with proper handling for empty values
             destination_id = request.form.get('destination_account_id')
@@ -3490,27 +4365,33 @@ def recurring():
                           categories=categories,
                           groups=groups)
 
+@app.route('/get_recurring_form_html')
+@login_required_dev
+def get_recurring_form_html():
+    """Return the HTML for the add recurring transaction form"""
+    base_currency = get_base_currency()
+    users = User.query.all()
+    groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
+    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
+    currencies = Currency.query.all()
+    
+    return render_template('partials/recurring_transaction_form.html',
+                          users=users,
+                          groups=groups,
+                          categories=categories,
+                          currencies=currencies,
+                          base_currency=base_currency)
+
+
+
 @app.route('/add_recurring', methods=['POST'])
 @login_required_dev
 def add_recurring():
     try:
-        # Check if this is a personal expense (no splits)
-        is_personal_expense = request.form.get('personal_expense') == 'on'
-        
-        # Handle split_with based on whether it's a personal expense
-        if is_personal_expense:
-            # For personal expenses, we set split_with to empty
-            split_with_str = None
-        else:
-            # Handle multi-select for split_with
-            split_with_ids = request.form.getlist('split_with')
-            if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('recurring'))
-            
-            split_with_str = ','.join(split_with_ids) if split_with_ids else None
-        
-        # Parse date with error handling
+        # Get transaction type
+        transaction_type = request.form.get('transaction_type', 'expense')
+
+        # Parse dates with error handling
         try:
             start_date = datetime.strptime(request.form['start_date'], '%Y-%m-%d')
             end_date = None
@@ -3519,24 +4400,6 @@ def add_recurring():
         except ValueError:
             flash('Invalid date format. Please use YYYY-MM-DD format.')
             return redirect(url_for('recurring'))
-        
-        # Process category - set to "Other" if not provided
-        category_id = request.form.get('category_id')
-        if not category_id or category_id.strip() == '':
-            # Find the "Other" category for this user
-            other_category = Category.query.filter_by(
-                name='Other',
-                user_id=current_user.id,
-                is_system=True
-            ).first()
-            
-            # If "Other" category doesn't exist, leave as None
-            category_id = other_category.id if other_category else None
-            
-        # Process split details if provided
-        split_details = None
-        if request.form.get('split_details'):
-            split_details = request.form.get('split_details')
         
         # Handle account_id vs card_used transition
         account_id = request.form.get('account_id')
@@ -3556,32 +4419,90 @@ def add_recurring():
                     # If account lookup fails, use a default
                     card_used = "Default Card"
         
-        # Create new recurring expense
+        # Create new recurring expense with common fields
         recurring_expense = RecurringExpense(
             description=request.form['description'],
             amount=float(request.form['amount']),
             card_used=card_used,  # For backward compatibility
-            split_method=request.form['split_method'],
-            split_value=float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0,
-            split_details=split_details,
-            paid_by=request.form['paid_by'],
-            user_id=current_user.id,
-            group_id=request.form.get('group_id') if request.form.get('group_id') else None,
-            split_with=split_with_str,
             frequency=request.form['frequency'],
             start_date=start_date,
-            category_id=category_id,
             end_date=end_date,
+            user_id=current_user.id,
+            transaction_type=transaction_type,
             active=True
         )
         
-        # Handle account_id if your model has this field
-        if hasattr(RecurringExpense, 'account_id') and account_id and account_id != 'default':
+        # Handle account_id if provided
+        if account_id and account_id != 'default':
             recurring_expense.account_id = int(account_id)
         
         # Handle currency if provided
         if request.form.get('currency_code'):
             recurring_expense.currency_code = request.form.get('currency_code')
+        
+        # Handle transaction type specific fields
+        if transaction_type == 'expense':
+            # Check if this is a personal expense (no splits)
+            is_personal_expense = request.form.get('personal_expense') == 'on'
+            
+            # Setup expense fields
+            recurring_expense.paid_by = request.form['paid_by']
+            recurring_expense.split_method = request.form['split_method']
+            recurring_expense.split_value = float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0
+            
+            # Handle split with based on whether it's a personal expense
+            if is_personal_expense:
+                recurring_expense.split_with = None
+                recurring_expense.split_details = None
+            else:
+                # Handle multi-select for split_with
+                split_with_ids = request.form.getlist('split_with')
+                if not split_with_ids:
+                    flash('Please select at least one person to split with or mark as personal expense.')
+                    return redirect(url_for('recurring'))
+                
+                recurring_expense.split_with = ','.join(split_with_ids) if split_with_ids else None
+                
+                # Process split details if provided
+                if request.form.get('split_details'):
+                    recurring_expense.split_details = request.form.get('split_details')
+            
+            # Set group if provided
+            recurring_expense.group_id = request.form.get('group_id') if request.form.get('group_id') else None
+            
+            # Set category if provided
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring_expense.category_id = int(category_id)
+                
+        elif transaction_type == 'income':
+            # Income has no split details or group
+            recurring_expense.paid_by = current_user.id
+            recurring_expense.split_with = None
+            recurring_expense.split_method = 'equal'
+            recurring_expense.split_details = None
+            recurring_expense.group_id = None
+            
+            # Set category if provided
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring_expense.category_id = int(category_id)
+                
+        elif transaction_type == 'transfer':
+            # Transfer has no split details, group, or category
+            recurring_expense.paid_by = current_user.id
+            recurring_expense.split_with = None
+            recurring_expense.split_method = 'equal'
+            recurring_expense.split_details = None
+            recurring_expense.group_id = None
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring_expense.category_id = int(category_id)
+            
+            # Set destination account if provided
+            dest_account_id = request.form.get('destination_account_id')
+            if dest_account_id and dest_account_id.strip():
+                recurring_expense.destination_account_id = int(dest_account_id)
         
         db.session.add(recurring_expense)
         db.session.commit()
@@ -3590,18 +4511,14 @@ def add_recurring():
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         if start_date <= today:
             expense = recurring_expense.create_expense_instance(start_date)
-            
-            # Pass account_id to the expense if the model has it
-            if hasattr(expense, 'account_id') and hasattr(recurring_expense, 'account_id'):
-                expense.account_id = recurring_expense.account_id
-            
             db.session.add(expense)
             db.session.commit()
         
-        flash('Recurring expense added successfully!')
+        flash('Recurring transaction added successfully!')
         
     except Exception as e:
-        print("Error adding recurring expense:", str(e))
+        db.session.rollback()
+        app.logger.error(f"Error adding recurring transaction: {str(e)}")
         flash(f'Error: {str(e)}')
     
     return redirect(url_for('recurring'))
@@ -3681,98 +4598,141 @@ def edit_recurring_page(recurring_id):
 @app.route('/update_recurring/<int:recurring_id>', methods=['POST'])
 @login_required_dev
 def update_recurring(recurring_id):
-    """Update an existing recurring expense"""
+    """Update an existing recurring transaction"""
     try:
-        # Find the recurring expense
+        # Find the recurring transaction
         recurring = RecurringExpense.query.get_or_404(recurring_id)
         
-        # Security check: Only the creator can update the recurring expense
+        # Security check: Only the creator can update
         if recurring.user_id != current_user.id:
-            flash('You do not have permission to edit this recurring expense')
+            flash('You do not have permission to edit this recurring transaction')
             return redirect(url_for('recurring'))
         
-        # Check if this is a personal expense (no splits)
-        is_personal_expense = request.form.get('personal_expense') == 'on'
+        # Get transaction type
+        transaction_type = request.form.get('transaction_type', 'expense')
         
-        # Handle split_with based on whether it's a personal expense
-        if is_personal_expense:
-            # For personal expenses, we set split_with to empty
-            split_with_str = None
-        else:
-            # Handle multi-select for split_with
-            split_with_ids = request.form.getlist('split_with')
-            if not split_with_ids:
-                flash('Please select at least one person to split with or mark as personal expense.')
-                return redirect(url_for('recurring'))
-            
-            split_with_str = ','.join(split_with_ids) if split_with_ids else None
-        
-        # Parse date with error handling
+        # Parse dates
         try:
             start_date = datetime.strptime(request.form['start_date'], '%Y-%m-%d')
             end_date = None
             if request.form.get('end_date'):
-                end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d')
+                end_date = datetime.strptime(request.form.get('end_date'), '%Y-%m-%d')
         except ValueError:
             flash('Invalid date format. Please use YYYY-MM-DD format.')
             return redirect(url_for('recurring'))
         
-        # Process split details if provided
-        category_id = request.form.get('category_id')
-        if category_id and not category_id.strip():
-            category_id = None
-            
-        split_details = None
-        if request.form.get('split_details'):
-            split_details = request.form.get('split_details')
+        # Update basic fields for all transaction types
+        recurring.description = request.form['description']
+        recurring.amount = float(request.form['amount'])
+        recurring.frequency = request.form['frequency']
+        recurring.start_date = start_date
+        recurring.end_date = end_date
+        recurring.transaction_type = transaction_type
         
-        # Handle account_id vs card_used transition
+        # Handle account based on transaction type
         account_id = request.form.get('account_id')
         if account_id:
             if account_id == 'default':
-                # Keep the existing card_used value if 'default' is selected
+                # Keep the existing card_used value
                 pass
             else:
-                # Try to get the account name
+                # Try to get the account name for backward compatibility
                 try:
                     account = Account.query.get(int(account_id))
                     if account:
                         recurring.card_used = account.name
-                        # Set account_id if the model has this field
-                        if hasattr(recurring, 'account_id'):
-                            recurring.account_id = int(account_id)
+                        recurring.account_id = int(account_id)
                 except:
                     # Fallback - don't change card_used
                     pass
-        
-        # Update recurring expense fields
-        recurring.description = request.form['description']
-        recurring.amount = float(request.form['amount'])
-        recurring.split_method = request.form['split_method']
-        recurring.split_value = float(request.form.get('split_value', 0)) if request.form.get('split_value') else 0
-        recurring.split_details = split_details
-        recurring.paid_by = request.form['paid_by']
-        recurring.group_id = request.form.get('group_id') if request.form.get('group_id') and request.form.get('group_id') != '' else None
-        recurring.split_with = split_with_str
-        recurring.frequency = request.form['frequency']
-        recurring.start_date = start_date
-        recurring.end_date = end_date
-        recurring.category_id = category_id
         
         # Handle currency if provided
         if request.form.get('currency_code'):
             recurring.currency_code = request.form.get('currency_code')
         
+        # Handle fields based on transaction type
+        if transaction_type == 'expense':
+            # Handle expense-specific fields
+            recurring.paid_by = request.form['paid_by']
+            
+            # Handle split with
+            is_personal_expense = request.form.get('personal_expense') == 'on'
+            if is_personal_expense:
+                recurring.split_with = None
+                recurring.split_details = None
+            else:
+                split_with_ids = request.form.getlist('split_with')
+                recurring.split_with = ','.join(split_with_ids) if split_with_ids else None
+                
+                # Process split details
+                recurring.split_method = request.form['split_method']
+                if request.form.get('split_details'):
+                    recurring.split_details = request.form.get('split_details')
+            
+            # Handle group 
+            recurring.group_id = request.form.get('group_id') if request.form.get('group_id') and request.form.get('group_id') != '' else None
+            
+            # Handle category
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring.category_id = int(category_id)
+            else:
+                recurring.category_id = None
+                
+            # Clear transfer-specific fields
+            recurring.destination_account_id = None
+            
+        elif transaction_type == 'income':
+            # Income doesn't use split fields
+            recurring.paid_by = current_user.id
+            recurring.split_with = None
+            recurring.split_details = None
+            recurring.split_method = 'equal'
+            recurring.group_id = None
+            
+            # Handle category
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring.category_id = int(category_id)
+            else:
+                recurring.category_id = None
+                
+            # Clear transfer-specific fields
+            recurring.destination_account_id = None
+            
+        elif transaction_type == 'transfer':
+            # Transfer doesn't use split or category fields
+            recurring.paid_by = current_user.id
+            recurring.split_with = None
+            recurring.split_details = None
+            recurring.split_method = 'equal'
+            recurring.group_id = None
+            category_id = request.form.get('category_id')
+            if category_id and category_id.strip():
+                recurring.category_id = int(category_id)
+            else:
+                recurring.category_id = None
+            
+            # Handle destination account
+            dest_account_id = request.form.get('destination_account_id')
+            if dest_account_id and dest_account_id.strip():
+                recurring.destination_account_id = int(dest_account_id)
+            else:
+                recurring.destination_account_id = None
+        
         # Save changes
         db.session.commit()
-        flash('Recurring expense updated successfully!')
+        flash('Recurring transaction updated successfully!')
         
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error updating recurring expense {recurring_id}: {str(e)}")
+        app.logger.error(f"Error updating recurring transaction {recurring_id}: {str(e)}")
         flash(f'Error: {str(e)}')
         
     return redirect(url_for('recurring'))
+
+
+
 @app.route('/detect_recurring_transactions')
 @login_required_dev
 def get_recurring_transactions():
@@ -3821,6 +4781,7 @@ def get_recurring_transactions():
                 'occurrences': candidate['occurrences'],
                 'next_date': candidate['next_date'].isoformat(),
                 'avg_interval': candidate['avg_interval'],
+                'transaction_type': candidate['transaction_type'],
                 # Include account and category info if available
                 'account_id': candidate['account_id'],
                 'category_id': candidate['category_id'],
@@ -3854,7 +4815,7 @@ def get_recurring_transactions():
                 'frequency': candidate['frequency'],
                 'account_id': candidate['account_id'],
                 'category_id': candidate['category_id'],
-                'transaction_type': candidate.get('transaction_type', 'expense'),
+                'transaction_type': candidate['transaction_type'],
                 'transaction_ids': candidate['transaction_ids']
             }
         
@@ -3958,7 +4919,7 @@ def convert_to_recurring(candidate_id):
                 'frequency': frequency,
                 'account_id': account_id,
                 'category_id': category_id,
-                'transaction_type': 'expense'  # Default
+                'transaction_type': request.form.get('transaction_type', 'expense')  # Default
             }
             
             # Create recurring expense from custom data
@@ -4127,6 +5088,135 @@ def manage_ignored_patterns():
     return render_template('manage_ignored_patterns.html',
                           ignored_patterns=ignored_patterns,
                           base_currency=base_currency)
+
+
+@app.route('/get_recurring/<int:recurring_id>')
+@login_required_dev
+def get_recurring(recurring_id):
+    """Get recurring transaction details for editing"""
+    try:
+        # Find the recurring transaction
+        recurring = RecurringExpense.query.get_or_404(recurring_id)
+        
+        # Security check: Only the creator can edit
+        if recurring.user_id != current_user.id:
+            return jsonify({
+                'success': False,
+                'message': 'You do not have permission to edit this recurring transaction'
+            }), 403
+        
+        # Process split_with into array
+        split_with_ids = []
+        if recurring.split_with:
+            split_with_ids = recurring.split_with.split(',')
+        
+        # Format dates
+        start_date = recurring.start_date.strftime('%Y-%m-%d') if recurring.start_date else None
+        end_date = recurring.end_date.strftime('%Y-%m-%d') if recurring.end_date else None
+        
+        # Prepare split details if available
+        split_details = None
+        if recurring.split_details:
+            try:
+                split_details = json.loads(recurring.split_details)
+            except:
+                split_details = None
+        
+        # Return the recurring transaction data
+        return jsonify({
+            'success': True,
+            'recurring': {
+                'id': recurring.id,
+                'description': recurring.description,
+                'amount': recurring.amount,
+                'transaction_type': recurring.transaction_type or 'expense',
+                'frequency': recurring.frequency,
+                'start_date': start_date,
+                'end_date': end_date,
+                'currency_code': recurring.currency_code,
+                'account_id': recurring.account_id,
+                'destination_account_id': recurring.destination_account_id,
+                'paid_by': recurring.paid_by,
+                'split_with': split_with_ids,
+                'split_method': recurring.split_method,
+                'split_details': split_details,
+                'category_id': recurring.category_id,
+                'group_id': recurring.group_id
+            }
+        })
+            
+    except Exception as e:
+        app.logger.error(f"Error retrieving recurring transaction {recurring_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+    
+
+
+
+
+
+@app.route('/get_category_splits/<int:expense_id>')
+@login_required_dev
+def get_category_splits(expense_id):
+    """Get category splits for an expense"""
+    try:
+        expense = Expense.query.get_or_404(expense_id)
+        
+        # Security check
+        if expense.user_id != current_user.id:
+            return jsonify({
+                'success': False,
+                'message': 'You do not have permission to view this expense'
+            }), 403
+        
+        if not expense.has_category_splits:
+            return jsonify({
+                'success': True,
+                'splits': []
+            })
+        
+        # Get all category splits for this expense
+        splits = CategorySplit.query.filter_by(expense_id=expense_id).all()
+        
+        # Format the response
+        splits_data = []
+        for split in splits:
+            category = Category.query.get(split.category_id)
+            
+            # Include category details if available
+            category_data = {
+                'id': category.id,
+                'name': category.name,
+                'icon': category.icon,
+                'color': category.color
+            } if category else {
+                'id': None,
+                'name': 'Unknown',
+                'icon': 'fa-question',
+                'color': '#6c757d'
+            }
+            
+            splits_data.append({
+                'id': split.id,
+                'category_id': split.category_id,
+                'amount': split.amount,
+                'description': split.description,
+                'category': category_data
+            })
+        
+        return jsonify({
+            'success': True,
+            'splits': splits_data
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting category splits: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
 #--------------------
 # ROUTES: GROUPS
 #--------------------
@@ -4232,6 +5322,61 @@ def remove_group_member(group_id, member_id):
     
     return redirect(url_for('group_details', group_id=group_id))
 
+@app.route('/groups/<int:group_id>/delete', methods=['GET', 'POST'])
+@login_required_dev
+def delete_group(group_id):
+    """Delete a group and its associated expenses"""
+    # Find the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Security check: Only the creator can delete the group
+    if current_user.id != group.created_by:
+        flash('Only the group creator can delete the group', 'error')
+        return redirect(url_for('group_details', group_id=group_id))
+    
+    # GET request shows confirmation prompt, POST actually deletes
+    if request.method == 'GET':
+        # Count associated expenses
+        expense_count = Expense.query.filter_by(group_id=group_id).count()
+        # Set up session data for confirmation
+        session['delete_group_id'] = group_id
+        session['delete_group_name'] = group.name
+        session['delete_group_expense_count'] = expense_count
+        # Show confirmation toast
+        flash(f'Warning: Deleting this group will also delete {expense_count} associated transactions. This action cannot be undone.', 'warning')
+        return redirect(url_for('group_details', group_id=group_id))
+    
+    # POST request (actual deletion)
+    try:
+        # Get stored values from session
+        group_name = session.get('delete_group_name', group.name)
+        expense_count = session.get('delete_group_expense_count', 0)
+        
+        # Delete associated expenses first
+        Expense.query.filter_by(group_id=group_id).delete()
+        
+        # Delete the group
+        db.session.delete(group)
+        db.session.commit()
+        
+        # Clear session data
+        session.pop('delete_group_id', None)
+        session.pop('delete_group_name', None)
+        session.pop('delete_group_expense_count', None)
+        
+        # Success message
+        if expense_count > 0:
+            flash(f'Group "{group_name}" and {expense_count} associated transactions have been deleted', 'success')
+        else:
+            flash(f'Group "{group_name}" has been deleted', 'success')
+            
+        return redirect(url_for('groups'))
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting group {group_id}: {str(e)}")
+        flash(f'Error deleting group: {str(e)}', 'error')
+        return redirect(url_for('group_details', group_id=group_id))
 #--------------------
 # ROUTES: ADMIN
 #--------------------
@@ -4281,6 +5426,7 @@ def admin_add_user():
     
     flash('User added successfully!')
     return redirect(url_for('admin'))
+
 @app.route('/admin/delete_user/<user_id>', methods=['POST'])
 @login_required_dev
 def admin_delete_user(user_id):
@@ -4292,70 +5438,101 @@ def admin_delete_user(user_id):
         flash('Cannot delete your own admin account!')
         return redirect(url_for('admin'))
     
+    app.logger.info(f"Starting deletion process for user: {user_id}")
+    
     user = User.query.filter_by(id=user_id).first()
-    if user:
-        try:
-            # Start a transaction
-            db.session.begin_nested()
-            
-            # Delete all related data first
-            
-            # 1. Delete user's categories (must happen before expenses)
-            Category.query.filter_by(user_id=user_id).delete()
-            
-            # 2. Delete user's expenses
-            Expense.query.filter_by(user_id=user_id).delete()
-            
-            # 3. Delete user's recurring expenses
-            RecurringExpense.query.filter_by(user_id=user_id).delete()
-            
-            # 4. Delete user's budgets
-            Budget.query.filter_by(user_id=user_id).delete()
-            
-            # 5. Delete user's tags
-            Tag.query.filter_by(user_id=user_id).delete()
-            
-            # 6. Delete user's category mappings
-            CategoryMapping.query.filter_by(user_id=user_id).delete()
-            
-            # 7. Delete user's accounts
-            Account.query.filter_by(user_id=user_id).delete()
-            
-            # 8. Delete user's settlements (both as payer and receiver)
-            Settlement.query.filter(or_(
-                Settlement.payer_id == user_id,
-                Settlement.receiver_id == user_id
-            )).delete(synchronize_session=False)
-            
-            # 9. Handle any groups the user created
-            # For groups created by this user, either reassign or delete
-            for group in Group.query.filter_by(created_by=user_id).all():
-                if len(group.members) > 1:
-                    # Find another member to become the owner
-                    for member in group.members:
-                        if member.id != user_id:
-                            group.created_by = member.id
-                            break
-                else:
-                    # Delete the group if no other members
-                    db.session.delete(group)
-            
-            # 10. Remove user from their groups (membership)
-            for group in user.groups:
+    if not user:
+        flash('User not found.')
+        return redirect(url_for('admin'))
+    
+    try:
+        # Start a transaction
+        app.logger.info("Starting transaction")
+        
+        # Delete all related data in the correct order
+        # 1. First handle budgets (they reference categories)
+        app.logger.info("Deleting budgets...")
+        Budget.query.filter_by(user_id=user_id).delete()
+        
+        # 2. Delete recurring expenses
+        app.logger.info("Deleting recurring expenses...")
+        RecurringExpense.query.filter_by(user_id=user_id).delete()
+        
+        # 3. Delete expenses
+        app.logger.info("Deleting expenses...")
+        Expense.query.filter_by(user_id=user_id).delete()
+        
+        # 4. Delete settlements
+        app.logger.info("Deleting settlements...")
+        Settlement.query.filter(
+            or_(Settlement.payer_id == user_id, Settlement.receiver_id == user_id)
+        ).delete(synchronize_session=False)
+        
+        # 5. Delete category mappings
+        app.logger.info("Deleting category mappings...")
+        CategoryMapping.query.filter_by(user_id=user_id).delete()
+        
+        # 6. Delete SimpleFin settings
+        app.logger.info("Deleting SimpleFin settings...")
+        SimpleFin.query.filter_by(user_id=user_id).delete()
+        
+        # 7. Delete ignored recurring patterns
+        app.logger.info("Deleting ignored patterns...")
+        IgnoredRecurringPattern.query.filter_by(user_id=user_id).delete()
+        
+        # 8. Handle user's accounts
+        app.logger.info("Deleting accounts...")
+        Account.query.filter_by(user_id=user_id).delete()
+        
+        # 9. Handle tags - first remove from association table
+        app.logger.info("Handling tags...")
+        user_tags = Tag.query.filter_by(user_id=user_id).all()
+        for tag in user_tags:
+            # Clear association with expenses
+            tag.expenses = []
+        db.session.flush()
+        
+        # Now delete the tags
+        Tag.query.filter_by(user_id=user_id).delete()
+        
+        # 10. Categories can now be deleted
+        app.logger.info("Deleting categories...")
+        Category.query.filter_by(user_id=user_id).delete()
+        
+        # 11. Handle group memberships
+        app.logger.info("Handling group memberships...")
+        # First, handle groups created by this user
+        for group in Group.query.filter_by(created_by=user_id).all():
+            # Remove the user from the group members if they're in it
+            if user in group.members:
                 group.members.remove(user)
-            
-            # 11. Handle SimpleFin connection if exists
-            SimpleFin.query.filter_by(user_id=user_id).delete()
-            
-            # Finally, delete the user
-            db.session.delete(user)
-            db.session.commit()
-            flash('User deleted successfully!')
-            
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error deleting user: {str(e)}")
-            flash(f'Error deleting user: {str(e)}')
+                
+            # Find a new owner or delete the group if empty
+            if group.members:
+                # Assign first remaining member as new owner
+                new_owner = next(iter(group.members))
+                group.created_by = new_owner.id
+            else:
+                # Delete group if no members left
+                db.session.delete(group)
+        
+        # Remove user from all groups they're a member of
+        for group in user.groups:
+            group.members.remove(user)
+        
+        # 12. Finally delete the user
+        app.logger.info("Deleting user...")
+        db.session.delete(user)
+        
+        # Commit all changes
+        db.session.commit()
+        app.logger.info(f"User {user_id} deleted successfully")
+        flash('User deleted successfully!')
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error deleting user: {str(e)}", exc_info=True)
+        flash(f'Error deleting user: {str(e)}')
     
     return redirect(url_for('admin'))
 
@@ -4383,6 +5560,32 @@ def admin_reset_password():
     else:
         flash('User not found.')
         
+    return redirect(url_for('admin'))
+
+@app.route('/admin/toggle_admin_status/<user_id>', methods=['POST'])
+@login_required_dev
+def admin_toggle_admin_status(user_id):
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.')
+        return redirect(url_for('dashboard'))
+    
+    # Prevent changing your own admin status
+    if user_id == current_user.id:
+        flash('Cannot change your own admin status!')
+        return redirect(url_for('admin'))
+    
+    user = User.query.filter_by(id=user_id).first()
+    if not user:
+        flash('User not found.')
+        return redirect(url_for('admin'))
+    
+    # Toggle admin status
+    user.is_admin = not user.is_admin
+    db.session.commit()
+    
+    status = "admin" if user.is_admin else "regular user"
+    flash(f'User {user.name} is now a {status}!')
+    
     return redirect(url_for('admin'))
 
 #--------------------
@@ -4707,6 +5910,7 @@ def set_default_currency():
 
 @app.route('/transactions')
 @login_required_dev
+@demo_time_limited
 def transactions():
     """Display all transactions with filtering capabilities"""
     # Fetch all expenses where the user is either the creator or a split participant
@@ -4841,23 +6045,38 @@ def get_transaction_form_html():
     groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     currencies = Currency.query.all()
-    
+    tags = Tag.query.filter_by(user_id=current_user.id).all()  # Add tags
     return render_template('partials/add_transaction_form.html',
                           users=users,
                           groups=groups,
                           categories=categories,
                           currencies=currencies,
+                          tags=tags,  # Pass tags to the template
                           base_currency=base_currency)
 
 @app.route('/get_expense_edit_form/<int:expense_id>')
 @login_required_dev
 def get_expense_edit_form(expense_id):
-    """Return the HTML for editing an expense"""
+    """Return the HTML for editing an expense, including category splits data"""
     expense = Expense.query.get_or_404(expense_id)
     
     # Security check
     if expense.user_id != current_user.id and current_user.id not in (expense.split_with or ''):
         return 'Access denied', 403
+    
+    # Prepare category splits data if available
+    category_splits_data = []
+    if expense.has_category_splits:
+        # Get all category splits for this expense
+        splits = CategorySplit.query.filter_by(expense_id=expense.id).all()
+        for split in splits:
+            category_splits_data.append({
+                'category_id': split.category_id,
+                'amount': split.amount
+            })
+    
+    # Add category splits data to the expense object for the template
+    expense.category_splits_data = json.dumps(category_splits_data) if category_splits_data else ''
     
     base_currency = get_base_currency()
     users = User.query.all()
@@ -5129,6 +6348,9 @@ def import_csv():
         flash('File must be a CSV')
         return redirect(url_for('advanced'))
     
+    # Define base_currency for any functions that might need it
+    base_currency = get_base_currency()
+    
     imported_expenses = []
     
     try:
@@ -5145,16 +6367,28 @@ def import_csv():
         detect_duplicates = 'detect_duplicates' in request.form
         auto_categorize = 'auto_categorize' in request.form
         negative_is_expense = 'negative_is_expense' in request.form
-        
+        # NEW: Get the delimiter selection
+        delimiter_type = request.form.get('delimiter', 'comma')
+        delimiter = ','  # Default to comma
         # Read file content
-        file_content = csv_file.read().decode('utf-8')
         
+        if delimiter_type == 'tab':
+            delimiter = '\t'
+        elif delimiter_type == 'semicolon':
+            delimiter = ';'
+        elif delimiter_type == 'pipe':
+            delimiter = '|'
+        elif delimiter_type == 'custom':
+            custom_delimiter = request.form.get('custom_delimiter', ',')
+            if custom_delimiter:
+                delimiter = custom_delimiter
+        file_content = csv_file.read().decode('utf-8')
         # Parse CSV
         import csv
         import io
         from datetime import datetime
         
-        csv_reader = csv.DictReader(io.StringIO(file_content))
+        csv_reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
         
         # Get account if specified
         account = None
@@ -5164,6 +6398,61 @@ def import_csv():
                 flash('Invalid account selected')
                 return redirect(url_for('advanced'))
         
+        # Use the enhanced determine_transaction_type function that accepts account_id
+        def determine_transaction_type_for_import(row, current_account_id=None):
+            """Determine transaction type based on row data from CSV import"""
+            type_column = request.form.get('type_column')
+            negative_is_expense = 'negative_is_expense' in request.form
+            
+            # Check if there's a specific transaction type column
+            if type_column and type_column in row:
+                type_value = row[type_column].strip().lower()
+                
+                # Map common terms to transaction types
+                if type_value in ['expense', 'debit', 'purchase', 'payment', 'withdrawal']:
+                    return 'expense'
+                elif type_value in ['income', 'credit', 'deposit', 'refund']:
+                    return 'income'
+                elif type_value in ['transfer', 'move', 'xfer']:
+                    return 'transfer'
+            
+            # If no type column or unknown value, try to determine from description
+            description = row.get(description_column, '').strip()
+            if description:
+                # Common transfer keywords
+                transfer_keywords = ['transfer', 'xfer', 'move', 'moved to', 'sent to', 'to account', 'between accounts']
+                # Common income keywords
+                income_keywords = ['salary', 'deposit', 'refund', 'interest', 'dividend', 'payment received']
+                # Common expense keywords
+                expense_keywords = ['payment', 'purchase', 'fee', 'subscription', 'bill']
+                
+                desc_lower = description.lower()
+                
+                # Check for keywords in description
+                if any(keyword in desc_lower for keyword in transfer_keywords):
+                    return 'transfer'
+                elif any(keyword in desc_lower for keyword in income_keywords):
+                    return 'income'
+                elif any(keyword in desc_lower for keyword in expense_keywords):
+                    return 'expense'
+            
+            # If still undetermined, use amount sign
+            amount_str = row[amount_column].strip().replace('$', '').replace(',', '')
+            try:
+                amount = float(amount_str)
+                # Determine type based on amount sign and settings
+                if amount < 0 and negative_is_expense:
+                    return 'expense'
+                elif amount > 0 and negative_is_expense:
+                    return 'income'
+                elif amount < 0 and not negative_is_expense:
+                    return 'income'  # In some systems, negative means money coming in
+                else:
+                    return 'expense'  # Default to expense for positive amounts
+            except ValueError:
+                # If amount can't be parsed, default to expense
+                return 'expense'
+                
         # Get existing cards used
         existing_cards = db.session.query(Expense.card_used).filter_by(
             user_id=current_user.id
@@ -5234,8 +6523,8 @@ def import_csv():
                     source_account_id = source_account_id or account.id
                     # If we couldn't determine the destination, it stays None
                 else:
-                    # Use the standard transaction type detection
-                    transaction_type = determine_transaction_type(row, account.id if account else None)
+                    # Use the function defined within this scope
+                    transaction_type = determine_transaction_type_for_import(row, account.id if account else None)
                 
                 # Get external ID if available
                 external_id = row.get(id_column) if id_column and id_column in row else None
@@ -5318,7 +6607,8 @@ def import_csv():
         return render_template('import_results.html', 
                                expenses=imported_expenses,
                                count=imported_count,
-                               duplicate_count=duplicate_count)
+                               duplicate_count=duplicate_count,
+                               base_currency=base_currency)  # Pass base_currency here
         
     except Exception as e:
         db.session.rollback()
@@ -5326,7 +6616,6 @@ def import_csv():
         flash(f'Error importing transactions: {str(e)}')
     
     return redirect(url_for('advanced'))
-
 
 #--------------------
 # ROUTES: simplefun
@@ -6090,6 +7379,7 @@ def sync_simplefin_for_user(user_id):
 
 @app.route('/category_mappings')
 @login_required_dev
+@demo_time_limited
 def manage_category_mappings():
     """View and manage category mappings for auto-categorization"""
     # Get all mappings for the current user
@@ -6107,6 +7397,7 @@ def manage_category_mappings():
                           categories=categories)
 @app.route('/category_mappings/create_defaults', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def create_default_mappings_route():
     """Create default category mappings for the current user (on demand)"""
     try:
@@ -6185,6 +7476,7 @@ def bulk_categorize_transactions():
 
 @app.route('/category_mappings/add', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def add_category_mapping():
     """Add a new category mapping rule"""
     keyword = request.form.get('keyword', '').strip()
@@ -6225,6 +7517,7 @@ def add_category_mapping():
 
 @app.route('/category_mappings/edit/<int:mapping_id>', methods=['POST'])
 @login_required_dev
+@demo_time_limited
 def edit_category_mapping(mapping_id):
     """Edit an existing category mapping rule"""
     mapping = CategoryMapping.query.get_or_404(mapping_id)
@@ -6912,9 +8205,10 @@ def delete_category(category_id):
 #--------------------
 @app.route('/budgets')
 @login_required_dev
+@demo_time_limited
 def budgets():
     """View and manage budgets"""
-    from datetime import datetime  # Add this import if not already at the top
+    from datetime import datetime
     
     # Get all budgets for the current user
     user_budgets = Budget.query.filter_by(user_id=current_user.id).order_by(Budget.created_at.desc()).all()
@@ -6924,6 +8218,9 @@ def budgets():
     
     # Calculate budget progress for each budget
     budget_data = []
+    total_month_budget = 0
+    total_month_spent = 0
+    
     for budget in user_budgets:
         spent = budget.calculate_spent_amount()
         remaining = budget.get_remaining_amount()
@@ -6941,13 +8238,14 @@ def budgets():
             'period_start': period_start,
             'period_end': period_end
         })
+        
+        # Add to monthly totals only for monthly budgets
+        if budget.period == 'monthly':
+            total_month_budget += budget.amount
+            total_month_spent += spent
     
     # Get base currency for display
     base_currency = get_base_currency()
-    
-    # Calculate total budget and spent for current month
-    total_month_budget = sum(data['budget'].amount for data in budget_data if data['budget'].period == 'monthly')
-    total_month_spent = sum(data['spent'] for data in budget_data if data['budget'].period == 'monthly')
     
     # Pass the current date to the template
     now = datetime.now()
@@ -6958,7 +8256,7 @@ def budgets():
                           base_currency=base_currency,
                           total_month_budget=total_month_budget,
                           total_month_spent=total_month_spent,
-                          now=now)  # Pass the current date to the template
+                          now=now)
 
 @app.route('/budgets/add', methods=['POST'])
 @login_required_dev
@@ -7171,10 +8469,6 @@ def get_budget(budget_id):
         }), 500
 
 
-
-
-
-
 def get_budget_summary():
     """Get budget summary for current user"""
     # Get all active budgets
@@ -7314,7 +8608,6 @@ def get_subcategory_spending(budget_id):
             'message': f'Error: {str(e)}'
         }), 500
 
-# Helper function to calculate spending for a category in a date range
 def calculate_category_spending(category_id, start_date, end_date, include_subcategories=True):
     """Calculate total spending for a category within a date range"""
     
@@ -7323,54 +8616,65 @@ def calculate_category_spending(category_id, start_date, end_date, include_subca
     if not category:
         return 0
     
-    # Start with expenses directly in this category
-    query = Expense.query.filter(
+    total_spent = 0
+    
+    # 1. Get direct expenses (transactions directly assigned to this category without splits)
+    direct_expenses = Expense.query.filter(
         Expense.user_id == current_user.id,
         Expense.category_id == category_id,
         Expense.date >= start_date,
+        Expense.date <= end_date,
+        Expense.has_category_splits == False  # Important: only include non-split expenses
+    ).all()
+    
+    # Add up direct expenses
+    for expense in direct_expenses:
+        # Use amount_base if available (for currency conversion), otherwise use amount
+        amount = getattr(expense, 'amount_base', expense.amount)
+        total_spent += amount
+    
+    # 2. Get category splits assigned to this category
+    category_splits = CategorySplit.query.join(Expense).filter(
+        Expense.user_id == current_user.id,
+        CategorySplit.category_id == category_id,
+        Expense.date >= start_date,
         Expense.date <= end_date
-    )
+    ).all()
     
-    # Calculate total - handle potential missing amount_base
-    total_spent = 0
-    for expense in query.all():
-        try:
-            # Try to use amount_base if it exists
-            if hasattr(expense, 'amount_base') and expense.amount_base is not None:
-                total_spent += expense.amount_base
-            else:
-                # Fall back to regular amount if amount_base doesn't exist
-                total_spent += expense.amount
-        except AttributeError:
-            # If there's any issue, fall back to amount
-            total_spent += expense.amount
+    # Add up split amounts
+    for split in category_splits:
+        # Use split amount directly - these should already be in the correct currency
+        total_spent += split.amount
     
-    # If we should include subcategories and this is a parent category
+    # 3. Include subcategories if requested and if this is a parent category
     if include_subcategories and not category.parent_id:
-        # Get all subcategory IDs
         subcategory_ids = [subcat.id for subcat in category.subcategories]
         
-        if subcategory_ids:
-            # Query for expenses in subcategories
-            subcat_query = Expense.query.filter(
+        for subcategory_id in subcategory_ids:
+            # For each subcategory, repeat the process
+            # Process direct expenses
+            subcat_direct = Expense.query.filter(
                 Expense.user_id == current_user.id,
-                Expense.category_id.in_(subcategory_ids),
+                Expense.category_id == subcategory_id,
+                Expense.date >= start_date,
+                Expense.date <= end_date,
+                Expense.has_category_splits == False
+            ).all()
+            
+            for expense in subcat_direct:
+                amount = getattr(expense, 'amount_base', expense.amount)
+                total_spent += amount
+            
+            # Process split expenses
+            subcat_splits = CategorySplit.query.join(Expense).filter(
+                Expense.user_id == current_user.id,
+                CategorySplit.category_id == subcategory_id,
                 Expense.date >= start_date,
                 Expense.date <= end_date
-            )
+            ).all()
             
-            # Add subcategory expenses to total - handle potential missing amount_base
-            for expense in subcat_query.all():
-                try:
-                    # Try to use amount_base if it exists
-                    if hasattr(expense, 'amount_base') and expense.amount_base is not None:
-                        total_spent += expense.amount_base
-                    else:
-                        # Fall back to regular amount if amount_base doesn't exist
-                        total_spent += expense.amount
-                except AttributeError:
-                    # If there's any issue, fall back to amount
-                    total_spent += expense.amount
+            for split in subcat_splits:
+                total_spent += split.amount
     
     return total_spent
 
@@ -7410,10 +8714,17 @@ def utility_processor():
         'get_budget_status_for_category': get_budget_status_for_category,
         'convert_currency': template_convert_currency 
     }
+@app.context_processor
+def inject_app_version():
+    """Make app version available to all templates"""
+    return {
+        'app_version': APP_VERSION
+    }
+
 @app.route('/budgets/trends-data')
 @login_required_dev
 def budget_trends_data():
-    """Get budget trends data for chart visualization"""
+    """Get budget trends data for chart visualization with proper split handling"""
     budget_id = request.args.get('budget_id')
     
     # Default time period (last 6 months)
@@ -7439,6 +8750,7 @@ def budget_trends_data():
     if not budget_id:
         # Get all active budgets
         budgets = Budget.query.filter_by(user_id=current_user.id, active=True).all()
+        app.logger.debug(f"Found {len(budgets)} active budgets")
         
         # For each month, calculate total budget and spending
         for i, month in enumerate(response['labels']):
@@ -7462,20 +8774,144 @@ def budget_trends_data():
                     monthly_budget += budget.amount * weeks_in_month
             
             response['budget'].append(monthly_budget)
+            app.logger.debug(f"Month {month}: Budget amount = {monthly_budget}")
             
             # Calculate actual spending for this month
-            expenses = Expense.query.filter(
+            monthly_spent = 0
+            
+            # 1. Get regular expenses without splits (no category splits, no user splits)
+            direct_expenses = Expense.query.filter(
                 Expense.user_id == current_user.id,
                 Expense.date >= month_start,
-                Expense.date <= month_end
+                Expense.date <= month_end,
+                Expense.has_category_splits == False,
+                Expense.split_with.is_(None) | (Expense.split_with == '')
             ).all()
             
-            monthly_spent = sum(expense.amount for expense in expenses)
+            # Add up direct expenses (no splits)
+            direct_total = 0
+            for expense in direct_expenses:
+                amount = getattr(expense, 'amount_base', expense.amount)
+                direct_total += amount
+            
+            monthly_spent += direct_total
+            app.logger.debug(f"Month {month}: Direct expenses (no splits) = {direct_total}")
+            
+            # 2. Get expenses that have user splits but no category splits
+            user_split_expenses = Expense.query.filter(
+                Expense.user_id == current_user.id,
+                Expense.date >= month_start,
+                Expense.date <= month_end,
+                Expense.has_category_splits == False,
+                Expense.split_with.isnot(None) & (Expense.split_with != '')
+            ).all()
+            
+            # Calculate user's portion for each user split expense
+            user_split_total = 0
+            for expense in user_split_expenses:
+                # Get split information with error handling
+                try:
+                    split_info = expense.calculate_splits()
+                    if not split_info:
+                        continue
+                    
+                    # Calculate user's portion
+                    user_amount = 0
+                    
+                    # Check if user is payer and not in split list
+                    if expense.paid_by == current_user.id and (
+                        not expense.split_with or 
+                        current_user.id not in expense.split_with.split(',')
+                    ):
+                        user_amount = split_info['payer']['amount']
+                    else:
+                        # Look for user in splits
+                        for split in split_info['splits']:
+                            if split['email'] == current_user.id:
+                                user_amount = split['amount']
+                                break
+                    
+                    user_split_total += user_amount
+                    
+                except Exception as e:
+                    app.logger.error(f"Error calculating splits for expense {expense.id}: {str(e)}")
+                    # Fallback: Just divide by number of participants (including payer)
+                    participants = 1  # Start with payer
+                    if expense.split_with:
+                        participants += len(expense.split_with.split(','))
+                    
+                    if participants > 0:
+                        user_split_total += expense.amount / participants
+            
+            monthly_spent += user_split_total
+            app.logger.debug(f"Month {month}: User split expenses = {user_split_total}")
+            
+            # 3. Get expenses with category splits
+            split_expenses = Expense.query.filter(
+                Expense.user_id == current_user.id,
+                Expense.date >= month_start,
+                Expense.date <= month_end,
+                Expense.has_category_splits == True
+            ).all()
+            
+            # Process each split expense
+            category_split_total = 0
+            for split_expense in split_expenses:
+                # Get category splits for this expense
+                category_splits = CategorySplit.query.filter_by(expense_id=split_expense.id).all()
+                
+                # Calculate the base amount from category splits
+                split_amount = sum(split.amount for split in category_splits)
+                
+                # If expense also has user splits, calculate user's portion
+                if split_expense.split_with and split_expense.split_with.strip():
+                    try:
+                        split_info = split_expense.calculate_splits()
+                        if not split_info:
+                            # If no split info, treat as full amount
+                            category_split_total += split_amount
+                            continue
+                        
+                        # Calculate user's percentage of the total expense
+                        user_percentage = 0
+                        
+                        # Check if user is payer and not in split list
+                        if split_expense.paid_by == current_user.id and current_user.id not in split_expense.split_with.split(','):
+                            user_percentage = split_info['payer']['amount'] / split_expense.amount if split_expense.amount > 0 else 0
+                        else:
+                            # Look for user in splits
+                            for split in split_info['splits']:
+                                if split['email'] == current_user.id:
+                                    user_percentage = split['amount'] / split_expense.amount if split_expense.amount > 0 else 0
+                                    break
+                        
+                        # Apply user's percentage to the category amount
+                        category_split_total += split_amount * user_percentage
+                        
+                    except Exception as e:
+                        app.logger.error(f"Error calculating splits for expense {split_expense.id}: {str(e)}")
+                        # Fallback: Just divide by number of participants
+                        participants = 1  # Start with payer
+                        if split_expense.split_with:
+                            participants += len(split_expense.split_with.split(','))
+                        
+                        if participants > 0:
+                            category_split_total += split_amount / participants
+                else:
+                    # No user splits, use the full category split amount
+                    category_split_total += split_amount
+            
+            monthly_spent += category_split_total
+            app.logger.debug(f"Month {month}: Category split expenses = {category_split_total}")
+            
+            # Add the calculated amounts to the response
             response['actual'].append(monthly_spent)
             
             # Set color based on whether spending exceeds budget
             color = '#ef4444' if monthly_spent > monthly_budget else '#22c55e'
             response['colors'].append(color)
+            
+            app.logger.debug(f"Month {month}: Total monthly spent = {monthly_spent}")
     else:
         # Get specific budget
         budget = Budget.query.get_or_404(budget_id)
@@ -7484,6 +8920,9 @@ def budget_trends_data():
         if budget.user_id != current_user.id:
             return jsonify({'error': 'Unauthorized'}), 403
         
+        app.logger.debug(f"Processing trends for single budget {budget_id}: {budget.name or 'Unnamed'}, amount={budget.amount}")
+        
+        # Process each month
         for i, month in enumerate(response['labels']):
             month_date = datetime.strptime(month, '%b %Y')
             month_start = month_date.replace(day=1)
@@ -7504,48 +8943,179 @@ def budget_trends_data():
                 monthly_budget = budget.amount * weeks_in_month
                 
             response['budget'].append(monthly_budget)
+            app.logger.debug(f"Month {month}: Budget amount = {monthly_budget}")
             
-            # Calculate actual spending for this category in this month
-            category_expenses = []
-            if budget.include_subcategories:
-                # Get all subcategory IDs
-                subcategory_ids = []
-                if budget.category:
-                    subcategory_ids = [subcat.id for subcat in budget.category.subcategories]
-                
-                # Include parent and subcategories
-                category_filter = [budget.category_id]
-                if subcategory_ids:
-                    category_filter.extend(subcategory_ids)
-                
-                category_expenses = Expense.query.filter(
-                    Expense.user_id == current_user.id,
-                    Expense.date >= month_start,
-                    Expense.date <= month_end,
-                    Expense.category_id.in_(category_filter)
-                ).all()
-            else:
-                # Only include parent category
-                category_expenses = Expense.query.filter(
-                    Expense.user_id == current_user.id,
-                    Expense.date >= month_start,
-                    Expense.date <= month_end,
-                    Expense.category_id == budget.category_id
-                ).all()
+            # Create list of categories to include
+            category_ids = [budget.category_id]
+            if budget.include_subcategories and budget.category:
+                category_ids.extend([subcat.id for subcat in budget.category.subcategories])
             
-            monthly_spent = sum(expense.amount for expense in category_expenses)
+            # Calculate spending for this category
+            monthly_spent = 0
+            
+            # 1. Get direct expenses (not split by category, not split by user)
+            direct_expenses = Expense.query.filter(
+                Expense.user_id == current_user.id,
+                Expense.date >= month_start,
+                Expense.date <= month_end,
+                Expense.category_id.in_(category_ids),
+                Expense.has_category_splits == False,
+                Expense.split_with.is_(None) | (Expense.split_with == '')
+            ).all()
+            
+            # Add up direct expenses
+            direct_total = 0
+            for expense in direct_expenses:
+                amount = getattr(expense, 'amount_base', expense.amount)
+                direct_total += amount
+            
+            monthly_spent += direct_total
+            app.logger.debug(f"Month {month}: Direct expenses (no splits) = {direct_total}")
+            
+            # 2. Get expenses with user splits but not category splits
+            user_split_expenses = Expense.query.filter(
+                Expense.user_id == current_user.id,
+                Expense.date >= month_start,
+                Expense.date <= month_end,
+                Expense.category_id.in_(category_ids),
+                Expense.has_category_splits == False,
+                Expense.split_with.isnot(None) & (Expense.split_with != '')
+            ).all()
+            
+            # Process user split expenses
+            user_split_total = 0
+            for expense in user_split_expenses:
+                try:
+                    # Get split information
+                    split_info = expense.calculate_splits()
+                    if not split_info:
+                        continue
+                    
+                    # Calculate user's portion
+                    user_amount = 0
+                    
+                    # Check if user is payer and not in split list
+                    if expense.paid_by == current_user.id and (
+                        not expense.split_with or 
+                        current_user.id not in expense.split_with.split(',')
+                    ):
+                        user_amount = split_info['payer']['amount']
+                    else:
+                        # Look for user in splits
+                        for split in split_info['splits']:
+                            if split['email'] == current_user.id:
+                                user_amount = split['amount']
+                                break
+                    
+                    user_split_total += user_amount
+                    
+                except Exception as e:
+                    app.logger.error(f"Error calculating splits for expense {expense.id}: {str(e)}")
+                    # Fallback: Just divide by number of participants (including payer)
+                    participants = 1  # Start with payer
+                    if expense.split_with:
+                        participants += len(expense.split_with.split(','))
+                    
+                    if participants > 0:
+                        user_split_total += expense.amount / participants
+            
+            monthly_spent += user_split_total
+            app.logger.debug(f"Month {month}: User split expenses = {user_split_total}")
+            
+            # 3. Get category splits for these categories
+            category_splits = CategorySplit.query.join(Expense).filter(
+                Expense.user_id == current_user.id,
+                Expense.date >= month_start,
+                Expense.date <= month_end,
+                CategorySplit.category_id.in_(category_ids)
+            ).all()
+            
+            # Group by expense to avoid double counting
+            expense_splits = {}
+            for split in category_splits:
+                if split.expense_id not in expense_splits:
+                    expense_splits[split.expense_id] = []
+                expense_splits[split.expense_id].append(split)
+            
+            # Process each expense with category splits
+            category_split_total = 0
+            for expense_id, splits in expense_splits.items():
+                try:
+                    # Get the expense
+                    expense = Expense.query.get(expense_id)
+                    if not expense:
+                        continue
+                    
+                    # Calculate total relevant split amount
+                    relevant_amount = sum(split.amount for split in splits)
+                    
+                    # If expense also has user splits, calculate user's portion
+                    if expense.split_with and expense.split_with.strip():
+                        split_info = expense.calculate_splits()
+                        if not split_info:
+                            # If no split info, treat as full amount
+                            category_split_total += relevant_amount
+                            continue
+                        
+                        # Calculate user's percentage of the total expense
+                        user_percentage = 0
+                        
+                        # Check if user is payer and not in split list
+                        if expense.paid_by == current_user.id and current_user.id not in expense.split_with.split(','):
+                            user_percentage = split_info['payer']['amount'] / expense.amount if expense.amount > 0 else 0
+                        else:
+                            # Look for user in splits
+                            for split in split_info['splits']:
+                                if split['email'] == current_user.id:
+                                    user_percentage = split['amount'] / expense.amount if expense.amount > 0 else 0
+                                    break
+                        
+                        # Apply user's percentage to the category amount
+                        user_portion = relevant_amount * user_percentage
+                        category_split_total += user_portion
+                        app.logger.debug(f"Expense {expense_id}: User percentage {user_percentage}, Amount {relevant_amount}, User portion {user_portion}")
+                        
+                    else:
+                        # No user splits, use the full category split amount
+                        category_split_total += relevant_amount
+                        
+                except Exception as e:
+                    app.logger.error(f"Error processing expense {expense_id} with category splits: {str(e)}")
+                    # Fallback: Just divide by number of participants
+                    expense = Expense.query.get(expense_id)
+                    if expense and expense.split_with:
+                        participants = 1 + len(expense.split_with.split(','))
+                        relevant_amount = sum(split.amount for split in splits)
+                        category_split_total += relevant_amount / participants
+                    else:
+                        # If no split info or can't get expense, add full amount
+                        category_split_total += sum(split.amount for split in splits)
+            
+            monthly_spent += category_split_total
+            app.logger.debug(f"Month {month}: Category split expenses = {category_split_total}")
+            
+            # Add the calculated amounts to the response
             response['actual'].append(monthly_spent)
             
             # Set color based on whether spending exceeds budget
             color = '#ef4444' if monthly_spent > monthly_budget else '#22c55e'
             response['colors'].append(color)
+            
+            app.logger.debug(f"Month {month}: Total monthly spent = {monthly_spent}, Budget = {monthly_budget}")
+            
+    # Debug log the final response data
+    app.logger.debug(f"Budget trends response: labels={response['labels']}")
+    app.logger.debug(f"Budget trends response: budget={response['budget']}")
+    app.logger.debug(f"Budget trends response: actual={response['actual']}")
     
     return jsonify(response)
 
+
 @app.route('/budgets/transactions/<int:budget_id>')
 @login_required_dev
+@demo_time_limited
 def budget_transactions(budget_id):
-    """Get transactions related to a specific budget"""
+    """Get transactions related to a specific budget with proper split handling"""
     # Get the budget
     budget = Budget.query.get_or_404(budget_id)
     
@@ -7557,53 +9127,157 @@ def budget_transactions(budget_id):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
     
-    # Query construction depends on whether to include subcategories
+    transactions = []
+    
+    # Create list of categories to include
+    category_ids = [budget.category_id]
     if budget.include_subcategories and budget.category:
-        # Get all subcategory IDs
-        subcategory_ids = [subcat.id for subcat in budget.category.subcategories]
-        
-        # Create category filter
-        category_filter = [budget.category_id]
-        if subcategory_ids:
-            category_filter.extend(subcategory_ids)
-        
-        expenses = Expense.query.filter(
-            Expense.user_id == current_user.id,
-            Expense.date >= start_date,
-            Expense.category_id.in_(category_filter)
-        ).order_by(Expense.date.desc()).limit(50).all()
-    else:
-        # Only include parent category
-        expenses = Expense.query.filter(
-            Expense.user_id == current_user.id,
-            Expense.date >= start_date,
-            Expense.category_id == budget.category_id
-        ).order_by(Expense.date.desc()).limit(50).all()
+        category_ids.extend([subcat.id for subcat in budget.category.subcategories])
+    
+    # 1. Get expenses directly assigned to these categories (not split by category)
+    direct_expenses = Expense.query.filter(
+        Expense.user_id == current_user.id,
+        Expense.date >= start_date,
+        Expense.category_id.in_(category_ids),
+        Expense.has_category_splits == False
+    ).order_by(Expense.date.desc()).all()
+    
+    # 2. Get expenses with category splits for these categories
+    split_expenses_query = db.session.query(Expense).join(
+        CategorySplit, Expense.id == CategorySplit.expense_id
+    ).filter(
+        Expense.user_id == current_user.id,
+        Expense.date >= start_date,
+        CategorySplit.category_id.in_(category_ids)
+    ).order_by(Expense.date.desc()).distinct()
+    
+    # Combine and sort expenses by date
+    all_expenses = sorted(
+        list(direct_expenses) + list(split_expenses_query.all()),
+        key=lambda x: x.date,
+        reverse=True
+    )[:50]  # Limit to 50 transactions
     
     # Format transactions for the response
-    transactions = []
-    for expense in expenses:
+    for expense in all_expenses:
+        # Initialize basic transaction info
         transaction = {
             'id': expense.id,
             'description': expense.description,
-            'amount': expense.amount,
             'date': expense.date.strftime('%Y-%m-%d'),
-            'payment_method': expense.card_used,
-            'transaction_type': getattr(expense, 'transaction_type', 'expense')
+            'card_used': expense.card_used,
+            'transaction_type': expense.transaction_type,
+            'has_category_splits': expense.has_category_splits,
+            'has_user_splits': bool(expense.split_with and expense.split_with.strip())
         }
         
-        # Add category information
-        if expense.category_id and expense.category:
-            transaction['category_name'] = expense.category.name
-            transaction['category_icon'] = expense.category.icon
-            transaction['category_color'] = expense.category.color
+        # Get split information if needed
+        split_info = expense.calculate_splits() if transaction['has_user_splits'] else None
+        
+        # Handle amount based on split type
+        if expense.has_category_splits:
+            # Get category splits relevant to this budget
+            relevant_cat_splits = CategorySplit.query.filter(
+                CategorySplit.expense_id == expense.id,
+                CategorySplit.category_id.in_(category_ids)
+            ).all()
+            
+            # Calculate relevant category amount
+            relevant_cat_amount = sum(split.amount for split in relevant_cat_splits)
+            
+            # If expense also has user splits, calculate the user's portion
+            if transaction['has_user_splits'] and split_info:
+                # Calculate user's percentage of the total expense
+                user_percentage = 0
+                
+                # Check if user is payer and not in split list
+                if expense.paid_by == current_user.id and current_user.id not in expense.split_with.split(','):
+                    user_percentage = split_info['payer']['amount'] / expense.amount if expense.amount > 0 else 0
+                else:
+                    # Look for user in splits
+                    for split in split_info['splits']:
+                        if split['email'] == current_user.id:
+                            user_percentage = split['amount'] / expense.amount if expense.amount > 0 else 0
+                            break
+                
+                # Apply user's percentage to the category amount
+                transaction['amount'] = relevant_cat_amount * user_percentage
+                
+                # Add split details for display
+                transaction['split_details'] = {
+                    'total_users': len(split_info['splits']) + (1 if split_info['payer']['amount'] > 0 else 0),
+                    'user_portion_percentage': user_percentage * 100,
+                    'category_amount': relevant_cat_amount,
+                    'user_amount': transaction['amount'],
+                    'total_amount': expense.amount
+                }
+            else:
+                # No user splits, use the full category amount
+                transaction['amount'] = relevant_cat_amount
+            
+            # Add category information from the first relevant split
+            if relevant_cat_splits:
+                cat_id = relevant_cat_splits[0].category_id
+                category = Category.query.get(cat_id)
+                if category:
+                    transaction['category_name'] = category.name
+                    transaction['category_icon'] = category.icon
+                    transaction['category_color'] = category.color
+                else:
+                    transaction['category_name'] = 'Split Category'
+                    transaction['category_icon'] = 'fa-tags'
+                    transaction['category_color'] = '#6c757d'
         else:
-            transaction['category_name'] = 'Uncategorized'
-            transaction['category_icon'] = 'fa-tag'
-            transaction['category_color'] = '#6c757d'
+            # For non-category-split expenses
+            if transaction['has_user_splits'] and split_info:
+                # Calculate user's portion
+                user_amount = 0
+                
+                # Check if user is payer and not in split list
+                if expense.paid_by == current_user.id and current_user.id not in expense.split_with.split(','):
+                    user_amount = split_info['payer']['amount']
+                else:
+                    # Look for user in splits
+                    for split in split_info['splits']:
+                        if split['email'] == current_user.id:
+                            user_amount = split['amount']
+                            break
+                
+                transaction['amount'] = user_amount
+                
+                # Add split details for display
+                total_users = len(split_info['splits']) + (1 if split_info['payer']['amount'] > 0 else 0)
+                transaction['split_details'] = {
+                    'total_users': total_users,
+                    'user_portion_percentage': (user_amount / expense.amount * 100) if expense.amount > 0 else 0,
+                    'user_amount': user_amount,
+                    'total_amount': expense.amount
+                }
+            else:
+                # Regular non-split expense, use the full amount
+                transaction['amount'] = expense.amount
+            
+            # Add category information
+            if expense.category_id:
+                category = Category.query.get(expense.category_id)
+                if category:
+                    transaction['category_name'] = category.name
+                    transaction['category_icon'] = category.icon
+                    transaction['category_color'] = category.color
+                else:
+                    transaction['category_name'] = 'Uncategorized'
+                    transaction['category_icon'] = 'fa-tag'
+                    transaction['category_color'] = '#6c757d'
+            else:
+                transaction['category_name'] = 'Uncategorized'
+                transaction['category_icon'] = 'fa-tag'
+                transaction['category_color'] = '#6c757d'
+        
+        # Add the original total amount for reference
+        transaction['original_amount'] = expense.amount
         
         # Add tags if available
-        if hasattr(expense, 'tags'):
+        if hasattr(expense, 'tags') and expense.tags:
             transaction['tags'] = [tag.name for tag in expense.tags]
         
         transactions.append(transaction)
@@ -7613,6 +9287,61 @@ def budget_transactions(budget_id):
         'budget_id': budget_id,
         'budget_name': budget.name or (budget.category.name if budget.category else "Budget")
     })
+
+
+@app.route('/budgets/summary-data')
+@login_required_dev
+def budget_summary_data():
+    """Get budget summary data for charts and displays"""
+    try:
+        # Get all active monthly budgets
+        monthly_budgets = Budget.query.filter_by(
+            user_id=current_user.id,
+            period='monthly',
+            active=True
+        ).all()
+        
+        # Calculate totals
+        total_budget = sum(budget.amount for budget in monthly_budgets)
+        total_spent = sum(budget.calculate_spent_amount() for budget in monthly_budgets)
+        
+        # Get budgets with their data
+        budget_data = []
+        for budget in monthly_budgets:
+            spent = budget.calculate_spent_amount()
+            percentage = budget.get_progress_percentage()
+            status = budget.get_status()
+            
+            # Get category info
+            category = Category.query.get(budget.category_id)
+            category_name = category.name if category else "Unknown"
+            category_color = category.color if category else "#6c757d"
+            
+            budget_data.append({
+                'id': budget.id,
+                'name': budget.name or category_name,
+                'amount': budget.amount,
+                'spent': spent,
+                'percentage': percentage,
+                'status': status,
+                'color': category_color
+            })
+        
+        return jsonify({
+            'success': True,
+            'total_budget': total_budget,
+            'total_spent': total_spent,
+            'budgets': budget_data
+        })
+            
+    except Exception as e:
+        app.logger.error(f"Error retrieving budget summary data: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+    
+    
 @app.route('/api/categories')
 @login_required_dev
 def get_categories_api():
@@ -8016,7 +9745,6 @@ def send_automatic_monthly_reports():
 #--------------------
 # # statss
 #--------------------
-
 @app.route('/stats')
 @login_required_dev
 def stats():
@@ -8067,7 +9795,7 @@ def stats():
             query_filters.append(Expense.group_id == group_id)
     
     # Execute the query with all filters
-    expenses = Expense.query.filter(and_(*query_filters)).order_by(Expense.date).all()
+    expenses = Expense.query.filter(and_(*query_filters)).order_by(Expense.date.desc()).all()
     
     # Get all settlements in the date range
     settlement_filters = [
@@ -8083,6 +9811,28 @@ def stats():
     # USER-CENTRIC: Calculate only the current user's expenses
     current_user_expenses = []
     total_user_expenses = 0
+    
+    # Initialize monthly data structures BEFORE the loop
+    monthly_spending = {}
+    monthly_income = {}  # New dictionary to track income
+    monthly_labels = []
+    monthly_amounts = []
+    monthly_income_amounts = []  # New array for chart
+
+    # Initialize all months in range
+    current_date = start_date.replace(day=1)
+    while current_date <= end_date:
+        month_key = current_date.strftime('%Y-%m')
+        month_label = current_date.strftime('%b %Y')
+        monthly_labels.append(month_label)
+        monthly_spending[month_key] = 0
+        monthly_income[month_key] = 0  # Initialize income for this month
+        
+        # Advance to next month
+        if current_date.month == 12:
+            current_date = current_date.replace(year=current_date.year + 1, month=1)
+        else:
+            current_date = current_date.replace(month=current_date.month + 1)
     
     for expense in expenses:
         # Calculate splits for this expense
@@ -8116,6 +9866,23 @@ def stats():
                 'group_name': expense.group.name if expense.group else None
             }
             
+            if hasattr(expense, 'transaction_type'):
+                expense_data['transaction_type'] = expense.transaction_type
+            else:
+                # Default to 'expense' for backward compatibility
+                expense_data['transaction_type'] = 'expense'
+            
+            # Format amounts based on transaction type
+            if expense_data['transaction_type'] == 'income':
+                expense_data['formatted_amount'] = f"+{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#10b981'  # Green
+            elif expense_data['transaction_type'] == 'transfer':
+                expense_data['formatted_amount'] = f"{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#a855f7'  # Purple
+            else:  # Expense (default)
+                expense_data['formatted_amount'] = f"-{base_currency['symbol']}{expense_data['user_portion']:.2f}"
+                expense_data['amount_color'] = '#ef4444'  # Red
+
             # Add category information for the expense
             if hasattr(expense, 'category_id') and expense.category_id:
                 category = Category.query.get(expense.category_id)
@@ -8132,36 +9899,21 @@ def stats():
             
             # Add to user's total
             total_user_expenses += user_portion
-    
-    # Calculate monthly spending for current user
-    monthly_spending = {}
-    monthly_labels = []
-    monthly_amounts = []
-    
-    # Initialize all months in range
-    current_date = start_date.replace(day=1)
-    while current_date <= end_date:
-        month_key = current_date.strftime('%Y-%m')
-        month_label = current_date.strftime('%b %Y')
-        monthly_labels.append(month_label)
-        monthly_spending[month_key] = 0
-        
-        # Advance to next month
-        if current_date.month == 12:
-            current_date = current_date.replace(year=current_date.year + 1, month=1)
-        else:
-            current_date = current_date.replace(month=current_date.month + 1)
-    
-    # Fill in spending data
-    for expense_data in current_user_expenses:
-        month_key = expense_data['date'].strftime('%Y-%m')
-        if month_key in monthly_spending:
-            monthly_spending[month_key] += expense_data['user_portion']
-    
+
+            # Add to monthly spending or income based on transaction type
+            month_key = expense_data['date'].strftime('%Y-%m')
+            if month_key in monthly_spending:
+                # Separate income and expense transactions
+                if expense_data.get('transaction_type') == 'income':
+                    monthly_income[month_key] += expense_data['user_portion']
+                else:  # 'expense' or 'transfer' or None (legacy expenses)
+                    monthly_spending[month_key] += expense_data['user_portion']
+
     # Prepare chart data in correct order
     for month_key in sorted(monthly_spending.keys()):
         monthly_amounts.append(monthly_spending[month_key])
-    
+        monthly_income_amounts.append(monthly_income[month_key])
+            
     # Calculate spending trend compared to previous period
     previous_period_start = start_date - (end_date - start_date)
     previous_period_filters = [
@@ -8173,9 +9925,12 @@ def stats():
         Expense.date < start_date
     ]
     
-    previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
+    # Initialize previous_total before querying
     previous_total = 0
     
+    previous_expenses = Expense.query.filter(and_(*previous_period_filters)).all()
+    
+    # Process previous expenses and calculate total
     for expense in previous_expenses:
         splits = expense.calculate_splits()
         user_portion = 0
@@ -8190,6 +9945,7 @@ def stats():
         
         previous_total += user_portion
     
+    # Then calculate spending trend
     if previous_total > 0:
         spending_trend = ((total_user_expenses - previous_total) / previous_total) * 100
     else:
@@ -8336,8 +10092,7 @@ def stats():
         group_totals.append(group_total)
     
     # Top expenses for the table - show user's portion
-    top_expenses = sorted(current_user_expenses, key=lambda x: x['user_portion'], reverse=True)[:10]  # Top 10
-
+    top_expenses = sorted(current_user_expenses, key=lambda x: x['date'], reverse=True)[:10]
 
     user_categories = {}
     
@@ -8478,19 +10233,12 @@ def stats():
     
     app.logger.info(f"Tag names: {tag_names}")
     app.logger.info(f"Tag totals: {tag_totals}")
-    expenses = Expense.query.filter(
-        or_(
-            Expense.user_id == current_user.id,
-            Expense.split_with.like(f'%{current_user.id}%')
-        )
-    ).order_by(Expense.date.desc()).all()
     
-    # Initialize new variables
+    # Calculate totals for each transaction type
     total_expenses_only = 0
     total_income = 0
     total_transfers = 0
     
-    # Calculate totals for each transaction type
     for expense in expenses:
         if hasattr(expense, 'transaction_type'):
             if expense.transaction_type == 'expense' or expense.transaction_type is None:
@@ -8523,13 +10271,17 @@ def stats():
     liquidity_ratio = 3.5  # Example value
     account_growth = 7.8  # Example value
 
+    user_accounts = Account.query.filter_by(user_id=current_user.id).all()
+
     return render_template('stats.html',
+                           user_accounts=user_accounts,
                           expenses=expenses,
                           total_expenses=total_user_expenses,  # User's spending only
                           spending_trend=spending_trend,
                           net_balance=net_balance,
                           balance_count=balance_count,
                           monthly_average=monthly_average,
+                          monthly_income=monthly_income_amounts,
                           month_count=month_count,
                           largest_expense=largest_expense,
                           monthly_labels=monthly_labels,
@@ -8561,7 +10313,6 @@ def stats():
                           tag_totals=tag_totals,
                           tag_colors=tag_colors)
 
-  
 def handle_comparison_request():
     """Handle time frame comparison requests within the stats route"""
     # Get parameters from request
@@ -8585,13 +10336,16 @@ def handle_comparison_request():
         'primary': {
             'totalSpending': 0,
             'transactionCount': 0,
-            'topCategory': 'None'
+            'topCategory': 'None',
+            'dailyAmounts': []  # Make sure this is initialized
         },
         'comparison': {
             'totalSpending': 0,
             'transactionCount': 0,
-            'topCategory': 'None'
-        }
+            'topCategory': 'None',
+            'dailyAmounts': []  # Make sure this is initialized
+        },
+        'dateLabels': []  # Initialize date labels
     }
     
     # Get expenses for both periods - reuse your existing query logic
@@ -8615,7 +10369,7 @@ def handle_comparison_request():
     ]
     comparison_expenses_raw = Expense.query.filter(and_(*comparison_query_filters)).order_by(Expense.date).all()
     
-    # Process expenses to get user's portion - similar to your existing code
+    # Process expenses to get user's portion
     primary_expenses = []
     comparison_expenses = []
     primary_total = 0
@@ -8681,7 +10435,7 @@ def handle_comparison_request():
     
     # Process data based on the selected metric
     if metric == 'spending':
-        # Daily spending data
+        # Calculate daily spending for each period
         primary_daily = process_daily_spending(primary_expenses, primary_start_date, primary_end_date)
         comparison_daily = process_daily_spending(comparison_expenses, comparison_start_date, comparison_end_date)
         
@@ -8689,6 +10443,10 @@ def handle_comparison_request():
         result['primary']['dailyAmounts'] = normalize_time_series(primary_daily, 10)
         result['comparison']['dailyAmounts'] = normalize_time_series(comparison_daily, 10)
         result['dateLabels'] = [f'Day {i+1}' for i in range(10)]
+        
+        # Debugging - log the daily spending data
+        app.logger.info(f"Primary daily amounts: {result['primary']['dailyAmounts']}")
+        app.logger.info(f"Comparison daily amounts: {result['comparison']['dailyAmounts']}")
         
     elif metric == 'categories':
         # Get category spending for both periods
@@ -8727,7 +10485,6 @@ def handle_comparison_request():
         
     elif metric == 'tags':
         # Similar logic for tags - adapt based on your data model
-        # You'll need to adjust this based on how tags are stored in your database
         primary_tags = {}
         comparison_tags = {}
         
@@ -8796,6 +10553,49 @@ def handle_comparison_request():
         result['comparison']['paymentAmounts'] = [comparison_payment.get(method, 0) for method in all_methods]
     
     return jsonify(result)
+
+# Helper functions for the comparison feature
+
+def process_daily_spending(expenses, start_date, end_date):
+    """Process expenses into daily totals"""
+    # Calculate number of days in period
+    days = (end_date - start_date).days + 1
+    daily_spending = [0] * days
+    
+    for expense in expenses:
+        # Calculate day index
+        day_index = (expense['date'] - start_date).days
+        if 0 <= day_index < days:
+            daily_spending[day_index] += expense['user_portion']
+    
+    return daily_spending
+
+def normalize_time_series(data, target_length):
+    """Normalize a time series to a target length for better comparison"""
+    if len(data) == 0:
+        return [0] * target_length
+    
+    if len(data) == target_length:
+        return data
+    
+    # Use resampling to normalize the data
+    result = []
+    ratio = len(data) / target_length
+    
+    for i in range(target_length):
+        start_idx = int(i * ratio)
+        end_idx = int((i + 1) * ratio)
+        if end_idx > len(data):
+            end_idx = len(data)
+        
+        if start_idx == end_idx:
+            segment_avg = data[start_idx] if start_idx < len(data) else 0
+        else:
+            segment_avg = sum(data[start_idx:end_idx]) / (end_idx - start_idx)
+        
+        result.append(segment_avg)
+    
+    return result
 
 
 def get_category_name(expense):

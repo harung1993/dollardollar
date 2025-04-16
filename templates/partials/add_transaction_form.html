@@ -76,6 +76,7 @@
         </div>
     </div>
     
+    
     <div class="row expense-only-fields">
         <div class="col-md-6 mb-3">
             <label for="paid_by" class="form-label">Paid By</label>
@@ -107,7 +108,7 @@
                     <label class="form-check-label" for="personal_expense">Personal expense</label>
                 </div>
             </div>
-            <select class="form-select bg-dark text-light" id="split_with" name="split_with" multiple>
+            <select class="form-select bg-dark text-light enhanced-multi-select" id="split_with" name="split_with" multiple>
                 {% for user in users %}
                     <option value="{{ user.id }}">{{ user.name }}</option>
                 {% endfor %}
@@ -144,4 +145,9 @@
         <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('addTransactionPanel')">Cancel</button>
         <button type="submit" class="btn btn-primary">Add Transaction</button>
     </div>
+    <div id="currency-data" data-symbol="{{ base_currency.symbol }}"></div>
 </form>
+<script>
+    window.baseCurrencySymbol = "{{ base_currency.symbol }}";
+    
+</script>

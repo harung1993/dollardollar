@@ -59,10 +59,20 @@
                             <td class="text-white">{{ user.name }}</td>
                             <td class="text-white">{{ user.id }}</td>
                             <td>
-                                {% if user.is_admin %}
-                                    <span class="badge bg-success">Admin</span>
+                                {% if user.id != current_user.id %}
+                                <form method="POST" action="{{ url_for('admin_toggle_admin_status', user_id=user.id) }}" style="display: inline;">
+                                    {% if user.is_admin %}
+                                        <button type="submit" class="btn btn-sm btn-success">
+                                            Admin <i class="fas fa-toggle-on"></i>
+                                        </button>
+                                    {% else %}
+                                        <button type="submit" class="btn btn-sm btn-secondary">
+                                            User <i class="fas fa-toggle-off"></i>
+                                        </button>
+                                    {% endif %}
+                                </form>
                                 {% else %}
-                                    <span class="badge bg-secondary">User</span>
+                                    <span class="badge bg-success">Admin (You)</span>
                                 {% endif %}
                             </td>
                             <td>
