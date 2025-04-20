@@ -14,24 +14,22 @@ from flask import (
 )
 import re
 from flask_login import (
-    UserMixin,
     login_user,
     login_required,
     logout_user,
     current_user,
 )
-from werkzeug.security import generate_password_hash, check_password_hash
+
 from datetime import datetime
 import calendar
 from functools import wraps
 import logging
 from sqlalchemy import func, or_, and_
-import secrets
 from flask_mail import Message
-from flask_migrate import Migrate
 import ssl
 import requests
 from sqlalchemy import inspect, text
+import extensions
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
 from datetime import datetime, timedelta
@@ -42,35 +40,25 @@ import base64
 import pytz
 from config import get_config
 from extensions import db, login_manager, mail, migrate, scheduler
-import csv
 import re
-import io
 import json
-import uuid
 import base64
 import pytz
-import secrets
 import logging
-import hashlib
 import requests
 import calendar
 from functools import wraps
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 import ssl
 import ssl
 
-from dotenv import load_dotenv
 from flask import Flask, render_template, send_file, request, jsonify, url_for, flash, redirect, session
-from flask_apscheduler import APScheduler
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from flask_mail import Mail, Message
-from flask_migrate import Migrate
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import login_user, login_required, logout_user, current_user
+from flask_mail import Message
 from sqlalchemy import func, or_, and_, inspect, text
 
-from recurring_detection import detect_recurring_transactions, create_recurring_expense_from_detection
+from recurring_detection import detect_recurring_transactions
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
 from simplefin_client import SimpleFin
@@ -90,21 +78,17 @@ from flask import (
 )
 import re
 from flask_login import (
-    UserMixin,
     login_user,
     login_required,
     logout_user,
     current_user,
 )
-from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import calendar
 from functools import wraps
 import logging
 from sqlalchemy import func, or_, and_
-import secrets
 from flask_mail import Message
-from flask_migrate import Migrate
 import ssl
 import requests
 from sqlalchemy import inspect, text
@@ -118,6 +102,8 @@ import base64
 import pytz
 from config import get_config
 from extensions import db, login_manager, mail, migrate, scheduler
+
+from models import Account, Budget, Category, CategoryMapping, CategorySplit, Currency, Expense, Group, IgnoredRecurringPattern, RecurringExpense, Settlement, User
 
 # Development user credentials from environment
 DEV_USER_EMAIL = os.getenv('DEV_USER_EMAIL', 'dev@example.com')
@@ -153,7 +139,7 @@ logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
 app.config['SIMPLEFIN_ENABLED'] = os.getenv('SIMPLEFIN_ENABLED', 'True').lower() == 'true'
 app.config['SIMPLEFIN_SETUP_TOKEN_URL'] = os.getenv('SIMPLEFIN_SETUP_TOKEN_URL', 'https://beta-bridge.simplefin.org/setup-token')
 
-
+app.config['GOCARDLESS_ENABLED'] = os.getenv('GOCARDLESS_ENABLED', 'True').lower() == 'true'
 
 # Email configuration from environment variables
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
@@ -167,7 +153,7 @@ app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', os.getenv('
 app.config['TIMEZONE'] = 'EST'  # Default timezone
 
 # Initialize scheduler
-scheduler = APScheduler()
+# scheduler = APScheduler()
 scheduler.timezone = pytz.timezone('EST') # Explicitly set scheduler to use EST
 scheduler.init_app(app)
 logging.basicConfig(level=getattr(logging, app.config['LOG_LEVEL']))
@@ -184,13 +170,13 @@ scheduler.start()
 simplefin_client = SimpleFin(app)
 
 oidc_enabled = setup_oidc_config(app)
-db = SQLAlchemy(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+# db = SQLAlchemy(app)
+# login_manager = LoginManager()
+# login_manager.init_app(app)
+# login_manager.login_view = 'login'
 
 
-migrate = Migrate(app, db)
+# migrate = Migrate(app, db)
 
 
 # Initialize demo timeout middleware
@@ -211,745 +197,9 @@ app.extensions['demo_timeout'] = demo_timeout  # Store for access in decorator
 #--------------------
 
 # Group-User Association Table
-group_users = db.Table('group_users',
-    db.Column('group_id', db.Integer, db.ForeignKey('groups.id'), primary_key=True),
-    db.Column('user_id', db.String(120), db.ForeignKey('users.id'), primary_key=True)
-)
-
-class Group(db.Model):
-    __tablename__ = 'groups'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    created_by = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    members = db.relationship('User', secondary=group_users, lazy='subquery',
-        backref=db.backref('groups', lazy=True))
-    expenses = db.relationship('Expense', backref='group', lazy=True)
-
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.String(120), primary_key=True)  # Using email as ID
-    password_hash = db.Column(db.String(256))
-    name = db.Column(db.String(100))
-    is_admin = db.Column(db.Boolean, default=False)
-    reset_token = db.Column(db.String(100), nullable=True)
-    reset_token_expiry = db.Column(db.DateTime, nullable=True)
-    expenses = db.relationship('Expense', backref='user', lazy=True)
-    default_currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code'), nullable=True)
-    default_currency = db.relationship('Currency', backref=db.backref('users', lazy=True))
-    user_color = db.Column(db.String(7), default="#15803d")
-    created_groups = db.relationship('Group', backref='creator', lazy=True,
-        foreign_keys=[Group.created_by])
-    # OIDC related fields
-    oidc_id = db.Column(db.String(255), nullable=True, index=True, unique=True)
-    oidc_provider = db.Column(db.String(50), nullable=True)
-    last_login = db.Column(db.DateTime, nullable=True)   
-    monthly_report_enabled = db.Column(db.Boolean, default=True)     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    timezone = db.Column(db.String(50), nullable=True, default='UTC')
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password,method='pbkdf2:sha256')
-
-    def check_password(self, password):
-        try:
-            return check_password_hash(self.password_hash, password)
-        except ValueError:
-            return False
-        
-    def generate_reset_token(self):
-        """Generate a password reset token that expires in 1 hour"""
-        self.reset_token = secrets.token_urlsafe(32)
-        self.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
-        return self.reset_token
-        
-    def verify_reset_token(self, token):
-        """Verify if the provided token is valid and not expired"""
-        if not self.reset_token or self.reset_token != token:
-            return False
-        if not self.reset_token_expiry or self.reset_token_expiry < datetime.utcnow():
-            return False
-        return True
-        
-    def clear_reset_token(self):
-        """Clear the reset token and expiry after use"""
-        self.reset_token = None
-        self.reset_token_expiry = None
-
 
 if oidc_enabled:
-    User = extend_user_model(db, User)       
-
-
-
-
-class Settlement(db.Model):
-    __tablename__ = 'settlements'
-    id = db.Column(db.Integer, primary_key=True)
-    payer_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    receiver_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    description = db.Column(db.String(200), nullable=True, default="Settlement")
-    
-    # Relationships
-    payer = db.relationship('User', foreign_keys=[payer_id], backref=db.backref('settlements_paid', lazy=True))
-    receiver = db.relationship('User', foreign_keys=[receiver_id], backref=db.backref('settlements_received', lazy=True))
-
-class Currency(db.Model):
-    __tablename__ = 'currencies'
-    code = db.Column(db.String(3), primary_key=True)  # ISO 4217 currency code (e.g., USD, EUR, GBP)
-    name = db.Column(db.String(50), nullable=False)
-    symbol = db.Column(db.String(5), nullable=False)
-    rate_to_base = db.Column(db.Float, nullable=False, default=1.0)  # Exchange rate to base currency
-    is_base = db.Column(db.Boolean, default=False)  # Whether this is the base currency
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    def __repr__(self):
-        return f"{self.code} ({self.symbol})"
-    
-expense_tags = db.Table('expense_tags',
-    db.Column('expense_id', db.Integer, db.ForeignKey('expenses.id'), primary_key=True),
-    db.Column('tag_id', db.Integer, db.ForeignKey('tags.id'), primary_key=True)
-)
-class Category(db.Model):
-    __tablename__ = 'categories'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False)
-    icon = db.Column(db.String(50), default="fa-tag")  # FontAwesome icon name
-    color = db.Column(db.String(20), default="#6c757d")
-    parent_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    is_system = db.Column(db.Boolean, default=False)  # System categories can't be deleted
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # Relationships
-    user = db.relationship('User', backref=db.backref('categories', lazy=True))
-    parent = db.relationship('Category', remote_side=[id], backref=db.backref('subcategories', lazy=True))
-    expenses = db.relationship('Expense', backref=db.backref('category', lazy=True))
-
-    def __repr__(self):
-        return f"<Category: {self.name}>"
-
-class CategorySplit(db.Model):
-    __tablename__ = 'category_splits'
-    id = db.Column(db.Integer, primary_key=True)
-    expense_id = db.Column(db.Integer, db.ForeignKey('expenses.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    description = db.Column(db.String(200), nullable=True)
-    
-    # Relationships
-    expense = db.relationship('Expense', backref=db.backref('category_splits', cascade='all, delete-orphan'))
-    category = db.relationship('Category', backref=db.backref('splits', lazy=True))
-
-class Account(db.Model):
-    __tablename__ = 'accounts'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(50), nullable=False)  # checking, savings, credit, etc.
-    institution = db.Column(db.String(100), nullable=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id', name='fk_account_user'), nullable=False)
-    balance = db.Column(db.Float, default=0.0)
-    currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code', name='fk_account_currency'), nullable=True)
-    last_sync = db.Column(db.DateTime, nullable=True)
-    import_source = db.Column(db.String(50), nullable=True)
-    # Relationships
-    user = db.relationship('User', backref=db.backref('accounts', lazy=True))
-    currency = db.relationship('Currency', backref=db.backref('accounts', lazy=True))
-    external_id = db.Column(db.String(200), nullable=True)  # Add this line
-    status = db.Column(db.String(20), nullable=True)  # Add this line too for 'active'/'inactive' status
-    
-    
-    def __repr__(self):
-        return f"<Account {self.name} ({self.type})>"
-
-
-
-class Expense(db.Model):
-    __tablename__ = 'expenses'
-    id = db.Column(db.Integer, primary_key=True)
-    description = db.Column(db.String(200), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    card_used = db.Column(db.String(150), nullable=False)
-    split_method = db.Column(db.String(20), nullable=False)  # 'equal', 'custom', 'percentage'
-    split_value = db.Column(db.Float)  # deprecated - kept for backward compatibility
-    paid_by = db.Column(db.String(50), nullable=False)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    group_id = db.Column(db.Integer, db.ForeignKey('groups.id'), nullable=True)
-    split_with = db.Column(db.String(500), nullable=True)  # Comma-separated list of user IDs
-    split_details = db.Column(db.Text, nullable=True)  # JSON string storing custom split values for each user
-    recurring_id = db.Column(db.Integer, db.ForeignKey('recurring_expenses.id'), nullable=True)
-    tags = db.relationship('Tag', secondary=expense_tags, lazy='subquery', 
-                   backref=db.backref('expenses', lazy=True))
-    # Add these fields to your existing Expense class:
-    currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code'), nullable=True)
-    original_amount = db.Column(db.Float, nullable=True) # Amount in original currency
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
-    currency = db.relationship('Currency', backref=db.backref('expenses', lazy=True))
-    #imports
-    transaction_type = db.Column(db.String(20), server_default='expense')  # 'expense', 'income', 'transfer'
-    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', name='fk_expense_account'), nullable=True)
-    external_id = db.Column(db.String(200), nullable=True)  # For tracking external transaction IDs
-    import_source = db.Column(db.String(50), nullable=True)  # 'csv', 'simplefin', 'manual'
-
-    account = db.relationship('Account', foreign_keys=[account_id], backref=db.backref('expenses', lazy=True))
-
-      # For transfers, we need a destination account
-    destination_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', name='fk_destination_account'), nullable=True)
-    destination_account = db.relationship('Account', foreign_keys=[destination_account_id], backref=db.backref('incoming_transfers', lazy=True))
-    
-    # Add to Expense class:
-    has_category_splits = db.Column(db.Boolean, default=False)
-    
-    @property
-    def is_income(self):
-        return self.transaction_type == 'income'
-    
-    @property
-    def is_transfer(self):
-        return self.transaction_type == 'transfer'
-    
-    @property
-    def is_expense(self):
-        return self.transaction_type == 'expense' or self.transaction_type is None
-
-    def calculate_splits(self):
-    
-        # Get the user who paid
-        payer = User.query.filter_by(id=self.paid_by).first()
-        payer_name = payer.name if payer else "Unknown"
-        payer_email = payer.id
-        
-        # Get all people this expense is split with
-        split_with_ids = self.split_with.split(',') if self.split_with else []
-        split_users = []
-        
-        for user_id in split_with_ids:
-            user = User.query.filter_by(id=user_id.strip()).first()
-            if user:
-                split_users.append({
-                    'id': user.id,
-                    'name': user.name,
-                    'email': user.id
-                })
-        
-        # Handle case where original_amount is None by using amount
-        original_amount = self.original_amount if self.original_amount is not None else self.amount
-        
-        # Set up result structure with both base and original currency
-        result = {
-            'payer': {
-                'name': payer_name, 
-                'email': payer_email,
-                'amount': 0,  # Base currency amount
-                'original_amount': original_amount,  # Original amount
-                'currency_code': self.currency_code  # Original currency code
-            },
-            'splits': []
-        }
-        
-        # Parse split details if available
-        split_details = {}
-        if self.split_details:
-            try:
-                if isinstance(self.split_details, str):
-                    import json
-                    split_details = json.loads(self.split_details)
-                elif isinstance(self.split_details, dict):
-                    split_details = self.split_details
-            except Exception as e:
-                # Log the error or handle it as appropriate
-                print(f"Error parsing split_details for expense {self.id}: {str(e)}")
-                split_details = {}
-        
-        if self.split_method == 'equal':
-            # Count participants (include payer only if not already in splits)
-            total_participants = len(split_users) + (1 if self.paid_by not in split_with_ids else 0)
-            
-            # Equal splits among all participants
-            per_person = self.amount / total_participants if total_participants > 0 else 0
-            per_person_original = original_amount / total_participants if total_participants > 0 else 0
-            
-            # Assign payer's portion (only if they're not already in the splits)
-            if self.paid_by not in split_with_ids:
-                result['payer']['amount'] = per_person
-            else:
-                result['payer']['amount'] = 0
-            
-            # Assign everyone else's portion
-            for user in split_users:
-                result['splits'].append({
-                    'name': user['name'],
-                    'email': user['email'],
-                    'amount': per_person,
-                    'original_amount': per_person_original,
-                    'currency_code': self.currency_code
-                })
-                    
-        elif self.split_method == 'percentage':
-            # Use per-user percentages if available in split_details
-            if split_details and isinstance(split_details, dict) and split_details.get('type') == 'percentage':
-                percentages = split_details.get('values', {})
-                total_assigned = 0
-                total_original_assigned = 0
-                
-                # Calculate payer's amount if specified
-                payer_percent = float(percentages.get(self.paid_by, 0))
-                payer_amount = (self.amount * payer_percent) / 100
-                payer_original_amount = (original_amount * payer_percent) / 100
-                
-                result['payer']['amount'] = payer_amount if self.paid_by not in split_with_ids else 0
-                total_assigned += payer_amount if self.paid_by not in split_with_ids else 0
-                total_original_assigned += payer_original_amount if self.paid_by not in split_with_ids else 0
-                
-                # Calculate each user's portion based on their percentage
-                for user in split_users:
-                    user_percent = float(percentages.get(user['id'], 0))
-                    user_amount = (self.amount * user_percent) / 100
-                    user_original_amount = (original_amount * user_percent) / 100
-                    
-                    result['splits'].append({
-                        'name': user['name'],
-                        'email': user['email'],
-                        'amount': user_amount,
-                        'original_amount': user_original_amount,
-                        'currency_code': self.currency_code
-                    })
-                    total_assigned += user_amount
-                    total_original_assigned += user_original_amount
-                
-                # Validate total (handle rounding errors)
-                if abs(total_assigned - self.amount) > 0.01:
-                    difference = self.amount - total_assigned
-                    if result['splits']:
-                        result['splits'][-1]['amount'] += difference
-                    elif result['payer']['amount'] > 0:
-                        result['payer']['amount'] += difference
-                
-            else:
-                # Backward compatibility mode
-                payer_percentage = self.split_value if self.split_value is not None else 0
-                payer_amount = (self.amount * payer_percentage) / 100
-                payer_original_amount = (original_amount * payer_percentage) / 100
-                
-                result['payer']['amount'] = payer_amount if self.paid_by not in split_with_ids else 0
-                
-                # Split remainder equally
-                remaining = self.amount - result['payer']['amount']
-                remaining_original = original_amount - payer_original_amount
-                per_person = remaining / len(split_users) if split_users else 0
-                per_person_original = remaining_original / len(split_users) if split_users else 0
-                
-                for user in split_users:
-                    result['splits'].append({
-                        'name': user['name'],
-                        'email': user['email'],
-                        'amount': per_person,
-                        'original_amount': per_person_original,
-                        'currency_code': self.currency_code
-                    })
-        
-        elif self.split_method == 'custom':
-            # Use per-user custom amounts if available in split_details
-            if split_details and isinstance(split_details, dict) and split_details.get('type') in ['amount', 'custom']:
-                amounts = split_details.get('values', {})
-                total_assigned = 0
-                total_original_assigned = 0
-                
-                # Set payer's amount if specified
-                payer_amount = float(amounts.get(self.paid_by, 0))
-                # For original amount, scale by the same proportion
-                payer_ratio = payer_amount / self.amount if self.amount else 0
-                payer_original_amount = original_amount * payer_ratio
-                
-                result['payer']['amount'] = payer_amount if self.paid_by not in split_with_ids else 0
-                total_assigned += payer_amount if self.paid_by not in split_with_ids else 0
-                
-                # Set each user's amount
-                for user in split_users:
-                    user_amount = float(amounts.get(user['id'], 0))
-                    # Scale original amount by same proportion
-                    user_ratio = user_amount / self.amount if self.amount else 0
-                    user_original_amount = original_amount * user_ratio
-                    
-                    result['splits'].append({
-                        'name': user['name'],
-                        'email': user['email'],
-                        'amount': user_amount,
-                        'original_amount': user_original_amount,
-                        'currency_code': self.currency_code
-                    })
-                    total_assigned += user_amount
-                
-                # Validate total (handle rounding errors)
-                if abs(total_assigned - self.amount) > 0.01:
-                    difference = self.amount - total_assigned
-                    if result['splits']:
-                        result['splits'][-1]['amount'] += difference
-                    elif result['payer']['amount'] > 0:
-                        result['payer']['amount'] += difference
-            else:
-                # Backward compatibility mode
-                payer_amount = self.split_value if self.split_value is not None else 0
-                # Calculate the ratio of payer amount to total
-                payer_ratio = payer_amount / self.amount if self.amount else 0
-                payer_original_amount = original_amount * payer_ratio
-                
-                result['payer']['amount'] = payer_amount if self.paid_by not in split_with_ids else 0
-                
-                # Split remainder equally
-                remaining = self.amount - result['payer']['amount']
-                remaining_original = original_amount - payer_original_amount
-                per_person = remaining / len(split_users) if split_users else 0
-                per_person_original = remaining_original / len(split_users) if split_users else 0
-                
-                for user in split_users:
-                    result['splits'].append({
-                        'name': user['name'],
-                        'email': user['email'],
-                        'amount': per_person,
-                        'original_amount': per_person_original,
-                        'currency_code': self.currency_code
-                    })
-
-        return result
-
-class RecurringExpense(db.Model):
-    __tablename__ = 'recurring_expenses'
-    id = db.Column(db.Integer, primary_key=True)
-    description = db.Column(db.String(200), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
-    card_used = db.Column(db.String(150), nullable=False)
-    split_method = db.Column(db.String(20), nullable=False)  # 'equal', 'custom', 'percentage'
-    split_value = db.Column(db.Float, nullable=True)
-    split_details = db.Column(db.Text, nullable=True)  # JSON string
-    paid_by = db.Column(db.String(50), nullable=False)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    group_id = db.Column(db.Integer, db.ForeignKey('groups.id'), nullable=True)
-    split_with = db.Column(db.String(500), nullable=True)  # Comma-separated list of user IDs
-    
-    # Recurring specific fields
-    frequency = db.Column(db.String(20), nullable=False)  # 'daily', 'weekly', 'monthly', 'yearly'
-    start_date = db.Column(db.DateTime, nullable=False)
-    end_date = db.Column(db.DateTime, nullable=True)  # Optional end date
-    last_created = db.Column(db.DateTime, nullable=True)  # Track last created instance
-    active = db.Column(db.Boolean, default=True)
-    
-    # Relationships
-    user = db.relationship('User', backref=db.backref('recurring_expenses', lazy=True))
-    group = db.relationship('Group', backref=db.backref('recurring_expenses', lazy=True))
-    expenses = db.relationship('Expense', backref=db.backref('recurring_source', lazy=True), 
-                              foreign_keys='Expense.recurring_id')
-    currency_code = db.Column(db.String(3), db.ForeignKey('currencies.code'), nullable=True)
-    original_amount = db.Column(db.Float, nullable=True)  # Amount in original currency
-    currency = db.relationship('Currency', backref=db.backref('recurring_expenses', lazy=True))
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
-    category = db.relationship('Category', backref=db.backref('recurring_expenses', lazy=True))
-
-
-    # Transaction type and account fields
-    transaction_type = db.Column(db.String(20), default='expense')  # 'expense', 'income', 'transfer'
-    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', name='fk_recurring_account'), nullable=True)
-    account = db.relationship('Account', foreign_keys=[account_id], backref=db.backref('recurring_expenses', lazy=True))
-    
-    # For transfers
-    destination_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id', name='fk_recurring_destination'), nullable=True)
-    destination_account = db.relationship('Account', foreign_keys=[destination_account_id], 
-                                         backref=db.backref('recurring_incoming_transfers', lazy=True))
-
-    def create_expense_instance(self, for_date=None):
-        """Create a single expense instance from this recurring template"""
-        if for_date is None:
-            for_date = datetime.utcnow()
-            
-        # Copy data to create a new expense
-        expense = Expense(
-            description=self.description,
-            amount=self.amount,
-            date=for_date,
-            card_used=self.card_used,
-            split_method=self.split_method,
-            split_value=self.split_value,
-            split_details=self.split_details,
-            paid_by=self.paid_by,
-            user_id=self.user_id,
-            group_id=self.group_id,
-            split_with=self.split_with,
-            category_id=self.category_id,
-            recurring_id=self.id,  # Link to this recurring expense
-            transaction_type=self.transaction_type,
-            account_id=self.account_id,
-            destination_account_id=self.destination_account_id if self.transaction_type == 'transfer' else None,
-            currency_code=self.currency_code,
-            original_amount=self.original_amount
-        )
-        
-        # Update the last created date
-        self.last_created = for_date
-        
-        return expense
-    
-
-
-class CategoryMapping(db.Model):
-    __tablename__ = 'category_mappings'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    keyword = db.Column(db.String(100), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=False)
-    is_regex = db.Column(db.Boolean, default=False)  # Whether the keyword is a regex pattern
-    priority = db.Column(db.Integer, default=0)  # Higher priority mappings take precedence
-    match_count = db.Column(db.Integer, default=0)  # How many times this mapping has been used
-    active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    user = db.relationship('User', backref=db.backref('category_mappings', lazy=True))
-    category = db.relationship('Category', backref=db.backref('mappings', lazy=True))
-    
-    def __repr__(self):
-        return f"<CategoryMapping: '{self.keyword}' → {self.category.name}>"
-
-
-
-# Tag-Expense Association Table
-
-class Tag(db.Model):
-    __tablename__ = 'tags'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), nullable=False, unique=True)
-    color = db.Column(db.String(20), default="#6c757d")  # Default color gray
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Relationship
-    user = db.relationship('User', backref=db.backref('tags', lazy=True))
-
-        
-
-
-
-
-class SimpleFin(db.Model):
-    """
-    Stores SimpleFin connection settings for a user
-    """
-    __tablename__ = 'SimpleFin'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False, unique=True)
-    access_url = db.Column(db.Text, nullable=False)  # Encoded/encrypted access URL
-    last_sync = db.Column(db.DateTime, nullable=True)
-    enabled = db.Column(db.Boolean, default=True)
-    sync_frequency = db.Column(db.String(20), default='daily')  # 'daily', 'weekly', etc.
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    temp_accounts = db.Column(db.Text, nullable=True)
-    # Relationship with User
-    user = db.relationship('User', backref=db.backref('SimpleFin', uselist=False, lazy=True))
-    
-    def __repr__(self):
-        return f"<SimpleFin settings for user {self.user_id}>"
-
-
-class IgnoredRecurringPattern(db.Model):
-    """
-    Stores patterns of recurring transactions that a user has chosen to ignore
-    """
-    __tablename__ = 'ignored_recurring_patterns'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    pattern_key = db.Column(db.String(255), nullable=False)  # Unique pattern identifier
-    description = db.Column(db.String(200), nullable=False)  # For reference
-    amount = db.Column(db.Float, nullable=False)
-    frequency = db.Column(db.String(20), nullable=False)
-    ignore_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    
-    # Relationship with User
-    user = db.relationship('User', backref=db.backref('ignored_patterns', lazy=True))
-    
-    # Ensure user can't ignore the same pattern twice
-    __table_args__ = (db.UniqueConstraint('user_id', 'pattern_key'),)
-    
-    def __repr__(self):
-        return f"<IgnoredPattern: {self.description} ({self.amount}) - {self.frequency}>"
-
-            
-     
-#--------------------
-# Budget
-#--------------------
-
-class Budget(db.Model):
-    __tablename__ = 'budgets'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=False)
-    name = db.Column(db.String(100), nullable=True)  # Optional custom name for the budget
-    amount = db.Column(db.Float, nullable=False)
-    period = db.Column(db.String(20), nullable=False)  # 'weekly', 'monthly', 'yearly'
-    include_subcategories = db.Column(db.Boolean, default=True)
-    start_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    is_recurring = db.Column(db.Boolean, default=True)
-    active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    user = db.relationship('User', backref=db.backref('budgets', lazy=True))
-    category = db.relationship('Category', backref=db.backref('budgets', lazy=True))
-
-    transaction_types = db.Column(db.String(100), default='expense')  # comma-separated list of types to include
-    
-    
-    def get_current_period_dates(self):
-        """Get start and end dates for the current budget period"""
-        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        if self.period == 'weekly':
-            # Start of the week (Monday)
-            start_of_week = today - timedelta(days=today.weekday())
-            end_of_week = start_of_week + timedelta(days=6, hours=23, minutes=59, seconds=59)
-            return start_of_week, end_of_week
-            
-        elif self.period == 'monthly':
-            # Start of the month
-            start_of_month = today.replace(day=1)
-            # End of the month
-            if today.month == 12:
-                end_of_month = today.replace(year=today.year + 1, month=1, day=1) - timedelta(seconds=1)
-            else:
-                end_of_month = today.replace(month=today.month + 1, day=1) - timedelta(seconds=1)
-            return start_of_month, end_of_month
-            
-        elif self.period == 'yearly':
-            # Start of the year
-            start_of_year = today.replace(month=1, day=1)
-            # End of the year
-            end_of_year = today.replace(year=today.year + 1, month=1, day=1) - timedelta(seconds=1)
-            return start_of_year, end_of_year
-            
-        # Default to current day
-        return today, today.replace(hour=23, minute=59, second=59)
-    
-    def calculate_spent_amount(self):
-        """Calculate how much has been spent in this budget's category during the current period"""
-        start_date, end_date = self.get_current_period_dates()
-        
-        # Base query: find all expenses in the relevant date range for this user
-        from sqlalchemy import or_
-        
-        if self.include_subcategories:
-            # If this is a parent category, include subcategories
-            subcategories = Category.query.filter_by(parent_id=self.category_id).all()
-            subcategory_ids = [subcat.id for subcat in subcategories]
-            
-            # Include the parent category itself and all subcategories
-            category_filter = or_(
-                Expense.category_id == self.category_id,
-                Expense.category_id.in_(subcategory_ids) if subcategory_ids else False
-            )
-        else:
-            # Only include this specific category
-            category_filter = (Expense.category_id == self.category_id)
-        
-        # Get all expenses that match our criteria
-        expenses = Expense.query.filter(
-            Expense.user_id == self.user_id,
-            Expense.date >= start_date,
-            Expense.date <= end_date,
-            category_filter
-        ).all()
-        
-        # Calculate the total spent for these expenses
-        total_spent = 0.0
-        
-        # Process each expense to calculate the user's portion
-        for expense in expenses:
-            # If the expense has category splits, we need a different approach
-            if expense.has_category_splits:
-                # Handle category splits separately
-                continue
-                
-            # Get the split information for this expense
-            splits = expense.calculate_splits()
-            
-            # If the user is the payer and not in the splits, add their portion
-            if expense.paid_by == self.user_id and (not expense.split_with or self.user_id not in expense.split_with.split(',')):
-                total_spent += splits['payer']['amount']
-            else:
-                # Check if the current user is in the splits
-                for split in splits['splits']:
-                    if split['email'] == self.user_id:
-                        total_spent += split['amount']
-                        break
-        
-        # Handle expenses with category splits
-        if self.include_subcategories:
-            category_ids = [self.category_id] + [subcat.id for subcat in subcategories]
-        else:
-            category_ids = [self.category_id]
-        
-        # Find all category splits for relevant categories
-        category_splits = CategorySplit.query.join(
-            Expense, CategorySplit.expense_id == Expense.id
-        ).filter(
-            Expense.user_id == self.user_id,
-            Expense.date >= start_date,
-            Expense.date <= end_date,
-            CategorySplit.category_id.in_(category_ids)
-        ).all()
-        
-        # Process each category split
-        for cat_split in category_splits:
-            expense = Expense.query.get(cat_split.expense_id)
-            if not expense:
-                continue
-                
-            # Get the split information for this expense
-            splits = expense.calculate_splits()
-            
-            # Calculate the user's share of this category split
-            if expense.paid_by == self.user_id and (not expense.split_with or self.user_id not in expense.split_with.split(',')):
-                # User is the payer and not in splits - add their portion
-                if expense.amount > 0:
-                    user_ratio = splits['payer']['amount'] / expense.amount
-                    total_spent += cat_split.amount * user_ratio
-            else:
-                # Check if the user is in the splits
-                for split in splits['splits']:
-                    if split['email'] == self.user_id:
-                        if expense.amount > 0:
-                            user_ratio = split['amount'] / expense.amount
-                            total_spent += cat_split.amount * user_ratio
-                        break
-        
-        return total_spent
-    
-    def get_remaining_amount(self):
-        """Calculate remaining budget amount"""
-        return self.amount - self.calculate_spent_amount()
-    
-    def get_progress_percentage(self):
-            spent = self.calculate_spent_amount()
-            if self.amount <= 0:
-                return 100  # Avoid division by zero
-            percentage = (spent / self.amount) * 100
-            return min(percentage, 100)  # Cap at 100%
-        
-    def get_status(self):
-        """Return the budget status: 'under', 'approaching', 'over'"""
-        percentage = self.get_progress_percentage()
-        if percentage >= 100:
-            return 'over'
-        elif percentage >= 80:
-            return 'approaching'
-        else:
-            return 'under'
-            
-
+    User = extend_user_model(db, User)
 
 #--------------------
 # AUTH AND UTILITIES
@@ -10759,8 +10009,12 @@ with app.app_context():
     try:
         print("Creating database tables...")
         db.create_all()
-        init_default_currencies()
+        extensions.init_db()
+        #init_default_currencies()
         print("Tables created successfully")
+        print(inspect(db.engine).get_table_names())
+        print(db.engine)
+        print(extensions.engine)
     except Exception as e:
         print(f"ERROR CREATING TABLES: {str(e)}")
 
