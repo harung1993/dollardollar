@@ -20,88 +20,29 @@ from flask_login import (
     current_user,
 )
 
-from datetime import datetime
 import calendar
-from functools import wraps
 import logging
-from sqlalchemy import func, or_, and_
 from flask_mail import Message
 import ssl
 import requests
-from sqlalchemy import inspect, text
-import extensions
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
-from datetime import datetime, timedelta
 from simplefin_client import SimpleFin
-from flask import session, request, jsonify, url_for, flash, redirect
-from datetime import datetime, timedelta
 import base64
 import pytz
 from config import get_config
 from extensions import db, login_manager, mail, migrate, scheduler
-import re
 import json
-import base64
-import pytz
-import logging
-import requests
-import calendar
-from functools import wraps
 from datetime import datetime, timedelta
 
-import ssl
-import ssl
 
-from flask import Flask, render_template, send_file, request, jsonify, url_for, flash, redirect, session
-from flask_login import login_user, login_required, logout_user, current_user
-from flask_mail import Message
 from sqlalchemy import func, or_, and_, inspect, text
 
-from recurring_detection import detect_recurring_transactions
-from oidc_auth import setup_oidc_config, register_oidc_routes
-from oidc_user import extend_user_model
-from simplefin_client import SimpleFin
-
+from recurring_detection import (create_recurring_expense_from_detection,
+                                 detect_recurring_transactions)
+from routes import register_blueprints
+from services.wrappers import login_required_dev, restrict_demo_access
 from session_timeout import DemoTimeout, demo_time_limited
-
-from flask import (
-    Flask,
-    render_template,
-    send_file,
-    request,
-    jsonify,
-    redirect,
-    url_for,
-    flash,
-    session,
-)
-import re
-from flask_login import (
-    login_user,
-    login_required,
-    logout_user,
-    current_user,
-)
-from datetime import datetime
-import calendar
-from functools import wraps
-import logging
-from sqlalchemy import func, or_, and_
-from flask_mail import Message
-import ssl
-import requests
-from sqlalchemy import inspect, text
-from oidc_auth import setup_oidc_config, register_oidc_routes
-from oidc_user import extend_user_model
-from datetime import datetime, timedelta
-from simplefin_client import SimpleFin
-from flask import session, request, jsonify, url_for, flash, redirect
-from datetime import datetime, timedelta
-import base64
-import pytz
-from config import get_config
-from extensions import db, login_manager, mail, migrate, scheduler
 
 from models import Account, Budget, Category, CategoryMapping, CategorySplit, Currency, Expense, Group, IgnoredRecurringPattern, RecurringExpense, Settlement, User
 
@@ -124,14 +65,14 @@ def create_app(config_object=None):
     if config_object is None:
         config_object = get_config()
     app.config.from_object(config_object)
-        
+    register_blueprints(app)        
     # Initialize extensions with the app
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
     mail.init_app(app)
     scheduler.init_app(app)
-
+    
     return app
 
 app = create_app()
@@ -205,28 +146,7 @@ if oidc_enabled:
 # AUTH AND UTILITIES
 #--------------------
 
-def login_required_dev(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if app.config['DEVELOPMENT_MODE']:
-            if not current_user.is_authenticated:
-                # Get or create dev user
-                dev_user = User.query.filter_by(id=DEV_USER_EMAIL).first()
-                if not dev_user:
-                    dev_user = User(
-                        id=DEV_USER_EMAIL,
-                        name='Developer',
-                        is_admin=True
-                    )
-                    dev_user.set_password(DEV_USER_PASSWORD)
-                    db.session.add(dev_user)
-                    db.session.commit()
-                # Auto login dev user
-                login_user(dev_user)
-            return f(*args, **kwargs)
-        # Normal authentication for non-dev mode - fixed implementation
-        return login_required(f)(*args, **kwargs)
-    return decorated_function
+
 
 @login_manager.user_loader
 def load_user(id):
@@ -254,14 +174,6 @@ def init_db():
             print("Development user created:", DEV_USER_EMAIL)
 
 
-def restrict_demo_access(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if current_user.is_authenticated and demo_timeout.is_demo_user(current_user.id):
-            flash('Demo users cannot access this page.')
-            return redirect(url_for('dashboard'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 #--------------------
@@ -1006,8 +918,8 @@ def create_default_categories(user_id):
 
 def create_default_budgets(user_id):
     """Create default budget templates for a new user, all deactivated by default"""
-    from app import db, Budget, Category
-    
+    from app import Budget, Category, db
+
     # Get the user's categories first
     categories = Category.query.filter_by(user_id=user_id).all()
     category_map = {}
@@ -1736,7 +1648,7 @@ def utility_processor():
         This ensures the same user always gets the same color
         """
         import hashlib
-        
+
         # Use MD5 hash to generate a consistent color
         hash_object = hashlib.md5(user_id.encode())
         hash_hex = hash_object.hexdigest()
@@ -1991,8 +1903,8 @@ def demo_thanks():
 # Demo data creation function
 def create_demo_data(user_id):
     """Create comprehensive sample data for demo users with proper checking"""
-    from datetime import datetime, timedelta
     import logging
+    from datetime import datetime, timedelta
     
     logger = logging.getLogger(__name__)
     logger.info(f"Starting demo data creation for user {user_id}")
@@ -2501,219 +2413,217 @@ def home():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
     return render_template('landing.html')
-@app.route('/signup', methods=['GET', 'POST'])
+#@app.route('/signup', methods=['GET', 'POST'])
+# def signup():
+#     # Check if local login is disabled
+#     local_login_disabled = app.config.get('LOCAL_LOGIN_DISABLE', False) and app.config.get('OIDC_ENABLED', False)
+    
+#     # Check if signups are disabled
+#     if app.config.get('DISABLE_SIGNUPS', False) and not app.config.get('DEVELOPMENT_MODE', False):
+#         flash('New account registration is currently disabled.')
+#         return redirect(url_for('login'))
+    
+#     # If local login is disabled, redirect to login with message
+#     if local_login_disabled:
+#         flash('Direct account creation is disabled. Please use SSO.')
+#         return redirect(url_for('login'))
+    
+#     # Redirect to dashboard if already logged in
+#     if current_user.is_authenticated:
+#         return redirect(url_for('dashboard'))
+        
+#     if request.method == 'POST':
+#         email = request.form.get('email')
+#         password = request.form.get('password')
+#         name = request.form.get('name')
+        
+#         if User.query.filter_by(id=email).first():
+#             flash('Email already registered')
+#             return redirect(url_for('signup'))
+        
+#         # Generate a consistent color for the user
+#         def generate_user_color(user_id):
+#             """
+#             Generate a consistent color for a user based on their ID
+#             """
+#             import hashlib
+            
+#             # Use MD5 hash to generate a consistent color
+#             hash_object = hashlib.md5(user_id.encode())
+#             hash_hex = hash_object.hexdigest()
+            
+#             # Use the first 6 characters of the hash to create a color
+#             r = int(hash_hex[:2], 16)
+#             g = int(hash_hex[2:4], 16)
+#             b = int(hash_hex[4:6], 16)
+            
+#             # Ensure the color is not too light
+#             brightness = (r * 299 + g * 587 + b * 114) / 1000
+#             if brightness > 180:
+#                 # If too bright, darken the color
+#                 r = min(int(r * 0.7), 255)
+#                 g = min(int(g * 0.7), 255)
+#                 b = min(int(b * 0.7), 255)
+            
+#             return f'#{r:02x}{g:02x}{b:02x}'
+        
+#         user = User(
+#             id=email, 
+#             name=name, 
+#             user_color=generate_user_color(email)
+#         )
+#         user.set_password(password)
+        
+#         # Make first user admin
+#         is_first_user = User.query.count() == 0
+#         if is_first_user:
+#             user.is_admin = True
+        
+#         db.session.add(user)
+#         db.session.commit()
+#         create_default_categories(user.id)
+#         create_default_budgets(user.id)
+#         # Send welcome email
+#         try:
+#             send_welcome_email(user)
+#         except Exception as e:
+#             app.logger.error(f"Failed to send welcome email: {str(e)}")
+        
+#         login_user(user)
+#         flash('Account created successfully!')
+#         return redirect(url_for('dashboard'))
+    
+#     return render_template('signup.html', 
+#                           oidc_enabled=app.config.get('OIDC_ENABLED', False),
+#                           local_login_disabled=local_login_disabled)
 
+# @app.route('/login', methods=['GET', 'POST'])
+# @restrict_demo_access
+# def login():
+#     # Check if we should show a logout message
+#     if session.pop('show_logout_message', False):
+#         flash('You have been successfully logged out. You can log in again below.')
+    
+#     # Check if local login is disabled
+#     oidc_enabled = app.config.get('OIDC_ENABLED', False)
+#     local_login_disable = app.config.get('LOCAL_LOGIN_DISABLE', False)
+#     local_login_disabled = local_login_disable and oidc_enabled
+    
+#     # Use development mode auto-login if enabled
+#     if app.config['DEVELOPMENT_MODE'] and not current_user.is_authenticated:
+#         dev_user = User.query.filter_by(id=DEV_USER_EMAIL).first()
+#         if not dev_user:
+#             dev_user = User(
+#                 id=DEV_USER_EMAIL,
+#                 name='Developer',
+#                 is_admin=True
+#             )
+#             dev_user.set_password(DEV_USER_PASSWORD)
+#             db.session.add(dev_user)
+#             db.session.commit()
+#         login_user(dev_user)
+#         return redirect(url_for('dashboard'))
+    
+#     # Redirect to dashboard if already logged in
+#     if current_user.is_authenticated:
+#         return redirect(url_for('dashboard'))
+    
+#     # Handle login form submission
+#     if request.method == 'POST':
+#         # If local login is disabled and user tries to use the form
+#         if local_login_disabled:
+#             flash(f'Password login is disabled. Please use {app.config.get("OIDC_PROVIDER_NAME", "SSO")}.')
+#             return redirect(url_for('login'))
+            
+#         email = request.form.get('email')
+#         password = request.form.get('password')
+#         user = User.query.filter_by(id=email).first()
+        
+#         if user and user.check_password(password):
+#             login_user(user)
+#             # Update last login time
+#             user.last_login = datetime.utcnow()
 
-def signup():
-    # Check if local login is disabled
-    local_login_disabled = app.config.get('LOCAL_LOGIN_DISABLE', False) and app.config.get('OIDC_ENABLED', False)
-    
-    # Check if signups are disabled
-    if app.config.get('DISABLE_SIGNUPS', False) and not app.config.get('DEVELOPMENT_MODE', False):
-        flash('New account registration is currently disabled.')
-        return redirect(url_for('login'))
-    
-    # If local login is disabled, redirect to login with message
-    if local_login_disabled:
-        flash('Direct account creation is disabled. Please use SSO.')
-        return redirect(url_for('login'))
-    
-    # Redirect to dashboard if already logged in
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-        
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        name = request.form.get('name')
-        
-        if User.query.filter_by(id=email).first():
-            flash('Email already registered')
-            return redirect(url_for('signup'))
-        
-        # Generate a consistent color for the user
-        def generate_user_color(user_id):
-            """
-            Generate a consistent color for a user based on their ID
-            """
-            import hashlib
-            
-            # Use MD5 hash to generate a consistent color
-            hash_object = hashlib.md5(user_id.encode())
-            hash_hex = hash_object.hexdigest()
-            
-            # Use the first 6 characters of the hash to create a color
-            r = int(hash_hex[:2], 16)
-            g = int(hash_hex[2:4], 16)
-            b = int(hash_hex[4:6], 16)
-            
-            # Ensure the color is not too light
-            brightness = (r * 299 + g * 587 + b * 114) / 1000
-            if brightness > 180:
-                # If too bright, darken the color
-                r = min(int(r * 0.7), 255)
-                g = min(int(g * 0.7), 255)
-                b = min(int(b * 0.7), 255)
-            
-            return f'#{r:02x}{g:02x}{b:02x}'
-        
-        user = User(
-            id=email, 
-            name=name, 
-            user_color=generate_user_color(email)
-        )
-        user.set_password(password)
-        
-        # Make first user admin
-        is_first_user = User.query.count() == 0
-        if is_first_user:
-            user.is_admin = True
-        
-        db.session.add(user)
-        db.session.commit()
-        create_default_categories(user.id)
-        create_default_budgets(user.id)
-        # Send welcome email
-        try:
-            send_welcome_email(user)
-        except Exception as e:
-            app.logger.error(f"Failed to send welcome email: {str(e)}")
-        
-        login_user(user)
-        flash('Account created successfully!')
-        return redirect(url_for('dashboard'))
-    
-    return render_template('signup.html', 
-                          oidc_enabled=app.config.get('OIDC_ENABLED', False),
-                          local_login_disabled=local_login_disabled)
-
-@app.route('/login', methods=['GET', 'POST'])
-@restrict_demo_access
-def login():
-    # Check if we should show a logout message
-    if session.pop('show_logout_message', False):
-        flash('You have been successfully logged out. You can log in again below.')
-    
-    # Check if local login is disabled
-    oidc_enabled = app.config.get('OIDC_ENABLED', False)
-    local_login_disable = app.config.get('LOCAL_LOGIN_DISABLE', False)
-    local_login_disabled = local_login_disable and oidc_enabled
-    
-    # Use development mode auto-login if enabled
-    if app.config['DEVELOPMENT_MODE'] and not current_user.is_authenticated:
-        dev_user = User.query.filter_by(id=DEV_USER_EMAIL).first()
-        if not dev_user:
-            dev_user = User(
-                id=DEV_USER_EMAIL,
-                name='Developer',
-                is_admin=True
-            )
-            dev_user.set_password(DEV_USER_PASSWORD)
-            db.session.add(dev_user)
-            db.session.commit()
-        login_user(dev_user)
-        return redirect(url_for('dashboard'))
-    
-    # Redirect to dashboard if already logged in
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    # Handle login form submission
-    if request.method == 'POST':
-        # If local login is disabled and user tries to use the form
-        if local_login_disabled:
-            flash(f'Password login is disabled. Please use {app.config.get("OIDC_PROVIDER_NAME", "SSO")}.')
-            return redirect(url_for('login'))
-            
-        email = request.form.get('email')
-        password = request.form.get('password')
-        user = User.query.filter_by(id=email).first()
-        
-        if user and user.check_password(password):
-            login_user(user)
-            # Update last login time
-            user.last_login = datetime.utcnow()
-
-            if app.config.get('SIMPLEFIN_ENABLED', False):
-                try:
-                    # Check if user has SimpleFin connection
-                    simplefin_settings = SimpleFin.query.filter_by(
-                        user_id=user.id, 
-                        enabled=True
-                    ).first()
+#             if app.config.get('SIMPLEFIN_ENABLED', False):
+#                 try:
+#                     # Check if user has SimpleFin connection
+#                     simplefin_settings = SimpleFin.query.filter_by(
+#                         user_id=user.id, 
+#                         enabled=True
+#                     ).first()
                     
-                    if simplefin_settings:
-                        # Check if last sync was more than 6 hours ago (or never)
-                        if not simplefin_settings.last_sync or (datetime.utcnow() - simplefin_settings.last_sync).total_seconds() > 6 * 3600:
-                            # Start sync in background thread to avoid slowing down login
-                            import threading
-                            sync_thread = threading.Thread(
-                                target=sync_simplefin_for_user,
-                                args=(user.id,)
-                            )
-                            sync_thread.daemon = True
-                            sync_thread.start()
+#                     if simplefin_settings:
+#                         # Check if last sync was more than 6 hours ago (or never)
+#                         if not simplefin_settings.last_sync or (datetime.utcnow() - simplefin_settings.last_sync).total_seconds() > 6 * 3600:
+#                             # Start sync in background thread to avoid slowing down login
+#                             import threading
+#                             sync_thread = threading.Thread(
+#                                 target=sync_simplefin_for_user,
+#                                 args=(user.id,)
+#                             )
+#                             sync_thread.daemon = True
+#                             sync_thread.start()
                             
-                            # Let user know syncing is happening
-                            flash('Your financial accounts are being synchronized in the background.')
-                except Exception as e:
-                    app.logger.error(f"Error checking SimpleFin sync status: {str(e)}")
-                    # Don't show error to user to keep login smooth
+#                             # Let user know syncing is happening
+#                             flash('Your financial accounts are being synchronized in the background.')
+#                 except Exception as e:
+#                     app.logger.error(f"Error checking SimpleFin sync status: {str(e)}")
+#                     # Don't show error to user to keep login smooth
 
-            import threading
-            detection_thread = threading.Thread(
-                target=detect_recurring_transactions,
-                args=(user.id,)
-            )
-            detection_thread.daemon = True
-            detection_thread.start()
+#             import threading
+#             detection_thread = threading.Thread(
+#                 target=detect_recurring_transactions,
+#                 args=(user.id,)
+#             )
+#             detection_thread.daemon = True
+#             detection_thread.start()
 
-            db.session.commit()
-            return redirect(url_for('dashboard'))
+#             db.session.commit()
+#             return redirect(url_for('dashboard'))
         
-        flash('Invalid email or password')
+#         flash('Invalid email or password')
     
-    # Render the login template with appropriate flags
-    return render_template('login.html', 
-                          signups_disabled=app.config.get('DISABLE_SIGNUPS', False),
-                          oidc_enabled=oidc_enabled,
-                          local_login_disabled=local_login_disabled)
+#     # Render the login template with appropriate flags
+#     return render_template('login.html', 
+#                           signups_disabled=app.config.get('DISABLE_SIGNUPS', False),
+#                           oidc_enabled=oidc_enabled,
+#                           local_login_disabled=local_login_disabled)
 
 
-@app.route('/logout')
-@login_required_dev
-def logout():
-    # If this is a demo user, handle demo-specific logout
-    demo_timeout = app.extensions.get('demo_timeout')
-    is_demo_user = False
+# @app.route('/logout')
+# @login_required_dev
+# def logout():
+#     # If this is a demo user, handle demo-specific logout
+#     demo_timeout = app.extensions.get('demo_timeout')
+#     is_demo_user = False
     
-    if (demo_timeout and 
-        current_user.is_authenticated and 
-        demo_timeout.is_demo_user(current_user.id)):
-        # Unregister the demo session
-        demo_timeout.unregister_demo_session(current_user.id)
+#     if (demo_timeout and 
+#         current_user.is_authenticated and 
+#         demo_timeout.is_demo_user(current_user.id)):
+#         # Unregister the demo session
+#         demo_timeout.unregister_demo_session(current_user.id)
         
-        # Reset demo data
-        reset_demo_data(current_user.id)
+#         # Reset demo data
+#         reset_demo_data(current_user.id)
         
-        # Mark as demo user for redirection
-        is_demo_user = True
+#         # Mark as demo user for redirection
+#         is_demo_user = True
     
-    # If user was logged in via OIDC, use the OIDC logout route
-    if hasattr(current_user, 'oidc_id') and current_user.oidc_id and app.config.get('OIDC_ENABLED', False):
-        return redirect(url_for('logout_oidc'))
+#     # If user was logged in via OIDC, use the OIDC logout route
+#     if hasattr(current_user, 'oidc_id') and current_user.oidc_id and app.config.get('OIDC_ENABLED', False):
+#         return redirect(url_for('logout_oidc'))
     
-    # Standard logout for local accounts
-    logout_user()
+#     # Standard logout for local accounts
+#     logout_user()
     
-    # Set a flag to show logout message on next login
-    session['show_logout_message'] = True
+#     # Set a flag to show logout message on next login
+#     session['show_logout_message'] = True
     
-    # Redirect demo users to thank you page
-    if is_demo_user:
-        return redirect(url_for('demo_thanks'))
+#     # Redirect demo users to thank you page
+#     if is_demo_user:
+#         return redirect(url_for('demo_thanks'))
     
-    return redirect(url_for('login'))
+#     return redirect(url_for('login'))
 
 
 
@@ -2971,6 +2881,7 @@ def dashboard():
                          now=now)
 
 from datetime import datetime
+
 
 def get_category_spending(expenses, expense_splits):
     current_month = datetime.now().month
@@ -5636,7 +5547,6 @@ def import_csv():
         # Parse CSV
         import csv
         import io
-        from datetime import datetime
         
         csv_reader = csv.DictReader(io.StringIO(file_content), delimiter=delimiter)
         
@@ -7138,8 +7048,9 @@ def export_transactions():
         # Import required libraries
         import csv
         import io
+
         from flask import send_file
-        
+
         # Build query with SQLAlchemy
         query = Expense.query.filter(
             or_(
@@ -7459,7 +7370,7 @@ def delete_category(category_id):
 def budgets():
     """View and manage budgets"""
     from datetime import datetime
-    
+
     # Get all budgets for the current user
     user_budgets = Budget.query.filter_by(user_id=current_user.id).order_by(Budget.created_at.desc()).all()
     
