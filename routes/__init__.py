@@ -1,6 +1,7 @@
 from flask import Flask
 
 from routes.auth_routes import auth_bp
+from routes.demo_routes import demo_bp
 from routes.transaction_routes import transaction_bp
 
 
@@ -25,3 +26,4 @@ def register_blueprints(app: Flask):
     # app.register_blueprint(currency_bp, url_prefix="/currencies")
     app.register_blueprint(transaction_bp, url_prefix="/transactions")
     # app.register_blueprint(account_bp, url_prefix="/accounts")
+    app.register_blueprint(demo_bp, url_prefix="/demo")
