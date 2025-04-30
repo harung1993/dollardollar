@@ -1,3 +1,5 @@
+import hashlib
+import threading
 from datetime import datetime, timezone
 
 from flask import (
@@ -12,8 +14,17 @@ from flask import (
 )
 from flask_login import current_user, login_user, logout_user
 
-from app import DEV_USER_EMAIL, DEV_USER_PASSWORD
+from app import (
+    DEV_USER_EMAIL,
+    DEV_USER_PASSWORD,
+    create_default_budgets,
+    create_default_categories,
+    reset_demo_data,
+    send_welcome_email,
+    sync_simplefin_for_user,
+)
 from extensions import db
+from models import User
 from recurring_detection import detect_recurring_transactions
 from services.wrappers import login_required_dev, restrict_demo_access
 from simplefin_client import SimpleFin
@@ -21,6 +32,13 @@ from simplefin_client import SimpleFin
 auth_bp = Blueprint("auth", __name__)
 
 MAX_BRIGHTNESS = 180
+
+
+@auth_bp.route("/")
+def home():
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    return render_template("landing.html")
 
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
@@ -58,8 +76,6 @@ def signup():
         # Generate a consistent color for the user
         def generate_user_color(user_id):
             """Generate a consistent color for a user based on their ID."""
-            import hashlib
-
             # Use MD5 hash to generate a consistent color
             hash_object = hashlib.md5(user_id.encode())
             hash_hex = hash_object.hexdigest()
@@ -89,11 +105,6 @@ def signup():
 
         db.session.add(user)
         db.session.commit()
-        from app import (
-            create_default_budgets,
-            create_default_categories,
-            send_welcome_email,
-        )
 
         create_default_categories(user.id)
         create_default_budgets(user.id)
@@ -183,9 +194,6 @@ def login():
                     ):
                         # Start sync in background thread to avoid
                         # slowing down login
-                        import threading
-
-                        from app import sync_simplefin_for_user
 
                         sync_thread = threading.Thread(
                             target=sync_simplefin_for_user, args=(user.id,)
@@ -203,8 +211,6 @@ def login():
                         "Error checking SimpleFin sync status"
                     )
                     # Don't show error to user to keep login smooth
-
-            import threading
 
             detection_thread = threading.Thread(
                 target=detect_recurring_transactions, args=(user.id,)
@@ -229,8 +235,6 @@ def login():
 @auth_bp.route("/logout")
 @login_required_dev
 def logout():
-    from app import reset_demo_data
-
     # If this is a demo user, handle demo-specific logout
     demo_timeout = current_app.extensions.get("demo_timeout")
     is_demo_user = False
@@ -268,38 +272,3 @@ def logout():
         return redirect(url_for("demo_thanks"))
 
     return redirect(url_for("login"))
-
-def login_required_dev(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if current_app.config["DEVELOPMENT_MODE"]:
-            if not current_user.is_authenticated:
-                # Get or create dev user
-                dev_user = User.query.filter_by(id=DEV_USER_EMAIL).first()
-                if not dev_user:
-                    dev_user = User(
-                        id=DEV_USER_EMAIL, name="Developer", is_admin=True
-                    )
-                    dev_user.set_password(DEV_USER_PASSWORD)
-                    db.session.add(dev_user)
-                    db.session.commit()
-                # Auto login dev user
-                login_user(dev_user)
-            return f(*args, **kwargs)
-        # Normal authentication for non-dev mode - fixed implementation
-        return login_required(f)(*args, **kwargs)
-
-    return decorated_function
-
-
-def restrict_demo_access(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if current_user.is_authenticated and demo_timeout.is_demo_user(
-            current_user.id
-        ):
-            flash("Demo users cannot access this page.")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
-
-    return decorated_function
