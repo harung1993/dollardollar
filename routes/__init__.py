@@ -10,6 +10,7 @@ from routes.expense_routes import expense_bp
 from routes.group_routes import group_bp
 from routes.recurring_routes import recurring_bp
 from routes.settlement_routes import settlement_bp
+from routes.simplefin_routes import simple_bp
 from routes.tag_routes import tag_bp
 from routes.timezone_routes import timezone_bp
 from routes.transaction_routes import transaction_bp
@@ -28,6 +29,7 @@ def register_blueprints(app: Flask):
     app.register_blueprint(settlement_bp, url_prefix="/settlements")
     app.register_blueprint(currency_bp, url_prefix="/currencies")
     app.register_blueprint(transaction_bp, url_prefix="/transactions")
+    app.register_blueprint(simple_bp, url_prefix="/simplefin")
     # app.register_blueprint(account_bp, url_prefix="/accounts")
     app.register_blueprint(demo_bp, url_prefix="/demo")
     app.register_blueprint(timezone_bp, url_prefix="/timezone")
