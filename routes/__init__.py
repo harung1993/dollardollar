@@ -1,5 +1,6 @@
 from flask import Flask  # noqa: D104
 
+from routes.admin_routes import admin_bp
 from routes.auth_routes import auth_bp
 from routes.dashboard_routes import dashboard_bp
 from routes.demo_routes import demo_bp
@@ -14,7 +15,8 @@ from routes.transaction_routes import transaction_bp
 def register_blueprints(app: Flask):
     """Register all route blueprints with the app."""
     app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(admin_bp, url_prefix="/admin")
+    app.register_blueprint(dashboard_bp, url_prefix="/dashboard")
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(tag_bp, url_prefix="/tags")
     app.register_blueprint(recurring_bp, url_prefix="/recurring")
