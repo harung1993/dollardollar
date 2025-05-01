@@ -1580,7 +1580,7 @@ tr.bg-dark .collapse .p-3 {
                     </button>
                 </div>
                 <li class="nav-item">
-                    <a href="{{ url_for('logout') }}" class="nav-link">
+                    <a href="{{ url_for('auth.logout') }}" class="nav-link">
                         <span class="nav-icon"><i class="fas fa-sign-out-alt"></i></span>
                         <span class="nav-text">Logout</span>
                     </a>
@@ -1626,7 +1626,7 @@ tr.bg-dark .collapse .p-3 {
                     if (remainingSeconds <= 0) {
                         clearInterval(timerInterval);
                         // Redirect to logout or show expired message
-                        window.location.href = "{{ url_for('logout') }}?demo_expired=true";
+                        window.location.href = "{{ url_for('auth.logout') }}?demo_expired=true";
                         return;
                     }
                     

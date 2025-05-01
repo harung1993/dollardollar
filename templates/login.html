@@ -48,7 +48,7 @@
                 
                 <p class="text-center mt-3">
                     {% if not signups_disabled %}
-                        Don't have an account? <a href="{{ url_for('signup') }}" class="text-warning">Sign up</a>
+                        Don't have an account? <a href="{{ url_for('auth.signup') }}" class="text-warning">Sign up</a>
                     {% else %}
                         New registrations are currently disabled.
                     {% endif %}
