@@ -128,7 +128,7 @@ def get_base_currency():
     }
 
 
-def calculate_balances(user_id):
+def calculate_balances(user_id): # noqa: C901 PLR0912
     """Calculate balances between the current user and all other users."""
     balances = {}
 
@@ -284,7 +284,7 @@ def get_budget_summary():
     return budget_summary
 
 
-def calculate_asset_debt_trends(current_user):
+def calculate_asset_debt_trends(current_user): # noqa: C901 PLR0912
     """Calculate asset and debt trends for a user's accounts."""
     # Initialize tracking
     monthly_assets = {}
@@ -340,7 +340,7 @@ def calculate_asset_debt_trends(current_user):
         is_debt = account.type in ["credit"] or account.balance < 0
 
         # Skip accounts with zero or near-zero balance
-        if abs(account.balance or 0) < 0.01:
+        if abs(account.balance or 0) < 0.01: # noqa: PLR2004
             continue
 
         # Get monthly transactions for this account
