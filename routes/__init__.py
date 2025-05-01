@@ -3,6 +3,7 @@ from flask import Flask  # noqa: D104
 from routes.account_routes import account_bp
 from routes.admin_routes import admin_bp
 from routes.auth_routes import auth_bp
+from routes.budget_routes import budget_bp
 from routes.category_routes import category_bp
 from routes.currency_routes import currency_bp
 from routes.dashboard_routes import dashboard_bp
@@ -23,6 +24,7 @@ def register_blueprints(app: Flask):
     app.register_blueprint(account_bp, url_prefix="/accounts")
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
+    app.register_blueprint(budget_bp, url_prefix="/budgets")
     app.register_blueprint(category_bp, url_prefix="/categories")
     app.register_blueprint(dashboard_bp, url_prefix="/dashboard")
     app.register_blueprint(expense_bp, url_prefix="/expenses")
