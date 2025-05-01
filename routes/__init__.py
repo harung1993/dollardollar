@@ -12,11 +12,14 @@ from routes.expense_routes import expense_bp
 from routes.group_routes import group_bp
 from routes.maintenance_routes import maintenance_bp
 from routes.recurring_routes import recurring_bp
+from routes.report_routes import report_bp
 from routes.settlement_routes import settlement_bp
 from routes.simplefin_routes import simple_bp
+from routes.stat_routes import stat_bp
 from routes.tag_routes import tag_bp
 from routes.timezone_routes import timezone_bp
 from routes.transaction_routes import transaction_bp
+from routes.user_routes import user_bp
 
 
 def register_blueprints(app: Flask):
@@ -38,3 +41,6 @@ def register_blueprints(app: Flask):
     app.register_blueprint(simple_bp, url_prefix="/simplefin")
     app.register_blueprint(demo_bp, url_prefix="/demo")
     app.register_blueprint(timezone_bp, url_prefix="/timezone")
+    app.register_blueprint(user_bp, url_prefix="/user")
+    app.register_blueprint(report_bp, url_prefix="/reports")
+    app.register_blueprint(stat_bp, url_prefix="/stats")

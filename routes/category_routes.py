@@ -974,3 +974,32 @@ def extract_keywords(description):
     # Use the longest remaining word as the keyword
     # This is a simple approach - could be improved with more sophisticated NLP
     return max(filtered_words, key=len)
+
+
+@category_bp.route("/api/categories")
+@login_required_dev
+def get_categories_api():
+    """Fetch categories for the current user."""
+    try:
+        # Get all categories for the current user
+        categories = Category.query.filter_by(user_id=current_user.id).all()
+
+        # Convert to JSON-serializable format
+        result = []
+        for category in categories:
+            result.append(
+                {
+                    "id": category.id,
+                    "name": category.name,
+                    "icon": category.icon,
+                    "color": category.color,
+                    "parent_id": category.parent_id,
+                    # Add this to help with displaying in the UI
+                    "is_parent": category.parent_id is None,
+                }
+            )
+
+        return jsonify(result)
+    except Exception as e:
+        current_app.logger.exception("Error fetching categories")
+        return jsonify({"error": str(e)}), 500
