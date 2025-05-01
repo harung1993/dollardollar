@@ -4,6 +4,7 @@ from routes.auth_routes import auth_bp
 from routes.dashboard_routes import dashboard_bp
 from routes.demo_routes import demo_bp
 from routes.expense_routes import expense_bp
+from routes.group_routes import group_bp
 from routes.recurring_routes import recurring_bp
 from routes.tag_routes import tag_bp
 from routes.timezone_routes import timezone_bp
@@ -17,6 +18,7 @@ def register_blueprints(app: Flask):
     app.register_blueprint(expense_bp, url_prefix="/expenses")
     app.register_blueprint(tag_bp, url_prefix="/tags")
     app.register_blueprint(recurring_bp, url_prefix="/recurring")
+    app.register_blueprint(group_bp, url_prefix="/groups")
     # app.register_blueprint(group_bp, url_prefix="/groups")
     # app.register_blueprint(admin_bp, url_prefix="/admin")
     # app.register_blueprint(settlement_bp, url_prefix="/settlements")
