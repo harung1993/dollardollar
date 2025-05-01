@@ -7,6 +7,7 @@ from routes.demo_routes import demo_bp
 from routes.expense_routes import expense_bp
 from routes.group_routes import group_bp
 from routes.recurring_routes import recurring_bp
+from routes.settlement_routes import settlement_bp
 from routes.tag_routes import tag_bp
 from routes.timezone_routes import timezone_bp
 from routes.transaction_routes import transaction_bp
@@ -23,7 +24,7 @@ def register_blueprints(app: Flask):
     app.register_blueprint(group_bp, url_prefix="/groups")
     # app.register_blueprint(group_bp, url_prefix="/groups")
     # app.register_blueprint(admin_bp, url_prefix="/admin")
-    # app.register_blueprint(settlement_bp, url_prefix="/settlements")
+    app.register_blueprint(settlement_bp, url_prefix="/settlements")
     # app.register_blueprint(currency_bp, url_prefix="/currencies")
     app.register_blueprint(transaction_bp, url_prefix="/transactions")
     # app.register_blueprint(account_bp, url_prefix="/accounts")
