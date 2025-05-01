@@ -16,8 +16,18 @@ from flask_login import current_user
 from sqlalchemy import func
 
 from extensions import db
-from models import Category, CategoryMapping, CategorySplit, Expense
-from services.defaults import create_default_category_mappings
+from models import (
+    Budget,
+    Category,
+    CategoryMapping,
+    CategorySplit,
+    Expense,
+    RecurringExpense,
+)
+from services.defaults import (
+    create_default_categories,
+    create_default_category_mappings,
+)
 from services.helpers import auto_categorize_transaction
 from services.wrappers import demo_time_limited, login_required_dev
 
@@ -599,6 +609,289 @@ def export_category_mappings():
         current_app.logger.exception("Error exporting category mappings")
         flash(f"Error exporting mappings: {e!s}")
         return redirect(url_for("manage_category_mappings"))
+
+
+def has_default_categories(user_id):
+    """Check if a user already has the default category set."""
+    # We'll check for a few specific default categories to
+    # determine if defaults were already created
+    default_category_names = [
+        "Housing",
+        "Food",
+        "Transportation",
+        "Shopping",
+        "Entertainment",
+        "Health",
+    ]
+
+    # Count how many of these default categories the user has
+    match_count = Category.query.filter(
+        Category.user_id == user_id,
+        Category.name.in_(default_category_names),
+        Category.parent_id is None,  # Top-level categories only
+    ).count()
+
+    # If they have at least 4 of these categories, assume defaults were created
+    return match_count >= 4
+
+
+@category_bp.route("/categories/create_defaults", methods=["POST"])
+@login_required_dev
+def user_create_default_categories():
+    """Allow a user to create default categories for themselves."""
+    # Check if user already has default categories
+    if has_default_categories(current_user.id):
+        flash("You already have the default categories.")
+        return redirect(url_for("manage_categories"))
+
+    # Create default categories
+    create_default_categories(current_user.id)
+    flash("Default categories created successfully!")
+
+    return redirect(url_for("manage_categories"))
+
+
+@category_bp.route("/categories")
+@login_required_dev
+def manage_categories():
+    """View and manage expense categories."""
+    # Get all top-level categories
+    categories = (
+        Category.query.filter_by(user_id=current_user.id, parent_id=None)
+        .order_by(Category.name)
+        .all()
+    )
+
+    # Get all FontAwesome icons for the icon picker
+    icons = [
+        "fa-home",
+        "fa-building",
+        "fa-bolt",
+        "fa-tools",
+        "fa-utensils",
+        "fa-shopping-basket",
+        "fa-hamburger",
+        "fa-coffee",
+        "fa-car",
+        "fa-gas-pump",
+        "fa-bus",
+        "fa-taxi",
+        "fa-shopping-cart",
+        "fa-tshirt",
+        "fa-laptop",
+        "fa-gift",
+        "fa-film",
+        "fa-ticket-alt",
+        "fa-music",
+        "fa-play-circle",
+        "fa-heartbeat",
+        "fa-stethoscope",
+        "fa-prescription-bottle",
+        "fa-dumbbell",
+        "fa-user",
+        "fa-spa",
+        "fa-graduation-cap",
+        "fa-question-circle",
+        "fa-tag",
+        "fa-money-bill",
+        "fa-credit-card",
+        "fa-plane",
+        "fa-hotel",
+        "fa-glass-cheers",
+        "fa-book",
+        "fa-gamepad",
+        "fa-baby",
+        "fa-dog",
+        "fa-cat",
+        "fa-phone",
+        "fa-wifi",
+    ]
+
+    return render_template(
+        "categories.html", categories=categories, icons=icons
+    )
+
+
+@category_bp.route("/categories/add", methods=["POST"])
+@login_required_dev
+def add_category():
+    """Add a new category or subcategory."""
+    name = request.form.get("name")
+    icon = request.form.get("icon", "fa-tag")
+    color = request.form.get("color", "#6c757d")
+    parent_id = request.form.get("parent_id")
+    if parent_id == "":
+        parent_id = None
+    if not name:
+        flash("Category name is required")
+        return redirect(url_for("manage_categories"))
+
+    # Validate parent category belongs to user
+    if parent_id:
+        parent = Category.query.get(parent_id)
+        if not parent or parent.user_id != current_user.id:
+            flash("Invalid parent category")
+            return redirect(url_for("manage_categories"))
+
+    category = Category(
+        name=name,
+        icon=icon,
+        color=color,
+        parent_id=parent_id,
+        user_id=current_user.id,
+    )
+
+    db.session.add(category)
+    db.session.commit()
+
+    flash("Category added successfully")
+    return redirect(url_for("manage_categories"))
+
+
+@category_bp.route("/categories/edit/<int:category_id>", methods=["POST"])
+@login_required_dev
+def edit_category(category_id):
+    """Edit an existing category."""
+    category = Category.query.get_or_404(category_id)
+
+    # Check if category belongs to current user
+    if category.user_id != current_user.id:
+        flash("You don't have permission to edit this category")
+        return redirect(url_for("manage_categories"))
+
+    # Don't allow editing system categories
+    if category.is_system:
+        flash("System categories cannot be edited")
+        return redirect(url_for("manage_categories"))
+
+    category.name = request.form.get("name", category.name)
+    category.icon = request.form.get("icon", category.icon)
+    category.color = request.form.get("color", category.color)
+
+    db.session.commit()
+
+    flash("Category updated successfully")
+    return redirect(url_for("manage_categories"))
+
+
+@category_bp.route("/categories/delete/<int:category_id>", methods=["POST"])
+@login_required_dev
+def delete_category(category_id):
+    """Debug-enhanced category deletion route."""
+    try:
+        # Find the category
+        category = Category.query.get_or_404(category_id)
+
+        # Extensive logging
+        current_app.logger.info(
+            f"Attempting to delete category: {category.name} (ID: {category.id})"
+        )
+        current_app.logger.info(
+            f"Category details - User ID: {category.user_id}, Is System: {category.is_system}"
+        )
+
+        # Security checks
+        if category.user_id != current_user.id:
+            current_app.logger.warning(
+                f"Unauthorized delete attempt for category {category_id}"
+            )
+            flash("You don't have permission to delete this category")
+            return redirect(url_for("manage_categories"))
+
+        # Don't allow deleting system categories
+        if category.is_system:
+            current_app.logger.warning(
+                f"Attempted to delete system category {category_id}"
+            )
+            flash("System categories cannot be deleted")
+            return redirect(url_for("manage_categories"))
+
+        # Check related records before deletion
+        expense_count = Expense.query.filter_by(category_id=category_id).count()
+        recurring_count = RecurringExpense.query.filter_by(
+            category_id=category_id
+        ).count()
+        budget_count = Budget.query.filter_by(category_id=category_id).count()
+        mapping_count = CategoryMapping.query.filter_by(
+            category_id=category_id
+        ).count()
+
+        current_app.logger.info(
+            f"Related records - Expenses: {expense_count}, Recurring: {recurring_count}, Budgets: {budget_count}, Mappings: {mapping_count}"
+        )
+
+        # Find 'Other' category (fallback)
+        other_category = Category.query.filter_by(
+            name="Other", user_id=current_user.id, is_system=True
+        ).first()
+
+        current_app.logger.info(f"Other category found: {bool(other_category)}")
+
+        # Subcategories handling
+        if category.subcategories:
+            current_app.logger.info(
+                f"Handling {len(category.subcategories)} subcategories"
+            )
+            for subcategory in category.subcategories:
+                # Update or delete related records for subcategory
+                Expense.query.filter_by(category_id=subcategory.id).update(
+                    {
+                        "category_id": other_category.id
+                        if other_category
+                        else None
+                    }
+                )
+                RecurringExpense.query.filter_by(
+                    category_id=subcategory.id
+                ).update(
+                    {
+                        "category_id": other_category.id
+                        if other_category
+                        else None
+                    }
+                )
+                CategoryMapping.query.filter_by(
+                    category_id=subcategory.id
+                ).delete()
+
+                # Log subcategory deletion
+                current_app.logger.info(
+                    f"Deleting subcategory: {subcategory.name} (ID: {subcategory.id})"
+                )
+                db.session.delete(subcategory)
+
+        # Update or delete main category's related records
+        Expense.query.filter_by(category_id=category_id).update(
+            {"category_id": other_category.id if other_category else None}
+        )
+        RecurringExpense.query.filter_by(category_id=category_id).update(
+            {"category_id": other_category.id if other_category else None}
+        )
+        Budget.query.filter_by(category_id=category_id).update(
+            {"category_id": other_category.id if other_category else None}
+        )
+        CategoryMapping.query.filter_by(category_id=category_id).delete()
+
+        # Actually delete the category
+        db.session.delete(category)
+
+        # Commit changes
+        db.session.commit()
+
+        current_app.logger.info(
+            f"Category {category.name} (ID: {category_id}) deleted successfully"
+        )
+        flash("Category deleted successfully")
+
+    except Exception as e:
+        # Rollback and log any errors
+        db.session.rollback()
+        current_app.logger.exception(
+            f"Error deleting category {category_id}", exc_info=True
+        )
+        flash(f"Error deleting category: {e!s}")
+
+    return redirect(url_for("manage_categories"))
 
 
 def update_category_mappings(transaction_id, category_id, learn=False):
