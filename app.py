@@ -3,24 +3,16 @@ r"""29a41de6a866d56c36aba5159f45257c"""
 import os
 from flask import (
     Flask,
-    render_template,
     request,
     jsonify,
-    redirect,
-    url_for,
-    flash,
-    session,
+
 )
 from flask_login import (
-
     current_user,
 )
-
-import calendar
+from services.defaults import create_default_budgets, create_default_categories
 import logging
-from flask_mail import Message
 import ssl
-import requests
 from oidc_auth import setup_oidc_config, register_oidc_routes
 from oidc_user import extend_user_model
 from simplefin_client import SimpleFin
@@ -36,7 +28,6 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, or_, and_, inspect, text
 
 from routes import register_blueprints
-from services.wrappers import login_required_dev
 from session_timeout import DemoTimeout
 
 from models import Account, Budget, Category, CategoryMapping, CategorySplit, Currency, Expense, Group, RecurringExpense, Settlement, User
@@ -155,9 +146,6 @@ def init_db():
             create_default_categories(dev_user.id)
             create_default_budgets(dev_user.id)
             print("Development user created:", DEV_USER_EMAIL)
-
-
-
 
 #--------------------
 # BUSINESS LOGIC FUNCTIONS
@@ -1470,13 +1458,6 @@ def normalize_time_series(data, target_length):
         result.append(segment_avg)
     
     return result
-
-
-#--------------------
-# # Password reset routes
-#--------------------
-
-
 
 #--------------------
 # DATABASE INITIALIZATION
