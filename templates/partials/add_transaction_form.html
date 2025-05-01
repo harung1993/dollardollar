@@ -1,153 +1,452 @@
-<form method="POST" action="{{ url_for('add_expense') }}" id="newTransactionForm">
-    <div class="row">
-        <div class="col-md-4 mb-3">
-            <label for="transaction_type" class="form-label">Transaction Type</label>
-            <select class="form-select bg-dark text-light" id="transaction_type" name="transaction_type" required>
-                <option value="expense">Expense</option>
-                <option value="income">Income</option>
-                <option value="transfer">Internal Transfer</option>
-            </select>
+<form method="POST" action="{{ url_for('add_expense') }}" id="newTransactionForm" class="modern-form">
+    <!-- Transaction Type Selector -->
+    <div class="mb-4">
+        <label class="d-block mb-2 fw-bold">Transaction Type</label>
+        <div class="transaction-type-selector">
+            <input type="radio" class="btn-check" name="transaction_type" id="type_expense" value="expense" checked>
+            <label class="btn btn-type" for="type_expense">
+                <i class="fas fa-shopping-cart"></i>
+                <span>Expense</span>
+            </label>
+            
+            <input type="radio" class="btn-check" name="transaction_type" id="type_income" value="income">
+            <label class="btn btn-type" for="type_income">
+                <i class="fas fa-money-bill-wave"></i>
+                <span>Income</span>
+            </label>
+            
+            <input type="radio" class="btn-check" name="transaction_type" id="type_transfer" value="transfer">
+            <label class="btn btn-type" for="type_transfer">
+                <i class="fas fa-exchange-alt"></i>
+                <span>Transfer</span>
+            </label>
         </div>
-        <div class="col-md-4 mb-3">
-            <label for="description" class="form-label">Description</label>
-            <input type="text" class="form-control bg-dark text-light" id="description" name="description" required>
+    </div>
+
+    <!-- Description and Amount -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="form-floating dark-floating">
+                <input type="text" class="form-control bg-dark text-light" id="description" name="description" 
+                       required placeholder="Description">
+                <label for="description">Description</label>
+            </div>
         </div>
-        <div class="col-md-4 mb-3">
-            <label for="amount" class="form-label">Amount ({{ base_currency.symbol }})</label>
-            <input type="number" step="0.01" class="form-control bg-dark text-light" id="amount" name="amount" required>
+        <div class="col-md-3">
+            <div class="form-floating dark-floating">
+                <input type="number" step="0.01" class="form-control bg-dark text-light" id="amount" 
+                       name="amount" required placeholder="Amount">
+                <label for="amount">Amount ({{ base_currency.symbol }})</label>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="form-floating dark-floating">
+                <input type="date" class="form-control bg-dark text-light" id="date" name="date" 
+                       required placeholder="Date">
+                <label for="date">Date</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account and Category -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="form-floating dark-floating">
+                <select class="form-select bg-dark text-light" id="account_id" name="account_id" placeholder="Account">
+                    <option value="">Select account</option>
+                    {% for account in current_user.accounts %}
+                        <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
+                    {% endfor %}
+                </select>
+                <label for="account_id" id="account_label">Payment Account</label>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="form-floating dark-floating">
+                <select class="form-select bg-dark text-light" id="category_id" name="category_id" placeholder="Category">
+                    <option value="">Select category</option>
+                    {% for category in categories %}
+                        {% if not category.parent_id %}
+                            <optgroup label="{{ category.name }}">
+                                {% for subcat in category.subcategories %}
+                                    <option value="{{ subcat.id }}">
+                                        {{ subcat.name }}
+                                    </option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <label for="category_id">Category</label>
+            </div>
         </div>
     </div>
     
-    <div class="row">
-        <div class="col-md-4 mb-3">
-            <label for="date" class="form-label">Date</label>
-            <input type="date" class="form-control bg-dark text-light" id="date" name="date" required>
-        </div>
-        <div class="col-md-4 mb-3">
-            <label for="currency_code" class="form-label">Currency</label>
-            <select class="form-select bg-dark text-light" id="currency_code" name="currency_code">
-                {% for currency in currencies %}
-                    <option value="{{ currency.code }}" 
-                            {% if currency.code == current_user.default_currency_code %}selected{% endif %}>
-                        {{ currency.code }} ({{ currency.symbol }})
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-md-4 mb-3">
-            <label for="category_id" class="form-label">Category</label>
-            <select class="form-select bg-dark text-light" id="category_id" name="category_id">
-                <option value="">Select a category</option>
-                {% for category in categories %}
-                    {% if not category.parent_id %}
-                        <optgroup label="{{ category.name }}">
-                            {% for subcat in category.subcategories %}
-                                <option value="{{ subcat.id }}" 
-                                        data-icon="{{ subcat.icon }}" 
-                                        data-color="{{ subcat.color }}">
-                                    {{ subcat.name }}
-                                </option>
-                            {% endfor %}
-                        </optgroup>
-                    {% endif %}
-                {% endfor %}
-            </select>
-        </div>
-    </div>
-    
-    <div class="row" id="account_row">
-        <div class="col-md-6 mb-3">
-            <label for="account_id" class="form-label" id="account_label">Account</label>
-            <select class="form-select bg-dark text-light" id="account_id" name="account_id">
-                <option value="">Select an account</option>
-                {% for account in current_user.accounts %}
-                    <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-md-6 mb-3" id="to_account_container" style="display: none;">
-            <label for="destination_account_id" class="form-label">To Account</label>
-            <select class="form-select bg-dark text-light" id="destination_account_id" name="destination_account_id">
+    <!-- Destination Account (for Transfers) -->
+    <div class="mb-4 d-none" id="to_account_container">
+        <div class="form-floating dark-floating">
+            <select class="form-select bg-dark text-light" id="destination_account_id" name="destination_account_id" placeholder="To Account">
                 <option value="">Select destination account</option>
                 {% for account in current_user.accounts %}
                     <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
                 {% endfor %}
             </select>
+            <label for="destination_account_id">To Account</label>
         </div>
     </div>
     
-    
-    <div class="row expense-only-fields">
-        <div class="col-md-6 mb-3">
-            <label for="paid_by" class="form-label">Paid By</label>
-            <select class="form-select bg-dark text-light" id="paid_by" name="paid_by">
-                {% for user in users %}
-                    <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>
-                        {{ user.name }}
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-md-6 mb-3">
-            <label for="group_id" class="form-label">Group (Optional)</label>
-            <select class="form-select bg-dark text-light" id="group_id" name="group_id">
-                <option value="">No Group (Personal Transaction)</option>
-                {% for group in groups %}
-                    <option value="{{ group.id }}">{{ group.name }}</option>
-                {% endfor %}
-            </select>
+    <!-- Personal Expense Toggle -->
+    <div class="mb-4 expense-only-fields">
+        <div class="form-switch-card">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="personal_expense" name="personal_expense" checked>
+                <label class="form-check-label" for="personal_expense">This is a personal expense</label>
+            </div>
+            <small class="text-muted">Toggle off to split this expense with others</small>
         </div>
     </div>
     
-    <div class="expense-only-fields">
-        <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center">
-                <label for="split_with" class="form-label">Split With</label>
-                <div class="form-check form-switch ms-2">
-                    <input class="form-check-input" type="checkbox" id="personal_expense" name="personal_expense">
-                    <label class="form-check-label" for="personal_expense">Personal expense</label>
+    <!-- Split Details Section -->
+    <div class="split-section expense-only-fields d-none">
+        <div class="card bg-dark border-secondary rounded p-3 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Split Details</h5>
+                <span class="badge bg-secondary small">Shared Expense</span>
+            </div>
+            
+            <!-- Group and Payer Selection -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="group_id" class="form-label small">Group</label>
+                    <select class="form-select bg-dark text-light" id="group_id" name="group_id">
+                        <option value="">No Group</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}">{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="paid_by" class="form-label small">Paid By</label>
+                    <select class="form-select bg-dark text-light" id="paid_by" name="paid_by">
+                        {% for user in users %}
+                            <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>
+                                {{ user.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
-            <select class="form-select bg-dark text-light enhanced-multi-select" id="split_with" name="split_with" multiple>
-                {% for user in users %}
-                    <option value="{{ user.id }}">{{ user.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        
-        <div class="mb-3">
-            <label for="split_method" class="form-label">Split Method</label>
-            <select class="form-select bg-dark text-light" id="split_method" name="split_method" required>
-                <option value="equal">Equal Split Among All</option>
-                <option value="percentage">Percentage Split for Each Person</option>
-                <option value="custom">Custom Amount for Each Person</option>
-            </select>
-        </div>
-        
-        <div id="custom_split_container" style="display: none;" class="mb-3">
-            <div class="card bg-dark border-secondary">
-                <div class="card-header">
-                    <h5 class="mb-0">Split Values</h5>
+            
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label for="split_method" class="form-label small">Split Method</label>
+                    <select class="form-select bg-dark text-light" id="split_method" name="split_method">
+                        <option value="group_default">Group Default (if applicable)</option>
+                        <option value="equal">Equal Split</option>
+                        <option value="percentage">Percentage Split</option>
+                        <option value="custom">Custom Amount Split</option>
+                    </select>
+                    <div class="d-flex justify-content-end mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="split_values_toggle" disabled>
+                            <i class="fas fa-calculator me-1"></i> Edit Split Values
+                        </button>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div id="split_values_container"></div>
-                    <div class="d-flex justify-content-between mt-3">
-                        <span>Total: {{ base_currency.symbol }}<span id="split_total">0.00</span></span>
-                        <span class="badge bg-success" id="split_status">Balanced</span>
+                
+                <div class="col-md-6">
+                    <label for="split_with" class="form-label small">Split With</label>
+                    <select class="form-select bg-dark text-light enhanced-multi-select" 
+                            id="split_with" name="split_with" multiple>
+                        {% for user in users %}
+                            {% if user.id != current_user.id %}
+                                <option value="{{ user.id }}">{{ user.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Press ctrl to select people who shared this expense</small>
+                </div>
+            </div>
+            
+            <!-- Custom Split Container - Initially Hidden -->
+            <div id="custom_split_container" class="d-none mt-3">
+                <div class="card bg-dark border-secondary">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">Split Values</h6>
+                        <span id="split_method_display" class="badge bg-primary"></span>
+                    </div>
+                    
+                    <div class="card-body p-3">
+                        <div id="split_values_container" class="mb-3">
+                            <!-- Split values will be added here dynamically -->
+                        </div>
+                        
+                        <div class="d-flex justify-content-between mt-2">
+                            <div>
+                                <span class="text-muted">Total:</span>
+                                <span class="fw-bold" id="split_values_total"></span>
+                            </div>
+                            <span id="split_status" class="badge bg-success">Balanced</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <input type="hidden" id="split_details" name="split_details">
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Options Accordion -->
+    <div class="accordion mb-4" id="advancedOptionsAccordion">
+        <div class="accordion-item bg-dark border-secondary">
+            <h2 class="accordion-header" id="headingAdvanced">
+                <button class="accordion-button collapsed bg-dark text-light" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#collapseAdvanced" 
+                        aria-expanded="false" aria-controls="collapseAdvanced">
+                    <i class="fas fa-cog me-2"></i> Advanced Options
+                </button>
+            </h2>
+            <div id="collapseAdvanced" class="accordion-collapse collapse" 
+                 aria-labelledby="headingAdvanced" data-bs-parent="#advancedOptionsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="currency_code" class="form-label">Currency</label>
+                            <select class="form-select bg-dark text-light" id="currency_code" name="currency_code">
+                                {% for currency in currencies %}
+                                    <option value="{{ currency.code }}" 
+                                        {% if currency.code == current_user.default_currency_code %}selected{% endif %}>
+                                        {{ currency.code }} ({{ currency.symbol }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="enable_category_split" class="form-label d-block">Category Split</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="enable_category_split" name="enable_category_split">
+                                <label class="form-check-label" for="enable_category_split">
+                                    Split transaction into multiple categories
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Category Split Container -->
+                    <div id="category_splits_container" class="mt-3 d-none">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">Category Splits</h6>
+                                <button type="button" class="btn btn-sm btn-outline-light" id="add_category_split">
+                                    <i class="fas fa-plus me-1"></i>Add Category
+                                </button>
+                            </div>
+                            <div class="card-body p-3">
+                                <div id="category_splits_list">
+                                    <!-- Category splits will be added here -->
+                                </div>
+                                
+                                <div class="split-summary mt-3">
+                                    <div class="progress mb-2" style="height: 5px;">
+                                        <div class="progress-bar" role="progressbar" style="width: 0%;" 
+                                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                                             id="category_split_progress"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="text-muted">Total:</span>
+                                            <span class="ms-1">{{ base_currency.symbol }}<span id="category_split_total">0.00</span>/<span id="category_split_target">0.00</span></span>
+                                        </div>
+                                        <span id="category_split_status" class="badge bg-secondary">Add categories</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <input type="hidden" id="category_splits_data" name="category_splits_data" value="[]">
                     </div>
                 </div>
             </div>
-            <input type="hidden" id="split_details" name="split_details">
         </div>
     </div>
     
-    <div class="d-flex justify-content-end mt-3">
-        <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('addTransactionPanel')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Add Transaction</button>
+    <!-- Form Actions -->
+    <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary" onclick="AddTransactionModule.closePanel('addTransactionPanel')">
+            Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Save Transaction
+        </button>
     </div>
-    <div id="currency-data" data-symbol="{{ base_currency.symbol }}"></div>
-</form>
-<script>
-    window.baseCurrencySymbol = "{{ base_currency.symbol }}";
     
-</script>
+    <style>
+    /* Modern form styles */
+    .modern-form {
+        --form-bg: rgba(30, 41, 59, 0.5);
+        --form-border: rgba(255, 255, 255, 0.1);
+        --primary-color: #0ea5e9;
+        --success-color: #10b981;
+        --warning-color: #f59e0b;
+        --danger-color: #ef4444;
+        --text-color: rgba(255, 255, 255, 0.9);
+        --muted-color: rgba(255, 255, 255, 0.6);
+    }
+    
+    /* Style the transaction type buttons */
+    .transaction-type-selector {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+    
+    .btn-type {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        background-color: rgba(17, 24, 39, 0.8);
+        border: 1px solid var(--form-border);
+        border-radius: 8px;
+        color: var(--text-color);
+        transition: all 0.2s ease;
+    }
+    
+    .btn-type i {
+        font-size: 20px;
+        margin-bottom: 6px;
+    }
+    
+    .btn-check:checked + .btn-type {
+        background-color: rgba(var(--bs-primary-rgb), 0.2);
+        border-color: var(--primary-color);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-check:checked + .btn-type[for="type_expense"] {
+        background-color: rgba(var(--bs-danger-rgb), 0.2);
+        border-color: var(--danger-color);
+    }
+    
+    .btn-check:checked + .btn-type[for="type_income"] {
+        background-color: rgba(var(--bs-success-rgb), 0.2);
+        border-color: var(--success-color);
+    }
+    
+    .btn-check:checked + .btn-type[for="type_transfer"] {
+        background-color: rgba(var(--bs-info-rgb), 0.2);
+        border-color: var(--primary-color);
+    }
+    
+    /* Form floating labels with dark background */
+    .dark-floating {
+        position: relative;
+    }
+    
+    .dark-floating label {
+        color: var(--muted-color);
+    }
+    
+    .form-floating.dark-floating > .form-control,
+    .form-floating.dark-floating > .form-select {
+        background-color: var(--form-bg);
+        border-color: var(--form-border);
+        border-radius: 8px;
+        height: calc(3.5rem + 2px);
+        line-height: 1.25;
+    }
+    
+    .form-floating.dark-floating > label {
+        padding: 1rem 0.75rem;
+    }
+    
+    .form-floating.dark-floating > .form-control:focus ~ label,
+    .form-floating.dark-floating > .form-control:not(:placeholder-shown) ~ label,
+    .form-floating.dark-floating > .form-select ~ label {
+        opacity: .65;
+        transform: scale(.85) translateY(-0.75rem) translateX(0.15rem);
+    }
+    
+    /* Form switch card */
+    .form-switch-card {
+        background-color: var(--form-bg);
+        border: 1px solid var(--form-border);
+        border-radius: 8px;
+        padding: 12px 16px;
+    }
+    
+    /* Enhanced multi-select */
+    .enhanced-multi-select {
+        min-height: 100px;
+    }
+    
+    /* Accordion styling */
+    .accordion-button:not(.collapsed) {
+        background-color: rgba(14, 165, 233, 0.2);
+        color: var(--text-color);
+    }
+    
+    .accordion-button:focus {
+        box-shadow: none;
+        border-color: var(--primary-color);
+    }
+    
+    .accordion-item {
+        background-color: transparent;
+        border-radius: 8px !important;
+        overflow: hidden;
+    }
+    
+    .accordion-button::after {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+    }
+    
+    /* Split row styling */
+    .split-row {
+        background-color: rgba(30, 41, 59, 0.3);
+        padding: 10px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+    
+    .split-row:hover {
+        background-color: rgba(30, 41, 59, 0.5);
+    }
+    
+    /* Buttons styling */
+    .btn-primary, .btn-success {
+        background-image: linear-gradient(to right, #0ea5e9, #38bdf8);
+        border: none;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-primary:hover, .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+    }
+    
+    .btn-outline-secondary {
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-outline-danger {
+        color: var(--danger-color);
+        border-color: var(--danger-color);
+    }
+    
+    .btn-outline-danger:hover {
+        background-color: rgba(239, 68, 68, 0.2);
+        color: white;
+    }
+    
+    /* Fix for the multi-select */
+    .enhanced-multi-select option {
+        padding: 8px 12px;
+        margin: 2px 0;
+    }
+    </style>
+</form>

@@ -169,6 +169,30 @@ class Group(db.Model):
     members = db.relationship('User', secondary=group_users, lazy='subquery',
         backref=db.backref('groups', lazy=True))
     expenses = db.relationship('Expense', backref='group', lazy=True)
+    
+    default_payer = db.Column(db.String(120), db.ForeignKey('users.id'), nullable=True)
+    default_split_method = db.Column(db.String(20), default='equal')  # 'equal', 'percentage', 'custom'
+    default_split_values = db.Column(db.JSON, nullable=True)  # For PostgreSQL
+    # For SQLite compatibility
+    # default_split_values = db.Column(db.Text, nullable=True)
+    auto_include_all = db.Column(db.Boolean, default=True)
+    
+    # Helper method to handle different storage types (JSON vs TEXT)
+    def get_split_values(self):
+        """Get split values as a dictionary, handling different DB storage types"""
+        if self.default_split_values is None:
+            return {}
+        
+        if isinstance(self.default_split_values, dict):
+            # Already a dict (PostgreSQL JSON type)
+            return self.default_split_values
+            
+        # Otherwise, parse from text (SQLite)
+        try:
+            import json
+            return json.loads(self.default_split_values)
+        except:
+            return {}
 
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
@@ -912,7 +936,6 @@ class Portfolio(db.Model):
                                  cascade='all, delete-orphan')
     
     def calculate_total_value(self):
-        """Calculate the current total value of all investments in this portfolio"""
         return sum(investment.current_value for investment in self.investments)
     
     def calculate_total_cost(self):
@@ -992,7 +1015,6 @@ class InvestmentTransaction(db.Model):
     def transaction_value(self):
         """Calculate the total value of this transaction"""
         return self.shares * self.price + self.fees
-
 # Model to store user's Financial Modeling Prep API key
 class UserApiSettings(db.Model):
     __tablename__ = 'user_api_settings'
@@ -1923,14 +1945,14 @@ def create_default_categories(user_id):
             subcat = Category(user_id=user_id, parent_id=category.id, **subcat_data)
             db.session.add(subcat)
 
-    db.session.commit()
+    
     
     # Create default category mappings after creating categories
     create_default_category_mappings(user_id)
 
 def create_default_budgets(user_id):
     """Create default budget templates for a new user, all deactivated by default"""
-    from app import db, Budget, Category
+    
     
     # Get the user's categories first
     categories = Category.query.filter_by(user_id=user_id).all()
@@ -4036,180 +4058,303 @@ def timezone_processor():
 @app.route('/add_expense', methods=['POST'])
 @login_required_dev
 def add_expense():
-    """Add a new transaction (expense, income, or transfer) and update account balances"""
-    if request.method == 'POST':
+    """Add a new transaction with improved handling and AJAX support"""
+    try:
+        # Get transaction type
+        transaction_type = request.form.get('transaction_type', 'expense')
+        
+        # Parse date with error handling
         try:
-            # Get transaction type
-            transaction_type = request.form.get('transaction_type', 'expense')
-            
-            # Check if this is a personal expense (no splits)
-            is_personal_expense = request.form.get('personal_expense') == 'on'
-            
-            # Handle split_with based on whether it's a personal expense or non-expense transaction
-            if is_personal_expense or transaction_type in ['income', 'transfer']:
-                # For personal expenses and non-expense transactions, we set split_with to empty
-                split_with_str = None
-            else:
-                # Handle multi-select for split_with
-                split_with_ids = request.form.getlist('split_with')
-                if not split_with_ids and transaction_type == 'expense':
-                    flash('Please select at least one person to split with or mark as personal expense.')
-                    return redirect(url_for('transactions'))
-                
-                split_with_str = ','.join(split_with_ids) if split_with_ids else None
-            
-            # Parse date with error handling
+            expense_date = datetime.strptime(request.form.get('date', ''), '%Y-%m-%d')
+        except ValueError:
+            expense_date = datetime.utcnow()
+        
+        # Parse amount with validation
+        try:
+            amount = float(request.form.get('amount', 0))
+            if amount <= 0:
+                return jsonify({
+                    'success': False,
+                    'message': 'Amount must be greater than zero'
+                }), 400
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid amount format'
+            }), 400
+        
+        # Get currency information
+        currency_code = request.form.get('currency_code', current_user.default_currency_code or 'USD')
+        
+        # Select default account card name
+        account_id = request.form.get('account_id')
+        card_used = "No card"  # Default name
+        
+        if account_id:
             try:
-                expense_date = datetime.strptime(request.form['date'], '%Y-%m-%d')
-            except ValueError:
-                flash('Invalid date format. Please use YYYY-MM-DD format.')
-                return redirect(url_for('transactions'))
-            
-            # Carefully process split details
-            split_details = None
-            split_method = 'equal'  # Default
-            
-            # Check for custom split details
-            raw_split_details = request.form.get('split_details')
-            if raw_split_details:
-                try:
-                    # Parse the JSON split details
-                    parsed_split_details = json.loads(raw_split_details)
-                    
-                    # Validate the split details structure
-                    if isinstance(parsed_split_details, dict):
-                        split_method = parsed_split_details.get('type', 'equal')
-                        split_details = raw_split_details
-                        
-                        # Additional validation for custom splits
-                        if split_method != 'equal':
-                            # Ensure we have valid split values
-                            split_values = parsed_split_details.get('values', {})
-                            if split_values and len(split_values) > 0:
-                                # Override default split method if custom values exist
-                                split_method = parsed_split_details['type']
-                except (json.JSONDecodeError, TypeError):
-                    # If parsing fails, fall back to default
-                    app.logger.warning(f"Failed to parse split details: {raw_split_details}")
-            
-            # Get currency information
-            currency_code = request.form.get('currency_code', 'USD')
-            if not currency_code:
-                # Use user's default currency or system default (USD)
-                currency_code = current_user.default_currency_code or 'USD'
-            
-            # Get original amount in the selected currency
-            original_amount = float(request.form['amount'])
-            
-            # Find the currencies
-            selected_currency = Currency.query.filter_by(code=currency_code).first()
-            base_currency = Currency.query.filter_by(is_base=True).first()
-            
-            if not selected_currency or not base_currency:
-                flash('Currency configuration error.')
-                return redirect(url_for('transactions'))
-            
-            # Convert original amount to base currency
-            amount = original_amount * selected_currency.rate_to_base
-            
-            # Process category - properly handle empty strings for category_id
-            category_id = request.form.get('category_id')
-            if not category_id or category_id.strip() == '':
-                category_id = None  # Set to None instead of empty string
-            else:
-                # Make sure it's an integer if provided
-                category_id = int(category_id)
-
-            # Get account information - handle empty strings
-            account_id = request.form.get('account_id')
-            if not account_id or account_id.strip() == '':
-                account_id = None
-            else:
-                # Make sure it's an integer if provided
                 account_id = int(account_id)
-                
-            card_used = "No card"  # Default fallback
+                account = Account.query.get(account_id)
+                if account:
+                    card_used = account.name
+            except ValueError:
+                account_id = None
+        
+        # Process group defaults and user splits
+        group_id = request.form.get('group_id')
+        paid_by = request.form.get('paid_by', current_user.id)
+        split_method = request.form.get('split_method', 'equal')
+        split_with_ids = request.form.getlist('split_with')
+        split_details = None
+        
+        # Check if personal expense (no splits)
+        is_personal_expense = request.form.get('personal_expense') == 'on'
+        
+        # Process split information
+        if transaction_type == 'expense' and not is_personal_expense:
+            # Convert split_with_ids list to comma-separated string
+            split_with_str = ','.join(split_with_ids) if split_with_ids else None
             
-            # For transfers, get destination account - handle empty strings
-            destination_account_id = None
-            if transaction_type == 'transfer':
-                destination_account_id = request.form.get('destination_account_id')
-                if not destination_account_id or destination_account_id.strip() == '':
-                    destination_account_id = None
+            # Special handling for "group_default" split method
+            if split_method == 'group_default' and group_id:
+                # Get the group
+                group = Group.query.get(group_id)
+                if group:
+                    # Use the group's default split method for the expense record
+                    actual_split_method = group.default_split_method or 'equal'
+                    split_method = actual_split_method  # Update split_method to the actual method
+                    
+                    # Use group's default split values if available
+                    if actual_split_method != 'equal' and group.default_split_values:
+                        try:
+                            # Handle different storage types
+                            if isinstance(group.default_split_values, dict):
+                                # PostgreSQL JSON type
+                                split_values = group.default_split_values
+                            else:
+                                # SQLite TEXT type
+                                split_values = json.loads(group.default_split_values)
+                                
+                            # Create the split details structure
+                            split_details = {
+                                "type": actual_split_method,
+                                "values": split_values
+                            }
+                            
+                            # Convert to JSON string
+                            split_details_str = json.dumps(split_details)
+                        except Exception as e:
+                            app.logger.warning(f"Error using group default splits: {str(e)}")
+                            # Fall back to equal split on error
+                            split_details = create_equal_split(split_with_ids, paid_by, amount, actual_split_method)
+                            split_details_str = json.dumps(split_details)
+                    else:
+                        # Group default is equal or has no values
+                        split_details_str = None
                 else:
-                    # Make sure it's an integer if provided
-                    destination_account_id = int(destination_account_id)
+                    # Group not found, fall back to equal split
+                    split_method = 'equal'
+                    split_details_str = None
+                    
+            # Process split details for non-equal splits
+            elif split_method != 'equal' and split_with_ids:
+                split_details_json = request.form.get('split_details')
                 
-                # Validate different source and destination accounts
-                if account_id == destination_account_id:
-                    flash('Source and destination accounts must be different for transfers.')
-                    return redirect(url_for('transactions'))
-            
-            # Determine paid_by (use from form or fallback to current user)
-            paid_by = request.form.get('paid_by', current_user.id)
-            
-            # Create expense record
-            expense = Expense(
-                description=request.form['description'],
-                amount=amount,  # Amount in base currency
-                original_amount=original_amount,  # Original amount in selected currency
-                currency_code=currency_code,  # Store the original currency code
-                date=expense_date,
-                card_used=card_used,  # Default or legacy value
-                split_method=split_method,  # Use the carefully parsed split method
-                split_value=0,  # We'll use split_details for more complex splits
-                split_details=split_details,
-                paid_by=paid_by,
-                user_id=current_user.id,
-                category_id=category_id,
-                group_id=request.form.get('group_id') if request.form.get('group_id') else None,
-                split_with=split_with_str,
-                transaction_type=transaction_type,
-                account_id=account_id,
-                destination_account_id=destination_account_id
-            )
-            
-            db.session.add(expense)
-            
-            # NEW CODE: Update account balances
-            if account_id:
-                source_account = Account.query.get(account_id)
-                if source_account:
-                    # Update source account balance based on transaction type
-                    if transaction_type == 'expense':
-                        # Deduct the amount from the account
-                        source_account.balance -= original_amount
-                    elif transaction_type == 'income':
-                        # Add the amount to the account
-                        source_account.balance += original_amount
-                    elif transaction_type == 'transfer' and destination_account_id:
-                        # For transfers, deduct from source account
-                        source_account.balance -= original_amount
-                        
-                        # Add to destination account
-                        destination_account = Account.query.get(destination_account_id)
-                        if destination_account:
-                            destination_account.balance += original_amount
-            
-            db.session.commit()
-            
-            # Determine success message based on transaction type
-            if transaction_type == 'expense':
-                flash('Expense added successfully!')
-            elif transaction_type == 'income':
-                flash('Income recorded successfully!')
-            elif transaction_type == 'transfer':
-                flash('Transfer completed successfully!')
+                if split_details_json:
+                    try:
+                        split_details = json.loads(split_details_json)
+                        # Validate structure
+                        if not isinstance(split_details, dict) or 'type' not in split_details or 'values' not in split_details:
+                            raise ValueError("Invalid split details structure")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        app.logger.warning(f"Invalid split details: {str(e)}")
+                        # Create default split values
+                        split_details = create_equal_split(split_with_ids, paid_by, amount, split_method)
+                else:
+                    # If group is selected, try to use group default split values
+                    if group_id:
+                        group = Group.query.get(group_id)
+                        if group and group.default_split_method == split_method:
+                            # Use group default split values
+                            if group.default_split_values:
+                                if isinstance(group.default_split_values, dict):
+                                    # for PostgreSQL JSON type
+                                    split_values = group.default_split_values
+                                else:
+                                    # for SQLite TEXT type
+                                    split_values = json.loads(group.default_split_values)
+                                
+                                split_details = {
+                                    "type": split_method,
+                                    "values": split_values
+                                }
+                            else:
+                                # Fallback to equal split if no values
+                                split_details = create_equal_split(split_with_ids, paid_by, amount, split_method)
+                        else:
+                            # Fallback to equal split
+                            split_details = create_equal_split(split_with_ids, paid_by, amount, split_method)
+                    else:
+                        # No group, create default split values
+                        split_details = create_equal_split(split_with_ids, paid_by, amount, split_method)
+                
+                # Convert to JSON string
+                split_details_str = json.dumps(split_details)
             else:
-                flash('Transaction added successfully!')
-                
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error: {str(e)}')
-            app.logger.error(f"Error adding expense: {str(e)}")
+                split_details_str = None
+                # Keep the comma-separated string format
+                split_with_str = ','.join(split_with_ids) if split_with_ids else None
+        else:
+            # For personal expenses or non-expenses, no split data
+            split_with_str = None
+            split_details_str = None
             
-    return redirect(url_for('transactions'))
-
+        # Get destination account for transfers
+        destination_account_id = None
+        if transaction_type == 'transfer':
+            dest_id = request.form.get('destination_account_id')
+            if dest_id:
+                try:
+                    destination_account_id = int(dest_id)
+                    # Validate source and destination are different
+                    if destination_account_id == account_id:
+                        return jsonify({
+                            'success': False,
+                            'message': 'Source and destination accounts cannot be the same'
+                        }), 400
+                except ValueError:
+                    destination_account_id = None
+        
+        # Process category_id
+        category_id = request.form.get('category_id')
+        if not category_id or category_id.strip() == '' or category_id == 'null':
+            category_id = None
+        else:
+            try:
+                category_id = int(category_id)
+            except ValueError:
+                category_id = None
+        
+        # Check for category splits
+        has_category_splits = False
+        category_splits_data = request.form.get('category_splits_data')
+        category_splits = []
+        
+        if category_splits_data:
+            try:
+                category_splits = json.loads(category_splits_data)
+                if isinstance(category_splits, list) and len(category_splits) > 0:
+                    has_category_splits = True
+                    # When using splits, clear the main category
+                    category_id = None
+            except json.JSONDecodeError:
+                app.logger.warning("Invalid category splits data")
+        
+        # Create the transaction record
+        expense = Expense(
+            description=request.form.get('description', ''),
+            amount=amount,
+            original_amount=amount,  # Same as amount if no currency conversion
+            currency_code=currency_code,
+            date=expense_date,
+            card_used=card_used,
+            split_method=split_method,
+            split_value=0,  # Using split_details for complex splits instead
+            split_details=split_details_str,
+            paid_by=paid_by,
+            user_id=current_user.id,
+            category_id=category_id,
+            group_id=group_id if group_id else None,
+            split_with=split_with_str,
+            transaction_type=transaction_type,
+            account_id=account_id,
+            destination_account_id=destination_account_id,
+            has_category_splits=has_category_splits
+        )
+        
+        db.session.add(expense)
+        db.session.flush()  # Get ID without committing
+        
+        # Add category splits if provided
+        if has_category_splits and category_splits:
+            # Validate total matches transaction amount
+            total_split_amount = sum(float(split.get('amount', 0)) for split in category_splits)
+            
+            # Allow a small tolerance for rounding errors
+            if abs(total_split_amount - amount) > 0.01:
+                app.logger.warning(f"Category split total {total_split_amount} doesn't match amount {amount}")
+            
+            # Add each split
+            for split in category_splits:
+                if split.get('category_id') and float(split.get('amount', 0)) > 0:
+                    category_split = CategorySplit(
+                        expense_id=expense.id,
+                        category_id=split['category_id'],
+                        amount=float(split['amount'])
+                    )
+                    db.session.add(category_split)
+        
+        # Update account balances
+        if account_id:
+            source_account = Account.query.get(account_id)
+            if source_account:
+                # Update source account balance based on transaction type
+                if transaction_type == 'expense':
+                    source_account.balance -= amount
+                elif transaction_type == 'income':
+                    source_account.balance += amount
+                elif transaction_type == 'transfer' and destination_account_id:
+                    source_account.balance -= amount
+                    
+                    # Update destination account
+                    destination_account = Account.query.get(destination_account_id)
+                    if destination_account:
+                        destination_account.balance += amount
+        
+        # Commit all changes
+        db.session.commit()
+        
+        # Return success response
+        return jsonify({
+            'success': True,
+            'message': f'{transaction_type.capitalize()} added successfully',
+            'transaction_id': expense.id
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error adding expense: {str(e)}", exc_info=True)
+        
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+def create_equal_split(split_with_ids, paid_by, amount, split_method):
+    """Create a default equal split structure"""
+    result = {
+        "type": split_method,
+        "values": {}
+    }
+    
+    # Add all participants to the values
+    all_participants = list(split_with_ids)
+    if paid_by not in all_participants:
+        all_participants.append(paid_by)
+    
+    # Calculate equal shares based on split method
+    if split_method == 'percentage':
+        # Equal percentage for each participant
+        equal_share = 100.0 / len(all_participants) if all_participants else 100.0
+        
+        for participant_id in all_participants:
+            result['values'][participant_id] = equal_share
+    else:  # custom amount
+        # Equal amount for each participant
+        equal_share = amount / len(all_participants) if all_participants else amount
+        
+        for participant_id in all_participants:
+            result['values'][participant_id] = equal_share
+    
+    return result
 @app.route('/delete_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def delete_expense(expense_id):
@@ -4218,63 +4363,54 @@ def delete_expense(expense_id):
         # Find the expense
         expense = Expense.query.get_or_404(expense_id)
         
-        # Security check: Only the creator can delete the expense
+        # Security check
         if expense.user_id != current_user.id:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({
-                    'success': False,
-                    'message': 'You do not have permission to delete this expense'
-                }), 403
-            else:
-                flash('You do not have permission to delete this expense')
-                return redirect(url_for('transactions'))
+            return jsonify({
+                'success': False,
+                'message': 'Permission denied'
+            }), 403
         
-        # NEW CODE: Update account balances before deleting the expense
-        if expense.account_id:
-            account = Account.query.get(expense.account_id)
+        # Get transaction data for account balance updates
+        transaction_type = getattr(expense, 'transaction_type', 'expense')
+        amount = expense.amount
+        account_id = getattr(expense, 'account_id', None)
+        destination_account_id = getattr(expense, 'destination_account_id', None)
+        
+        # Update account balances before deleting
+        if account_id:
+            account = Account.query.get(account_id)
             if account:
-                # Reverse the effect of this transaction
-                if expense.transaction_type == 'expense':
-                    # Add the amount back to the account
-                    account.balance += expense.amount
-                elif expense.transaction_type == 'income':
-                    # Remove the income from the account
-                    account.balance -= expense.amount
-                elif expense.transaction_type == 'transfer' and expense.destination_account_id:
-                    # Add back to source account
-                    account.balance += expense.amount
+                # Reverse the effect based on transaction type
+                if transaction_type == 'expense':
+                    account.balance += amount  # Refund expense
+                elif transaction_type == 'income':
+                    account.balance -= amount  # Remove income
+                elif transaction_type == 'transfer' and destination_account_id:
+                    account.balance += amount  # Refund source
                     
-                    # Remove from destination account
-                    destination_account = Account.query.get(expense.destination_account_id)
-                    if destination_account:
-                        destination_account.balance -= expense.amount
+                    # Reverse destination account balance
+                    dest_account = Account.query.get(destination_account_id)
+                    if dest_account:
+                        dest_account.balance -= amount  # Remove from destination
         
         # Delete the expense
         db.session.delete(expense)
         db.session.commit()
         
-        # Handle AJAX and regular requests
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({
-                'success': True,
-                'message': 'Expense deleted successfully'
-            })
-        else:
-            flash('Expense deleted successfully')
-            return redirect(url_for('transactions'))
-            
+        # Return success
+        return jsonify({
+            'success': True,
+            'message': 'Transaction deleted successfully'
+        })
+        
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error deleting expense {expense_id}: {str(e)}")
         
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({
-                'success': False,
-                'message': f'Error: {str(e)}'
-            }), 500
-        else:
-            flash(f'Error: {str(e)}')
-            return redirect(url_for('transactions'))
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
 
 @app.route('/get_expense/<int:expense_id>', methods=['GET'])
 @login_required_dev
@@ -4330,189 +4466,297 @@ def get_expense(expense_id):
 @app.route('/update_expense/<int:expense_id>', methods=['POST'])
 @login_required_dev
 def update_expense(expense_id):
-    """Update an existing expense with improved category split handling and account balance updates"""
+    """Update an expense with improved error handling and AJAX support"""
     try:
-        # Find the expense
+        # Verify expense exists and belongs to current user
         expense = Expense.query.get_or_404(expense_id)
-        
-        # Security check
         if expense.user_id != current_user.id:
-            flash('You do not have permission to edit this expense')
-            return redirect(url_for('transactions'))
+            return jsonify({
+                'success': False,
+                'message': 'You do not have permission to edit this expense'
+            }), 403
         
-        # Log incoming data for debugging
-        app.logger.info(f"Update expense request data: {request.form}")
-        
-        # Store original values to calculate balance adjustments
+        # Store original values for account balance adjustments
         original_amount = expense.amount
-        original_transaction_type = expense.transaction_type
+        original_transaction_type = expense.transaction_type or 'expense'
         original_account_id = expense.account_id
         original_destination_account_id = expense.destination_account_id
         
-        # Get the transaction type with safer fallback
-        transaction_type = request.form.get('transaction_type', 'expense')
+        # TRANSACTION TYPE HANDLING
+        # Get transaction type with safe default
+        transaction_type = request.form.get('transaction_type', original_transaction_type)
+        expense.transaction_type = transaction_type
         
-        # Common fields for all transaction types (with safer handling)
+        # BASIC FIELDS
+        # Update basic fields with validation
         expense.description = request.form.get('description', expense.description)
         
-        # Handle amount safely
         try:
-            new_amount = float(request.form.get('amount', expense.amount))
-            amount_difference = new_amount - expense.amount
-            expense.amount = new_amount
+            expense.amount = float(request.form.get('amount', expense.amount))
         except (ValueError, TypeError):
-            # Keep existing amount if conversion fails
-            amount_difference = 0
+            return jsonify({
+                'success': False,
+                'message': 'Invalid amount provided'
+            }), 400
         
-        # Handle date safely
         try:
-            expense.date = datetime.strptime(request.form.get('date'), '%Y-%m-%d')
-        except (ValueError, TypeError):
-            # Keep existing date if conversion fails
+            expense.date = datetime.strptime(request.form.get('date', ''), '%Y-%m-%d')
+        except ValueError:
+            # Keep original date if new one is invalid
             pass
         
-        # Handle category splits toggle - this determines which category approach to use
+        # CATEGORY AND SPLIT HANDLING
+        # Handle category splits toggle
         enable_category_split = request.form.get('enable_category_split') == 'on'
         expense.has_category_splits = enable_category_split
         
         if enable_category_split:
-            # When using splits, the main category becomes optional
+            # Clear category_id when using splits
             expense.category_id = None
             
-            # Clear any existing splits
+            # Remove existing splits
             CategorySplit.query.filter_by(expense_id=expense.id).delete()
             
-            # Get split data from form
-            split_data = request.form.get('category_splits_data', '[]')
-            
+            # Process new splits
+            splits_data = request.form.get('category_splits_data', '[]')
             try:
-                splits = json.loads(split_data)
-                
-                # Create new splits
+                splits = json.loads(splits_data)
                 for split in splits:
+                    if not isinstance(split, dict):
+                        continue
+                    
                     category_id = split.get('category_id')
                     amount = float(split.get('amount', 0))
                     
                     if category_id and amount > 0:
-                        category_split = CategorySplit(
+                        # Create new category split
+                        cat_split = CategorySplit(
                             expense_id=expense.id,
                             category_id=category_id,
                             amount=amount
                         )
-                        db.session.add(category_split)
+                        db.session.add(cat_split)
+            except (json.JSONDecodeError, ValueError) as e:
+                return jsonify({
+                    'success': False,
+                    'message': f'Invalid category split data: {str(e)}'
+                }), 400
                 
-                # Validate that splits add up to the total
-                total_splits = sum(float(split.get('amount', 0)) for split in splits)
-                if abs(total_splits - expense.amount) > 0.01:
-                    app.logger.warning(f"Split total {total_splits} doesn't match expense amount {expense.amount}")
-                    
-            except Exception as e:
-                app.logger.error(f"Error processing category splits: {str(e)}")
-                # If split processing fails, disable splits and fall back to main category
-                expense.has_category_splits = False
-                
-                # Try to use the original category
-                category_id = request.form.get('category_id')
-                if category_id and category_id != 'null' and category_id.strip():
-                    try:
-                        expense.category_id = int(category_id)
-                    except ValueError:
-                        expense.category_id = None
-                else:
-                    expense.category_id = None
         else:
-            # If not using splits, just update the main category
-            # Handle category_id safely (allow null values)
+            # Using a single category - update category_id
+            CategorySplit.query.filter_by(expense_id=expense.id).delete()
+            
             category_id = request.form.get('category_id')
-            if category_id == 'null' or category_id == '':
-                expense.category_id = None
-            elif category_id is not None:
+            if category_id and category_id.strip() and category_id != 'null':
                 try:
                     expense.category_id = int(category_id)
                 except ValueError:
-                    # Keep existing category if conversion fails
-                    app.logger.warning(f"Invalid category_id value: {category_id}")
-            
-            # Clear any existing splits when not using splits
-            CategorySplit.query.filter_by(expense_id=expense.id).delete()
+                    expense.category_id = None
+            else:
+                expense.category_id = None
         
-        # Handle account_id safely
-        new_account_id = None
+        # ACCOUNT HANDLING
+        # Get new account_id
         account_id = request.form.get('account_id')
-        if account_id and account_id != 'null' and account_id != '':
+        if account_id and account_id != 'null':
             try:
-                new_account_id = int(account_id)
-                expense.account_id = new_account_id
+                expense.account_id = int(account_id)
+                
+                # Update card_used for backward compatibility
+                account = Account.query.get(expense.account_id)
+                if account:
+                    expense.card_used = account.name
+                    
             except ValueError:
-                app.logger.warning(f"Invalid account_id value: {account_id}")
+                pass
         
-        # Set transaction type
-        expense.transaction_type = transaction_type
-        
-        # Handle transfer destination
-        new_destination_account_id = None
+        # Handle destination account for transfers
         if transaction_type == 'transfer':
             destination_id = request.form.get('destination_account_id')
-            if destination_id and destination_id != 'null' and destination_id.strip():
+            if destination_id and destination_id != 'null':
                 try:
-                    new_destination_account_id = int(destination_id)
-                    expense.destination_account_id = new_destination_account_id
+                    expense.destination_account_id = int(destination_id)
                 except ValueError:
-                    pass
+                    expense.destination_account_id = None
+        else:
+            expense.destination_account_id = None
         
-        # NEW CODE: Update account balances
-        # 1. Reverse the original transaction effects
+        # EXPENSE-SPECIFIC FIELDS
+        if transaction_type == 'expense':
+            # Handle paid_by
+            paid_by = request.form.get('paid_by')
+            if paid_by:
+                expense.paid_by = paid_by
+            
+            # Handle personal expense toggle
+            is_personal = request.form.get('personal_expense') == 'on'
+            if is_personal:
+                expense.split_with = None
+                expense.split_details = None
+            else:
+                # Get split_with values (multi-select)
+                split_with = request.form.getlist('split_with')
+                expense.split_with = ','.join(split_with) if split_with else None
+                
+                # Update split method
+                expense.split_method = request.form.get('split_method', 'equal')
+                
+                # Handle group_default split method
+                if expense.split_method == 'group_default' and expense.group_id:
+                    group = Group.query.get(expense.group_id)
+                    if group:
+                        # Use the group's default split method
+                        actual_split_method = group.default_split_method or 'equal'
+                        expense.split_method = actual_split_method
+                        
+                        # Use group's default split values if available
+                        if actual_split_method != 'equal' and group.default_split_values:
+                            try:
+                                # Handle different storage types
+                                if isinstance(group.default_split_values, dict):
+                                    split_values = group.default_split_values
+                                else:
+                                    split_values = json.loads(group.default_split_values)
+                                
+                                # Create the split details structure
+                                split_details = {
+                                    "type": actual_split_method,
+                                    "values": split_values
+                                }
+                                
+                                expense.split_details = json.dumps(split_details)
+                            except Exception as e:
+                                app.logger.error(f"Error using group default splits: {str(e)}")
+                                # Keep existing split details or create new ones
+                                if not expense.split_details:
+                                    split_with_ids = expense.split_with.split(',') if expense.split_with else []
+                                    default_split = create_equal_split(split_with_ids, expense.paid_by, expense.amount, actual_split_method)
+                                    expense.split_details = json.dumps(default_split)
+                        else:
+                            # Group default is equal or has no values
+                            expense.split_details = None
+                else:
+                    # Update split details for non-equal splits
+                    if expense.split_method != 'equal' and expense.split_with:
+                        split_details = request.form.get('split_details')
+                        if split_details:
+                            try:
+                                # Validate JSON structure
+                                details = json.loads(split_details)
+                                if 'type' in details and 'values' in details:
+                                    expense.split_details = split_details
+                            except json.JSONDecodeError:
+                                expense.split_details = None
+                    else:
+                        expense.split_details = None
+            
+            # Update group
+            group_id = request.form.get('group_id')
+            if group_id and group_id != 'null' and group_id.strip():
+                try:
+                    expense.group_id = int(group_id)
+                except ValueError:
+                    expense.group_id = None
+            else:
+                expense.group_id = None
+            
+        else:
+            # For non-expense types, clear split data
+            expense.paid_by = current_user.id
+            expense.split_with = None
+            expense.split_details = None
+            expense.split_method = 'equal'
+            expense.group_id = None
+        
+        # ACCOUNT BALANCE UPDATES
+        
+        # 1. Reverse original balance changes
         if original_account_id:
             original_account = Account.query.get(original_account_id)
             if original_account:
+                # Undo original transaction effect
                 if original_transaction_type == 'expense':
-                    # Refund the amount to the account
-                    original_account.balance += original_amount
+                    original_account.balance += original_amount  # Refund
                 elif original_transaction_type == 'income':
-                    # Remove the income from the account
-                    original_account.balance -= original_amount
+                    original_account.balance -= original_amount  # Remove income
                 elif original_transaction_type == 'transfer':
-                    # Refund source account
-                    original_account.balance += original_amount
+                    original_account.balance += original_amount  # Refund source
                     
-                    # Reverse destination account effect
+                    # Reverse effect on destination
                     if original_destination_account_id:
-                        original_dest_account = Account.query.get(original_destination_account_id)
-                        if original_dest_account:
-                            original_dest_account.balance -= original_amount
+                        orig_dest_account = Account.query.get(original_destination_account_id)
+                        if orig_dest_account:
+                            orig_dest_account.balance -= original_amount  # Undo transfer
         
-        # 2. Apply the new transaction effects
-        if new_account_id:
-            new_account = Account.query.get(new_account_id)
-            if new_account:
+        # 2. Apply new balance changes
+        if expense.account_id:
+            account = Account.query.get(expense.account_id)
+            if account:
+                # Apply new transaction effect
                 if transaction_type == 'expense':
-                    # Deduct the new amount
-                    new_account.balance -= expense.amount
+                    account.balance -= expense.amount  # Deduct for expense
                 elif transaction_type == 'income':
-                    # Add the new amount
-                    new_account.balance += expense.amount
+                    account.balance += expense.amount  # Add for income
                 elif transaction_type == 'transfer':
-                    # Deduct from source account
-                    new_account.balance -= expense.amount
+                    account.balance -= expense.amount  # Deduct from source
                     
-                    # Add to destination account
-                    if new_destination_account_id:
-                        new_dest_account = Account.query.get(new_destination_account_id)
-                        if new_dest_account:
-                            new_dest_account.balance += expense.amount
+                    # Add to destination
+                    if expense.destination_account_id:
+                        dest_account = Account.query.get(expense.destination_account_id)
+                        if dest_account:
+                            dest_account.balance += expense.amount
         
-        # Save changes
+        # Save all changes
         db.session.commit()
-        flash('Transaction updated successfully!')
         
-        return redirect(url_for('transactions'))
+        # Return success response for AJAX
+        return jsonify({
+            'success': True,
+            'message': 'Transaction updated successfully'
+        })
         
     except Exception as e:
         db.session.rollback()
-        app.logger.error(f"Error updating expense {expense_id}: {str(e)}")
-        flash(f'Error: {str(e)}')
+        app.logger.error(f"Error updating expense {expense_id}: {str(e)}", exc_info=True)
         
-        return redirect(url_for('transactions'))
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+# Helper function for creating equal splits
+def calculate_equal_split(split_with_ids, paid_by, amount, split_method):
+    """Create a default equal split structure"""
+    result = {
+        "type": split_method,
+        "values": {}
+    }
+    
+    # Add all participants to the values
+    all_participants = list(split_with_ids)
+    if paid_by not in all_participants:
+        all_participants.append(paid_by)
+    
+    # Calculate equal shares based on split method
+    if split_method == 'percentage':
+        # Equal percentage for each participant
+        equal_share = 100.0 / len(all_participants) if all_participants else 100.0
+        
+        for participant_id in all_participants:
+            result['values'][participant_id] = equal_share
+    else:  # custom amount
+        # Payer pays 0, others split the amount
+        non_payers = [p for p in all_participants if p != paid_by]
+        equal_share = amount / len(non_payers) if non_payers else amount
+        
+        # Set payer's share to zero
+        result['values'][paid_by] = 0
+        
+        # Set other participants' shares to the equal amount
+        for participant_id in non_payers:
+            result['values'][participant_id] = equal_share
+    
+    return result
 
 #--------------------
 # ROUTES: tags
@@ -5450,7 +5694,8 @@ def get_category_splits(expense_id):
 def groups():
     groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
     all_users = User.query.all()
-    return render_template('groups.html', groups=groups, users=all_users)
+    base_currency = get_base_currency()  # Add this line
+    return render_template('groups.html', groups=groups, users=all_users, base_currency=base_currency)  # Add base_currency
 
 @app.route('/groups/create', methods=['POST'])
 @login_required_dev
@@ -5460,10 +5705,19 @@ def create_group():
         description = request.form.get('description')
         member_ids = request.form.getlist('members')
         
+        # Default split settings
+        default_split_method = request.form.get('default_split_method', 'equal')
+        default_payer = request.form.get('default_payer') or None  
+        auto_include_all = request.form.get('auto_include_all') == 'on'
+        
+        # Create group
         group = Group(
             name=name,
             description=description,
-            created_by=current_user.id
+            created_by=current_user.id,
+            default_split_method=default_split_method,
+            default_payer=default_payer,
+            auto_include_all=auto_include_all
         )
         
         # Add creator as a member
@@ -5474,6 +5728,20 @@ def create_group():
             user = User.query.filter_by(id=member_id).first()
             if user and user != current_user:
                 group.members.append(user)
+        
+        # If custom split method is used, get split values
+        if default_split_method != 'equal' and request.form.get('default_split_values'):
+            try:
+                split_values = json.loads(request.form.get('default_split_values'))
+                
+                # For PostgreSQL
+                group.default_split_values = split_values
+                
+                # For SQLite
+                # group.default_split_values = json.dumps(split_values)
+            except:
+                # If parse fails, ignore split values
+                pass
         
         db.session.add(group)
         db.session.commit()
@@ -5601,6 +5869,106 @@ def delete_group(group_id):
         app.logger.error(f"Error deleting group {group_id}: {str(e)}")
         flash(f'Error deleting group: {str(e)}', 'error')
         return redirect(url_for('group_details', group_id=group_id))
+    
+@app.route('/update_group_settings/<int:group_id>', methods=['POST'])
+@login_required_dev
+def update_group_settings(group_id):
+    """Update group settings including default splits"""
+    # Find the group
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if the user is the group creator
+    if current_user.id != group.created_by:
+        return jsonify({
+            'success': False,
+            'message': 'Only the group creator can update settings'
+        }), 403
+        
+    try:
+        # Update basic group settings
+        group.name = request.form.get('group_name', group.name)
+        group.description = request.form.get('group_description', group.description)
+        
+        # Update split settings
+        group.auto_include_all = request.form.get('auto_include_all') == 'true'
+        group.default_payer = request.form.get('default_payer') or None
+        group.default_split_method = request.form.get('default_split_method', 'equal')
+        
+        # Handle custom split values
+        if group.default_split_method != 'equal':
+            split_values_json = request.form.get('default_split_values')
+            if split_values_json:
+                try:
+                    split_values = json.loads(split_values_json)
+                    
+                    # For PostgreSQL JSON column
+                    group.default_split_values = split_values
+                    
+                    # For SQLite (uncomment if using SQLite)
+                    # group.default_split_values = json.dumps(split_values)
+                except json.JSONDecodeError:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Invalid split values format'
+                    }), 400
+        else:
+            # Clear split values if using equal split
+            group.default_split_values = None
+            
+        # Save changes
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Group settings updated successfully'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f"Error updating group settings: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+    
+@app.route('/get_group_details/<int:group_id>', methods=['GET'])
+@login_required_dev
+def get_group_details_api(group_id):
+    """API endpoint to get group details including default split settings"""
+    group = Group.query.get_or_404(group_id)
+    
+    # Check if user is a member of the group
+    if current_user not in group.members:
+        return jsonify({
+            'success': False,
+            'message': 'Access denied. You are not a member of this group.'
+        }), 403
+    
+    # Format the split values appropriately
+    default_split_values = group.default_split_values
+    
+    # Handle SQLite JSON storage if needed
+    if isinstance(default_split_values, str):
+        try:
+            default_split_values = json.loads(default_split_values)
+        except:
+            default_split_values = {}
+    
+    # Return group data in JSON format
+    return jsonify({
+        'success': True,
+        'group': {
+            'id': group.id,
+            'name': group.name,
+            'description': group.description,
+            'created_by': group.created_by,
+            'defaultSplitMethod': group.default_split_method,
+            'defaultPayer': group.default_payer,
+            'autoIncludeAll': group.auto_include_all,
+            'defaultSplitValues': default_split_values,
+            'members': [member.id for member in group.members]
+        }
+    })
 #--------------------
 # ROUTES: ADMIN
 #--------------------
@@ -5614,6 +5982,7 @@ def admin():
     
     users = User.query.all()
     return render_template('admin.html', users=users)
+
 @app.route('/admin/add_user', methods=['POST'])
 @login_required_dev
 def admin_add_user():
@@ -5630,25 +5999,34 @@ def admin_add_user():
         flash('Email already registered')
         return redirect(url_for('admin'))
     
-    user = User(id=email, name=name, is_admin=is_admin)
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-
-    
-    create_default_categories(user.id)
-    db.session.commit() 
-
-
-    create_default_budgets(user.id)
-    db.session.commit() 
-
     try:
-        send_welcome_email(user)
+        # Create and add user
+        user = User(id=email, name=name, is_admin=is_admin)
+        user.set_password(password)
+        db.session.add(user)
+        
+        # Flush to get the user ID without committing yet
+        db.session.flush()
+        
+        # Create categories and budgets in the same transaction
+        create_default_categories(user.id)
+        create_default_budgets(user.id)
+        
+        # Now commit everything at once
+        db.session.commit()
+        
+        # Send email outside the transaction
+        try:
+            send_welcome_email(user)
+        except Exception as e:
+            app.logger.error(f"Failed to send welcome email: {str(e)}")
+        
+        flash('User added successfully!')
     except Exception as e:
-        app.logger.error(f"Failed to send welcome email: {str(e)}")
-    
-    flash('User added successfully!')
+        db.session.rollback()
+        app.logger.error(f"Error creating user: {str(e)}")
+        flash(f'Error creating user: {str(e)}')
+        
     return redirect(url_for('admin'))
 
 @app.route('/admin/delete_user/<user_id>', methods=['POST'])
@@ -6269,56 +6647,91 @@ def get_transaction_form_html():
     groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
     categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
     currencies = Currency.query.all()
-    tags = Tag.query.filter_by(user_id=current_user.id).all()  # Add tags
+    accounts = Account.query.filter_by(user_id=current_user.id).all()  # Add account
+    
     return render_template('partials/add_transaction_form.html',
                           users=users,
                           groups=groups,
                           categories=categories,
                           currencies=currencies,
-                          tags=tags,  # Pass tags to the template
+                          accounts=accounts,
                           base_currency=base_currency)
 
 @app.route('/get_expense_edit_form/<int:expense_id>')
 @login_required_dev
 def get_expense_edit_form(expense_id):
-    """Return the HTML for editing an expense, including category splits data"""
-    expense = Expense.query.get_or_404(expense_id)
-    
-    # Security check
-    if expense.user_id != current_user.id and current_user.id not in (expense.split_with or ''):
-        return 'Access denied', 403
-    
-    # Prepare category splits data if available
-    category_splits_data = []
-    if expense.has_category_splits:
-        # Get all category splits for this expense
-        splits = CategorySplit.query.filter_by(expense_id=expense.id).all()
-        for split in splits:
-            category_splits_data.append({
-                'category_id': split.category_id,
-                'amount': split.amount
-            })
-    
-    # Add category splits data to the expense object for the template
-    expense.category_splits_data = json.dumps(category_splits_data) if category_splits_data else ''
-    
-    base_currency = get_base_currency()
-    users = User.query.all()
-    groups = Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all()
-    categories = Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all()
-    currencies = Currency.query.all()
-    
-    accounts = Account.query.filter_by(user_id=current_user.id).all()
-    return render_template('partials/edit_transaction_form.html',
-                          expense=expense,
-                          users=users,
-                          groups=groups,
-                          categories=categories,
-                          currencies=currencies,
-                          accounts=accounts,
-                          user=current_user,
-                          base_currency=base_currency)
-
+    """Return the HTML for editing an expense with pre-processed data"""
+    try:
+        # Find the expense
+        expense = Expense.query.get_or_404(expense_id)
+        
+        # Security check
+        if expense.user_id != current_user.id:
+            return "Access denied", 403
+        
+        # Pre-process split data for the template
+        # This reduces client-side processing and improves reliability
+        
+        # 1. Process category splits if present
+        category_splits_data = []
+        if expense.has_category_splits:
+            splits = CategorySplit.query.filter_by(expense_id=expense_id).all()
+            for split in splits:
+                category = Category.query.get(split.category_id)
+                category_data = None
+                if category:
+                    category_data = {
+                        'id': category.id,
+                        'name': category.name,
+                        'icon': category.icon,
+                        'color': category.color
+                    }
+                
+                category_splits_data.append({
+                    'id': split.id,
+                    'category_id': split.category_id,
+                    'amount': split.amount,
+                    'category': category_data
+                })
+        
+        # 2. Process split_with data
+        split_with_ids = []
+        if expense.split_with:
+            split_with_ids = expense.split_with.split(',')
+        
+        # 3. Process split details
+        split_details = None
+        if expense.split_details:
+            try:
+                if isinstance(expense.split_details, str):
+                    split_details = json.loads(expense.split_details)
+                else:
+                    split_details = expense.split_details
+            except json.JSONDecodeError:
+                split_details = None
+        
+        # Get all the data needed for the form
+        form_data = {
+            'expense': expense,
+            'category_splits': category_splits_data,
+            'category_splits_json': json.dumps(category_splits_data),
+            'split_with_ids': split_with_ids,
+            'split_details': split_details,
+            'split_details_json': json.dumps(split_details) if split_details else None,
+            'users': User.query.all(),
+            'groups': Group.query.join(group_users).filter(group_users.c.user_id == current_user.id).all(),
+            'categories': Category.query.filter_by(user_id=current_user.id).order_by(Category.name).all(),
+            'currencies': Currency.query.all(),
+            'accounts': Account.query.filter_by(user_id=current_user.id).all(),
+            'base_currency': get_base_currency()
+        }
+        
+        # Render template with all data
+        return render_template('partials/edit_transaction_form.html', **form_data)
+        
+    except Exception as e:
+        app.logger.error(f"Error getting edit form for expense {expense_id}: {str(e)}")
+        return f"Error loading edit form: {str(e)}", 500
 
 #--------------------
 # ROUTES: Accounts and Imports 
@@ -7044,12 +7457,15 @@ def simplefin_add_accounts():
                 account_obj = existing_account
             else:
                 # Create new account with custom values
+                currency_code = sf_account.get('currency_code')
+                if not currency_code or currency_code.strip() == '':
+                    currency_code = default_currency
                 new_account = Account(
                     name=sf_account.get('name'),  # Custom name from form
                     type=sf_account.get('type'),  # Custom type from form
                     institution=sf_account.get('institution'),
                     balance=sf_account.get('balance', 0),
-                    currency_code=sf_account.get('currency_code', default_currency),
+                    currency_code=currency_code,
                     user_id=current_user.id,
                     import_source='simplefin',
                     external_id=sf_account.get('id'),
@@ -10473,7 +10889,6 @@ def add_investment(portfolio_id):
     
     flash(f'Added {shares} shares of {symbol} to your portfolio!', 'success')
     return redirect(url_for('portfolio_details', portfolio_id=portfolio_id))
-
 @app.route('/update_prices', methods=['POST'])
 @login_required_dev
 def update_prices():
@@ -10501,7 +10916,7 @@ def update_prices():
     portfolio_values_before = {}
     for portfolio in portfolios:
         # Calculate and store the initial value of each portfolio
-        initial_value = portfolio.calculate_total_value()
+        initial_value = portfolio.calculate_total_value() or 0  # Add default of 0 if None
         portfolio_values_before[portfolio.id] = initial_value
         # Log the initial values for debugging
         app.logger.info(f"Portfolio {portfolio.id} ({portfolio.name}) initial value: {initial_value}")
@@ -10519,30 +10934,33 @@ def update_prices():
             
         processed_symbols.add(investment.symbol)
         
-        # Get stock data using cached function
-        stock_data = get_stock_data(investment.symbol, api_key)
+        # Get exchange if specified
+        exchange = investment.exchange if hasattr(investment, 'exchange') else None
+        
+        # Get stock data using both providers as needed
+        stock_data = get_stock_data(investment.symbol, api_key, exchange)
         
         if stock_data and 'price' in stock_data:
             # Find all investments with this symbol and update them
             for inv in all_investments:
                 if inv.symbol == investment.symbol:
                     # Store old price for logging
-                    old_price = inv.current_price
-                    old_value = inv.current_value
+                    old_price = inv.current_price or 0  # Add default of 0 if None
+                    old_value = inv.current_value or 0  # Add default of 0 if None
                     
-                    # Update to new price
+                    # Update price and metadata
                     inv.current_price = stock_data['price']
                     inv.last_update = datetime.utcnow()
                     
                     # Calculate new value after price update
-                    new_value = inv.current_value
+                    new_value = inv.current_value or 0  # Add default of 0 if None
                     value_change = new_value - old_value
                     
-                    # Log the individual investment updates
-                    app.logger.info(f"Updated {inv.symbol}: Price {old_price} → {inv.current_price}, " +
-                                   f"Value {old_value} → {new_value} (change: {value_change})")
+                    # Track data source
+                    if hasattr(inv, 'data_source'):
+                        inv.data_source = stock_data.get('data_source', 'fmp')
                     
-                    # Update sector and industry if available
+                    # Update sector and industry
                     if 'sector' in stock_data and stock_data['sector']:
                         inv.sector = stock_data['sector']
                     if 'industry' in stock_data and stock_data['industry']:
@@ -10555,7 +10973,7 @@ def update_prices():
     portfolio_values_after = {}
     for portfolio in portfolios:
         # Calculate and store the new value of each portfolio
-        new_value = portfolio.calculate_total_value()
+        new_value = portfolio.calculate_total_value() # Add default of 0 if None
         portfolio_values_after[portfolio.id] = new_value
         
         # Log the new values for debugging
@@ -10651,7 +11069,6 @@ def investment_transactions():
     
     return render_template('investments/transactions.html',
                           transactions=all_transactions)
-
 # Helper function to get stock data from FMP API
 def get_stock_data(symbol, api_key):
     """

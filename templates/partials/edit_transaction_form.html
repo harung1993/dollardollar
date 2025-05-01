@@ -1,240 +1,787 @@
-<form id="editTransactionForm" action="/update_expense/{{ expense.id }}" method="POST">
-    <div class="row">
-        <!-- Transaction type field -->
-        <div class="col-md-12 mb-3">
-            <label for="edit_transaction_type" class="form-label">Transaction Type</label>
-            <select class="form-select bg-dark text-light" id="edit_transaction_type" name="transaction_type">
-                <option value="expense" {% if expense.transaction_type == 'expense' or not expense.transaction_type %}selected{% endif %}>Expense</option>
-                <option value="income" {% if expense.transaction_type == 'income' %}selected{% endif %}>Income</option>
-                <option value="transfer" {% if expense.transaction_type == 'transfer' %}selected{% endif %}>Transfer</option>
-            </select>
+<form id="editTransactionForm" action="/update_expense/{{ expense.id }}" method="POST" class="modern-form">
+    <!-- Transaction Type Selector -->
+    <div class="mb-4">
+        <label class="d-block mb-2 fw-bold">Transaction Type</label>
+        <div class="transaction-type-selector">
+            <input type="radio" class="btn-check" name="transaction_type" id="edit_type_expense" value="expense" 
+                   {% if expense.transaction_type == 'expense' or not expense.transaction_type %}checked{% endif %}>
+            <label class="btn btn-type" for="edit_type_expense">
+                <i class="fas fa-shopping-cart"></i>
+                <span>Expense</span>
+            </label>
+            
+            <input type="radio" class="btn-check" name="transaction_type" id="edit_type_income" value="income"
+                   {% if expense.transaction_type == 'income' %}checked{% endif %}>
+            <label class="btn btn-type" for="edit_type_income">
+                <i class="fas fa-money-bill-wave"></i>
+                <span>Income</span>
+            </label>
+            
+            <input type="radio" class="btn-check" name="transaction_type" id="edit_type_transfer" value="transfer"
+                   {% if expense.transaction_type == 'transfer' %}checked{% endif %}>
+            <label class="btn btn-type" for="edit_type_transfer">
+                <i class="fas fa-exchange-alt"></i>
+                <span>Transfer</span>
+            </label>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-12 mb-3">
-            <label for="description" class="form-label">Description</label>
-            <input type="text" class="form-control bg-dark text-light" id="description" name="description" value="{{ expense.description }}" required>
-        </div>
-    </div>
-    
-    <div class="row">
-        <div class="col-md-6 mb-3">
-            <label for="edit_amount" class="form-label">Amount</label>
-            <div class="input-group">
-                <span class="input-group-text bg-dark text-light">{{ base_currency.symbol }}</span>
-                <input type="number" step="0.01" class="form-control bg-dark text-light" id="edit_amount" name="amount" value="{{ expense.amount }}" required>
+    <!-- Description and Amount -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="form-floating dark-floating">
+                <input type="text" class="form-control bg-dark text-light" id="description" name="description" 
+                       value="{{ expense.description }}" required placeholder="Description">
+                <label for="description">Description</label>
             </div>
         </div>
-        <div class="col-md-6 mb-3">
-            <label for="date" class="form-label">Date</label>
-            <input type="date" class="form-control bg-dark text-light" id="date" name="date" value="{{ expense.date.strftime('%Y-%m-%d') }}" required>
+        <div class="col-md-3">
+            <div class="form-floating dark-floating">
+                <input type="number" step="0.01" class="form-control bg-dark text-light" id="edit_amount" 
+                       name="amount" value="{{ expense.amount }}" required placeholder="Amount">
+                <label for="edit_amount">Amount ({{ base_currency.symbol }})</label>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="form-floating dark-floating">
+                <input type="date" class="form-control bg-dark text-light" id="date" name="date" 
+                       value="{{ expense.date.strftime('%Y-%m-%d') }}" required placeholder="Date">
+                <label for="date">Date</label>
+            </div>
         </div>
     </div>
-    
-    <div class="row">
-        <div class="col-md-6 mb-3">
-            <label for="edit_category_id" class="form-label">Category</label>
-            <select class="form-select bg-dark text-light" id="edit_category_id" name="category_id">
-                <option value="">Select a category</option>
-                {% for category in categories %}
-                    {% if not category.parent_id %}
-                        <optgroup label="{{ category.name }}">
-                            {% for subcat in category.subcategories %}
-                                <option value="{{ subcat.id }}" 
-                                        {% if expense.category_id == subcat.id %}selected{% endif %}>
-                                    {{ subcat.name }}
-                                </option>
-                            {% endfor %}
-                        </optgroup>
-                    {% endif %}
-                {% endfor %}
-            </select>
+
+    <!-- Account and Category -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="form-floating dark-floating">
+                <select class="form-select bg-dark text-light" id="edit_account_id" name="account_id" placeholder="Account">
+                    <option value="">Select account</option>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}" {% if expense.account_id == account.id %}selected{% endif %}>
+                            {{ account.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <label for="edit_account_id" id="account_label">
+                    {% if expense.transaction_type == 'transfer' %}From Account
+                    {% elif expense.transaction_type == 'income' %}Deposit Account
+                    {% else %}Payment Account{% endif %}
+                </label>
+            </div>
         </div>
         
-        <div class="col-md-6 mb-3">
-            <label for="edit_account_id" class="form-label" id="edit_account_label">Account</label>
-            <select class="form-select bg-dark text-light" id="edit_account_id" name="account_id">
-                <option value="">Select account</option>
-                <!-- Use a conditional to check if expense.account exists -->
-                {% if expense.account %}
-                    <option value="{{ expense.account.id }}" selected>{{ expense.account.name }}</option>
-                {% endif %}
-                
-                <!-- Fall back to card_used if no account -->
-                {% if not expense.account %}
-                    <option value="" selected>{{ expense.card_used }}</option>
-                {% endif %}
-                
-                <!-- Always show all user accounts -->
-                {% for account in user.accounts %}
-                    {% if not expense.account or account.id != expense.account.id %}
-                        <option value="{{ account.id }}">{{ account.name }}</option>
-                    {% endif %}
-                {% endfor %}
-            </select>
-        </div>
-    </div>
-
-    <!-- Category Split Toggle -->
-    <div class="mb-3">
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="enable_category_split" name="enable_category_split" 
-                  {% if expense.has_category_splits %}checked{% endif %}>
-            <label class="form-check-label" for="enable_category_split">Split this transaction into multiple categories</label>
+        <div class="col-md-6">
+            <div class="form-floating dark-floating {% if expense.has_category_splits %}is-disabled{% endif %}">
+                <select class="form-select bg-dark text-light" id="edit_category_id" name="category_id" 
+                        {% if expense.has_category_splits %}disabled{% endif %} placeholder="Category">
+                    <option value="">Select category</option>
+                    {% for category in categories %}
+                        {% if not category.parent_id %}
+                            <optgroup label="{{ category.name }}">
+                                {% for subcat in category.subcategories %}
+                                    <option value="{{ subcat.id }}" 
+                                            {% if expense.category_id == subcat.id %}selected{% endif %}>
+                                        {{ subcat.name }}
+                                    </option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <label for="edit_category_id">Category</label>
+            </div>
         </div>
     </div>
     
-    <!-- Category Splits Container -->
-    <div id="category_splits_container" class="mb-3 {% if expense.has_category_splits %}visible{% else %}hidden{% endif %}" 
-         style="display: {% if expense.has_category_splits %}block{% else %}none{% endif %};">
-        <div class="card bg-dark border-secondary">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Category Splits</h5>
-                <button type="button" class="btn btn-sm btn-primary" id="add_split_btn">
-                    <i class="fas fa-plus"></i> Add Split
-                </button>
-            </div>
-            <div class="card-body">
-                <div id="category_splits_list" class="mb-3">
-                    <!-- Category splits will be added here dynamically -->
-                </div>
-                <div class="d-flex justify-content-between mt-3">
-                    <span>Total: {{ base_currency.symbol }}<span id="split_total">0.00</span>/<span id="transaction_total">0.00</span></span>
-                    <span class="badge bg-success" id="split_status">Balanced</span>
-                </div>
-            </div>
-        </div>
-        <input type="hidden" id="category_splits_data" name="category_splits_data" value="{{ expense.category_splits_data|default('') }}">
-    </div>
-
-    <!-- Destination account for transfers -->
-    <div class="row" id="edit_to_account_container" style="display: {% if expense.is_transfer %}block{% else %}none{% endif %};">
-        <div class="col-md-12 mb-3">
-            <label for="edit_destination_account_id" class="form-label">To Account</label>
-            <select class="form-select bg-dark text-light" id="edit_destination_account_id" name="destination_account_id">
-                <option value="">Select destination account</option>
-                <!-- Show current destination account if it exists -->
-                {% if expense.destination_account %}
-                    <option value="{{ expense.destination_account.id }}" selected>{{ expense.destination_account.name }}</option>
-                {% endif %}
-                
-                <!-- Show all user accounts except the source account -->
-                {% for account in user.accounts %}
-                    {% if not expense.destination_account or account.id != expense.destination_account.id %}
-                        {% if not expense.account or account.id != expense.account.id %}
-                            <option value="{{ account.id }}">{{ account.name }}</option>
-                        {% endif %}
+    <!-- Transfer Account (Conditional) -->
+    <div class="mb-4 {% if expense.transaction_type != 'transfer' %}d-none{% endif %}" id="to_account_container">
+        <div class="form-floating dark-floating">
+            <select class="form-select bg-dark text-light" id="destination_account_id" name="destination_account_id" placeholder="To Account">
+                <option value="">Select destination</option>
+                {% for account in accounts %}
+                    {% if account.id != expense.account_id %}
+                        <option value="{{ account.id }}" 
+                                {% if expense.destination_account_id == account.id %}selected{% endif %}>
+                            {{ account.name }}
+                        </option>
                     {% endif %}
                 {% endfor %}
             </select>
+            <label for="destination_account_id">To Account</label>
         </div>
     </div>
-
-    <!-- Expense-specific fields -->
-    <div class="edit-expense-only-fields" style="display: {% if expense.is_expense %}block{% else %}none{% endif %};">
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="edit_paid_by" class="form-label">Paid By</label>
+    
+    <!-- Personal Expense Toggle -->
+    <div class="mb-4 expense-only-fields" {% if expense.transaction_type != 'expense' %}style="display:none"{% endif %}>
+        <div class="form-switch-card">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="edit_personal_expense" name="personal_expense"
+                       {% if not expense.split_with %}checked{% endif %}>
+                <label class="form-check-label" for="edit_personal_expense">This is a personal expense</label>
+            </div>
+            <small class="text-muted">Toggle off to split this expense with others</small>
+        </div>
+    </div>
+    
+    <!-- Split Details Section -->
+    <div class="expense-split-section expense-only-fields bg-dark border-secondary rounded p-3 mb-4" 
+         {% if expense.transaction_type != 'expense' or not expense.split_with %}style="display:none"{% endif %}>
+        
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Split Details</h5>
+            <span class="badge bg-secondary small">Shared Expense</span>
+        </div>
+        
+        <!-- Group and Payer Selection -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label for="edit_group_id" class="form-label small">Group</label>
+                <select class="form-select bg-dark text-light" id="edit_group_id" name="group_id">
+                    <option value="">No Group</option>
+                    {% for group in groups %}
+                        <option value="{{ group.id }}" {% if expense.group_id == group.id %}selected{% endif %}
+                                data-members="{{ group.members|map(attribute='id')|list|tojson }}"
+                                data-auto-include="{{ group.auto_include_all|default(true)|tojson }}"
+                                data-default-payer="{{ group.default_payer or '' }}">
+                            {{ group.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-6">
+                <label for="edit_paid_by" class="form-label small">Paid By</label>
                 <select class="form-select bg-dark text-light" id="edit_paid_by" name="paid_by">
                     {% for user in users %}
-                        <option value="{{ user.id }}" 
-                                {% if expense.paid_by == user.id %}selected{% endif %}>
+                        <option value="{{ user.id }}" {% if expense.paid_by == user.id %}selected{% endif %}>
                             {{ user.name }}
                         </option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-6 mb-3">
-                <div class="form-check form-switch mt-4">
-                    <input class="form-check-input" type="checkbox" id="edit_personal_expense" name="personal_expense" 
-                           {% if not expense.split_with %}checked{% endif %}>
-                    <label class="form-check-label" for="edit_personal_expense">Personal expense (no splitting)</label>
+        </div>
+        
+        <!-- REORDERED: Split Method First -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label for="edit_split_method" class="form-label small">Split Method</label>
+                <select class="form-select bg-dark text-light" id="edit_split_method" name="split_method">
+                    <option value="group_default" {% if expense.split_method == 'group_default' %}selected{% endif %}>
+                        Group Default
+                    </option>
+                    <option value="equal" {% if expense.split_method == 'equal' %}selected{% endif %}>
+                        Equal Split
+                    </option>
+                    <option value="percentage" {% if expense.split_method == 'percentage' %}selected{% endif %}>
+                        Percentage Split
+                    </option>
+                    <option value="custom" {% if expense.split_method == 'custom' %}selected{% endif %}>
+                        Custom Split
+                    </option>
+                </select>
+                <div class="d-flex justify-content-end mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="edit_split_values_toggle">
+                        <i class="fas fa-calculator me-1"></i> Edit Split Values
+                    </button>
                 </div>
             </div>
-        </div>
-        
-        <div class="mb-3">
-            <label for="edit_group_id" class="form-label">Group (Optional)</label>
-            <select class="form-select bg-dark text-light" id="edit_group_id" name="group_id">
-                <option value="">No Group (Personal Transaction)</option>
-                {% for group in groups %}
-                    <option value="{{ group.id }}" 
-                            {% if expense.group_id == group.id %}selected{% endif %}>
-                        {{ group.name }}
-                    </option>
-                {% endfor %}
-            </select>
-        </div>
-        
-        <div class="mb-3">
-            <label for="edit_split_with" class="form-label">Split With</label>
-            <select class="form-select bg-dark text-light enhanced-multi-select" id="edit_split_with" name="split_with" multiple 
-                    {% if not expense.split_with %}disabled{% endif %}>
-                {% for user in users %}
-                    {% if user.id != expense.paid_by %}
-                        <option value="{{ user.id }}" 
-                                {% if expense.split_with and user.id in expense.split_with.split(',') %}selected{% endif %}>
-                            {{ user.name }}
-                        </option>
-                    {% endif %}
-                {% endfor %}
-            </select>
-            <small class="form-text text-muted">Use ctrl to select multiple people</small>
-        </div>
-        
-        <div class="mb-3">
-            <label for="edit_split_method" class="form-label">Split Method</label>
-            <select class="form-select bg-dark text-light" id="edit_split_method" name="split_method" required
-                   {% if not expense.split_with %}disabled{% endif %}>
-                <option value="equal" {% if expense.split_method == 'equal' %}selected{% endif %}>Equal Split Among All</option>
-                <option value="percentage" {% if expense.split_method == 'percentage' %}selected{% endif %}>Percentage Split for Each Person</option>
-                <option value="custom" {% if expense.split_method == 'custom' %}selected{% endif %}>Custom Amount for Each Person</option>
-            </select>
-        </div>
-        
-        <div id="edit_custom_split_container" style="display: {% if expense.split_method != 'equal' and expense.split_with %}block{% else %}none{% endif %};" class="mb-3">
-            <div class="card bg-dark border-secondary">
-                <div class="card-header">
-                    <h5 class="mb-0">Split Values</h5>
+            
+            <!-- IMPROVED: Split With as simple dropdown that appears/disappears based on method -->
+            <div class="col-md-6">
+                <label for="edit_split_with" class="form-label small">Split With</label>
+                <div id="split_with_container">
+                    <!-- This will show or hide based on split method -->
+                    <select class="form-select bg-dark text-light enhanced-multi-select" 
+                            id="edit_split_with" name="split_with" multiple>
+                        {% for user in users %}
+                            {% if user.id != expense.paid_by %}
+                                <option value="{{ user.id }}" 
+                                        {% if expense.split_with and user.id in split_with_ids %}selected{% endif %}>
+                                    {{ user.name }}
+                                </option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Press ctrl to select people who shared this expense</small>
                 </div>
-                <div class="card-body">
-                    <div id="edit_split_values_container"></div>
-                    <div class="d-flex justify-content-between mt-3">
-                        <span>Total: {{ base_currency.symbol }}<span id="edit_split_total">0.00</span></span>
-                        <span class="badge bg-success" id="edit_split_status">Balanced</span>
+                
+                <div id="split_with_group_default" class="{% if expense.split_method != 'group_default' %}d-none{% endif %}">
+                    <div class="card bg-dark border-secondary">
+                        <div class="card-body py-2 px-3">
+                            <div id="group_members_preview">
+                                <!-- This will be filled by JavaScript -->
+                                <div class="text-muted small">Using group default: all members will be included</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <input type="hidden" id="edit_split_details" name="split_details" value='{{ expense.split_details }}'>
+        </div>
+        
+        <!-- Split Values Container -->
+        <div id="edit_split_values_container" class="{% if expense.split_method == 'equal' %}d-none{% endif %}">
+            <div class="card bg-dark border-secondary">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Split Values</h6>
+                    <span id="split_method_display" class="badge bg-primary">
+                        {% if expense.split_method == 'percentage' %}
+                            Percentage Split
+                        {% elif expense.split_method == 'custom' %}
+                            Custom Split
+                        {% elif expense.split_method == 'group_default' %}
+                            Group Default
+                        {% else %}
+                            Equal Split
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="card-body p-3">
+                    <div id="split_values_rows">
+                        <!-- Will be filled dynamically by JS -->
+                        <div class="text-center py-2">
+                            <div class="spinner-border spinner-border-sm text-secondary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="ms-2">Loading split values...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between mt-3">
+                        <span class="text-muted">Total: <span id="split_total_display"></span></span>
+                        <span id="split_status" class="badge bg-secondary">Loading...</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-
-    <div class="d-flex justify-content-end mt-3">
-        <button type="button" class="btn btn-secondary me-2" onclick="closeSlidePanel('editTransactionPanel')">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
+    
+    <!-- Advanced Options Accordion -->
+    <div class="accordion mb-4" id="advancedOptionsAccordion">
+        <div class="accordion-item bg-dark border-secondary">
+            <h2 class="accordion-header" id="headingAdvanced">
+                <button class="accordion-button collapsed bg-dark text-light" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#collapseAdvanced" 
+                        aria-expanded="{% if expense.has_category_splits %}true{% else %}false{% endif %}" 
+                        aria-controls="collapseAdvanced">
+                    <i class="fas fa-cog me-2"></i> Advanced Options
+                </button>
+            </h2>
+            <div id="collapseAdvanced" class="accordion-collapse collapse {% if expense.has_category_splits %}show{% endif %}" 
+                 aria-labelledby="headingAdvanced" data-bs-parent="#advancedOptionsAccordion">
+                <div class="accordion-body">
+                    <!-- Multi-category Split Option -->
+                    <div class="form-switch-card mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enable_category_split" name="enable_category_split" 
+                                   {% if expense.has_category_splits %}checked{% endif %}>
+                            <label class="form-check-label" for="enable_category_split">
+                                Split into multiple categories
+                            </label>
+                        </div>
+                        <small class="text-muted">Divide this transaction between different categories</small>
+                    </div>
+                    
+                    <!-- Category Split Container -->
+                    <div id="category_splits_container" class="{% if not expense.has_category_splits %}d-none{% endif %}">
+                        <div class="card bg-dark border-secondary">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">Category Distribution</h6>
+                                <button type="button" class="btn btn-sm btn-outline-light" id="add_split_btn">
+                                    <i class="fas fa-plus me-1"></i> Add Category
+                                </button>
+                            </div>
+                            <div class="card-body p-3">
+                                <div id="category_splits_list">
+                                    <!-- Will be filled dynamically or from existing splits -->
+                                    {% if category_splits %}
+                                        {% for split in category_splits %}
+                                            <div class="row g-2 mb-3 split-row" data-split-id="{{ loop.index }}">
+                                                <div class="col-md-5">
+                                                    <select class="form-select bg-dark text-light split-category">
+                                                        <option value="">Select category</option>
+                                                        {% for category in categories %}
+                                                            {% if not category.parent_id %}
+                                                                <optgroup label="{{ category.name }}">
+                                                                    {% for subcat in category.subcategories %}
+                                                                        <option value="{{ subcat.id }}" 
+                                                                                {% if split.category_id == subcat.id %}selected{% endif %}>
+                                                                            {{ subcat.name }}
+                                                                        </option>
+                                                                    {% endfor %}
+                                                                </optgroup>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <div class="input-group">
+                                                        <span class="input-group-text bg-dark text-light">{{ base_currency.symbol }}</span>
+                                                        <input type="number" step="0.01" class="form-control bg-dark text-light split-amount" 
+                                                               value="{{ split.amount }}">
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <button type="button" class="btn btn-outline-danger remove-split">
+                                                        <i class="fas fa-times"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="split-summary mt-3">
+                                    <div class="progress mb-2" style="height: 5px;">
+                                        <div class="progress-bar" role="progressbar" style="width: 0%;" 
+                                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                                             id="category_split_progress"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span class="text-muted">Total:</span>
+                                            <span class="ms-1">{{ base_currency.symbol }}<span id="split_total">0.00</span>/<span id="transaction_total">{{ expense.amount }}</span></span>
+                                        </div>
+                                        <span id="split_status" class="badge bg-secondary">Loading...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-</form>
+    
+    <!-- Form Actions -->
+    <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary" onclick="EditTransactionModule.closePanel('editTransactionPanel')">
+            Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save me-2"></i>Save Changes
+        </button>
+    </div>
 
-<script>
+    <!-- Hidden data fields -->
+    <input type="hidden" id="category_splits_data" name="category_splits_data" value='{{ category_splits_json }}'>
+    <input type="hidden" id="split_details" name="split_details" value='{{ split_details_json or "" }}'>
+
+    <!-- JavaScript for improved Split With functionality -->
+    <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Global base currency symbol variable (needed for dynamic UI creation)
-        window.baseCurrencySymbol = '{{ base_currency.symbol }}';
+        // Set up the split method toggle
+        const splitMethodSelect = document.getElementById('edit_split_method');
+        const splitWithContainer = document.getElementById('split_with_container');
+        const groupDefaultContainer = document.getElementById('split_with_group_default');
+        const groupSelect = document.getElementById('edit_group_id');
         
-        // Check if has_category_splits is true but no category_splits_data (handle edge case)
-        const hasSplits = {% if expense.has_category_splits %}true{% else %}false{% endif %};
-        const splitsData = '{{ expense.category_splits_data|default('') }}';
+        if (splitMethodSelect) {
+            // Handle method change
+            splitMethodSelect.addEventListener('change', function() {
+                const isGroupDefault = this.value === 'group_default';
+                
+                // Show/hide the appropriate containers
+                if (splitWithContainer) {
+                    splitWithContainer.classList.toggle('d-none', isGroupDefault);
+                }
+                
+                if (groupDefaultContainer) {
+                    groupDefaultContainer.classList.toggle('d-none', !isGroupDefault);
+                }
+                
+                // If switching to group default, update the preview
+                if (isGroupDefault) {
+                    updateGroupMembersPreview();
+                }
+            });
+            
+            // Trigger initial update
+            splitMethodSelect.dispatchEvent(new Event('change'));
+        }
         
-        if (hasSplits && !splitsData) {
-            // If marked as having splits but no data, create default splits data
-            const amount = parseFloat(document.getElementById('edit_amount').value) || 0;
+        // When group selection changes, update the members preview
+        if (groupSelect) {
+            groupSelect.addEventListener('change', function() {
+                // If split method is group_default, update preview
+                if (splitMethodSelect && splitMethodSelect.value === 'group_default') {
+                    updateGroupMembersPreview();
+                }
+                
+                // If there's no group selected, force switching away from group_default
+                if (!this.value && splitMethodSelect && splitMethodSelect.value === 'group_default') {
+                    splitMethodSelect.value = 'equal';
+                    splitMethodSelect.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+        
+        // Also setup paid_by changes to affect split_with options
+        const paidBySelect = document.getElementById('edit_paid_by');
+        const splitWithSelect = document.getElementById('edit_split_with');
+        
+        if (paidBySelect && splitWithSelect) {
+            paidBySelect.addEventListener('change', function() {
+                const paidById = this.value;
+                
+                // Update the split_with options - remove paid_by from options
+                Array.from(splitWithSelect.options).forEach(option => {
+                    if (option.value === paidById) {
+                        option.disabled = true;
+                        option.selected = false;
+                    } else {
+                        option.disabled = false;
+                    }
+                });
+                
+                // Also update the preview if using group default
+                if (splitMethodSelect && splitMethodSelect.value === 'group_default') {
+                    updateGroupMembersPreview();
+                }
+            });
+        }
+        
+        // Update category split progress bar
+        function updateSplitProgressBar() {
+            const totalEl = document.getElementById('split_total');
+            const targetEl = document.getElementById('transaction_total');
+            const progressBar = document.getElementById('category_split_progress');
             
-            // Clear splits list
-            document.getElementById('category_splits_list').innerHTML = '';
+            if (totalEl && targetEl && progressBar) {
+                const total = parseFloat(totalEl.textContent) || 0;
+                const target = parseFloat(targetEl.textContent) || 0;
+                
+                if (target > 0) {
+                    const percentage = (total / target) * 100;
+                    progressBar.style.width = `${Math.min(percentage, 100)}%`;
+                    
+                    // Set color based on status
+                    if (Math.abs(total - target) < 0.01) {
+                        progressBar.className = 'progress-bar bg-success';
+                    } else if (total < target) {
+                        progressBar.className = 'progress-bar bg-warning';
+                    } else {
+                        progressBar.className = 'progress-bar bg-danger';
+                    }
+                }
+            }
+        }
+        
+        // Hook into the existing category split update function
+        const originalUpdateFunction = window.updateCategorySplitTotals;
+        if (typeof originalUpdateFunction === 'function') {
+            window.updateCategorySplitTotals = function() {
+                // Call the original function
+                originalUpdateFunction.apply(this, arguments);
+                
+                // Then update progress bar
+                updateSplitProgressBar();
+            };
             
-            // Create a default split with the full amount
-            addCategorySplit(amount);
-            updateSplitTotals();
+            // Initial update
+            setTimeout(updateSplitProgressBar, 500);
         }
     });
-</script>
+    
+    // Function to update the group members preview
+    function updateGroupMembersPreview() {
+        const previewContainer = document.getElementById('group_members_preview');
+        const groupSelect = document.getElementById('edit_group_id');
+        const paidBySelect = document.getElementById('edit_paid_by');
+        
+        if (!previewContainer || !groupSelect) return;
+        
+        // Clear the preview
+        previewContainer.innerHTML = '';
+        
+        // If no group is selected, show a message
+        if (!groupSelect.value) {
+            previewContainer.innerHTML = '<div class="text-muted small">No group selected</div>';
+            return;
+        }
+        
+        // Get the selected group option
+        const selectedOption = groupSelect.options[groupSelect.selectedIndex];
+        
+        // Try to get members from the data attribute
+        let members = [];
+        let autoInclude = true;
+        
+        try {
+            // First check if we have window.groupsData
+            if (window.groupsData && window.groupsData[groupSelect.value]) {
+                const groupData = window.groupsData[groupSelect.value];
+                members = groupData.members || [];
+                autoInclude = groupData.autoIncludeAll !== false;
+            } 
+            // Fallback to data attributes on the option
+            else if (selectedOption) {
+                const membersAttr = selectedOption.getAttribute('data-members');
+                const autoIncludeAttr = selectedOption.getAttribute('data-auto-include');
+                
+                if (membersAttr) {
+                    members = JSON.parse(membersAttr);
+                }
+                
+                if (autoIncludeAttr !== null) {
+                    autoInclude = autoIncludeAttr !== 'false';
+                }
+            }
+        } catch (e) {
+            console.error('Error parsing group data:', e);
+        }
+        
+        const paidById = paidBySelect ? paidBySelect.value : null;
+        
+        // Get all users data from the form for display
+        const users = {};
+        if (paidBySelect) {
+            Array.from(paidBySelect.options).forEach(opt => {
+                users[opt.value] = opt.textContent;
+            });
+        }
+        
+        // Show all members except the payer if auto-include is on
+        if (autoInclude) {
+            previewContainer.innerHTML = '<div class="mb-2 small fw-bold">Group members who will share this expense:</div>';
+            
+            let hasMembersToShow = false;
+            
+            // Add each member
+            members.forEach(memberId => {
+                // Skip the payer
+                if (memberId === paidById) return;
+                
+                hasMembersToShow = true;
+                const memberName = users[memberId] || memberId;
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-secondary me-2 mb-2';
+                badge.textContent = memberName;
+                previewContainer.appendChild(badge);
+            });
+            
+            // If no members to show (e.g., only payer is in group)
+            if (!hasMembersToShow) {
+                const notice = document.createElement('div');
+                notice.className = 'text-warning small';
+                notice.textContent = 'No other members to split with (payer is the only member)';
+                previewContainer.appendChild(notice);
+            }
+            
+            // Add note about automatic inclusion
+            const note = document.createElement('div');
+            note.className = 'small text-muted mt-2';
+            note.textContent = 'Group settings: All members are automatically included';
+            previewContainer.appendChild(note);
+        } else {
+            // If auto-include is off, show message that user needs to select manually
+            previewContainer.innerHTML = '<div class="text-warning small">Group does not auto-include members. Please select them manually.</div>';
+            
+            // Force showing the split_with dropdown
+            const splitWithContainer = document.getElementById('split_with_container');
+            const groupDefaultContainer = document.getElementById('split_with_group_default');
+            
+            if (splitWithContainer && groupDefaultContainer) {
+                splitWithContainer.classList.remove('d-none');
+                groupDefaultContainer.classList.add('d-none');
+            }
+        }
+    }
+    </script>
+    
+    <style>
+    /* Modern form styles */
+    .modern-form {
+        --form-bg: rgba(30, 41, 59, 0.5);
+        --form-border: rgba(255, 255, 255, 0.1);
+        --primary-color: #0ea5e9;
+        --success-color: #10b981;
+        --warning-color: #f59e0b;
+        --danger-color: #ef4444;
+        --text-color: rgba(255, 255, 255, 0.9);
+        --muted-color: rgba(255, 255, 255, 0.6);
+    }
+    
+    /* Style the transaction type buttons */
+    .transaction-type-selector {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+    
+    .btn-type {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        background-color: rgba(17, 24, 39, 0.8);
+        border: 1px solid var(--form-border);
+        border-radius: 8px;
+        color: var(--text-color);
+        transition: all 0.2s ease;
+    }
+    
+    .btn-type i {
+        font-size: 20px;
+        margin-bottom: 6px;
+    }
+    
+    .btn-check:checked + .btn-type {
+        background-color: rgba(var(--bs-primary-rgb), 0.2);
+        border-color: var(--primary-color);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-check:checked + .btn-type[for="edit_type_expense"] {
+        background-color: rgba(var(--bs-danger-rgb), 0.2);
+        border-color: var(--danger-color);
+    }
+    
+    .btn-check:checked + .btn-type[for="edit_type_income"] {
+        background-color: rgba(var(--bs-success-rgb), 0.2);
+        border-color: var(--success-color);
+    }
+    
+    .btn-check:checked + .btn-type[for="edit_type_transfer"] {
+        background-color: rgba(var(--bs-info-rgb), 0.2);
+        border-color: var(--primary-color);
+    }
+    
+    /* Form floating labels with dark background */
+    .dark-floating {
+        position: relative;
+    }
+    
+    .dark-floating label {
+        color: var(--muted-color);
+    }
+    
+    .form-floating.dark-floating > .form-control,
+    .form-floating.dark-floating > .form-select {
+        background-color: var(--form-bg);
+        border-color: var(--form-border);
+        border-radius: 8px;
+        height: calc(3.5rem + 2px);
+        line-height: 1.25;
+    }
+    
+    .form-floating.dark-floating > label {
+        padding: 1rem 0.75rem;
+    }
+    
+    .form-floating.dark-floating > .form-control:focus ~ label,
+    .form-floating.dark-floating > .form-control:not(:placeholder-shown) ~ label,
+    .form-floating.dark-floating > .form-select ~ label {
+        opacity: .65;
+        transform: scale(.85) translateY(-0.75rem) translateX(0.15rem);
+    }
+    
+    .form-floating.dark-floating.is-disabled > .form-control {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    
+    /* Form switch card */
+    .form-switch-card {
+        background-color: var(--form-bg);
+        border: 1px solid var(--form-border);
+        border-radius: 8px;
+        padding: 12px 16px;
+    }
+    
+    /* Split details section */
+    .expense-split-section {
+        background-color: rgba(17, 24, 39, 0.8);
+        border: 1px solid var(--form-border);
+        border-radius: 12px;
+        transition: all 0.3s ease;
+    }
+    
+    /* Split with container */
+    .split-with-container {
+        position: relative;
+    }
+    
+    /* Enhanced multi-select */
+    .enhanced-multi-select {
+        min-height: 100px;
+        border-radius: 8px;
+    }
+    
+    /* Accordion styling */
+    .accordion-button:not(.collapsed) {
+        background-color: rgba(14, 165, 233, 0.2);
+        color: var(--text-color);
+    }
+    
+    .accordion-button:focus {
+        box-shadow: none;
+        border-color: var(--primary-color);
+    }
+    
+    .accordion-item {
+        background-color: transparent;
+        border-radius: 8px !important;
+        overflow: hidden;
+    }
+    
+    .accordion-button::after {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='white' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+    }
+    
+    /* Form validation styles */
+    .was-validated .form-control:invalid,
+    .form-control.is-invalid {
+        border-color: var(--danger-color);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23ef4444' viewBox='0 0 16 16'%3E%3Cpath d='M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM8 4a.905.905 0 0 0-.9.995l.35 3.507a.552.552 0 0 0 1.1 0l.35-3.507A.905.905 0 0 0 8 4zm.002 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z'/%3E%3C/svg%3E");
+    }
+    
+    /* Custom form elements for split values */
+    #split_values_rows .row {
+        background-color: rgba(30, 41, 59, 0.3);
+        padding: 8px;
+        border-radius: 6px;
+        margin-bottom: 8px !important;
+    }
+    
+    /* Split row styling */
+    .split-row {
+        background-color: rgba(30, 41, 59, 0.3);
+        padding: 10px;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+    
+    .split-row:hover {
+        background-color: rgba(30, 41, 59, 0.5);
+    }
+    
+    /* Buttons styling */
+    .btn-primary, .btn-success {
+        background-image: linear-gradient(to right, #0ea5e9, #38bdf8);
+        border: none;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-primary:hover, .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+    }
+    
+    .btn-outline-secondary {
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+    
+    .btn-outline-danger {
+        color: var(--danger-color);
+        border-color: var(--danger-color);
+    }
+    
+    .btn-outline-danger:hover {
+        background-color: rgba(239, 68, 68, 0.2);
+        color: white;
+    }
+    </style>
+</form>

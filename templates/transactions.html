@@ -241,11 +241,12 @@
                     </thead>
                     <tbody>
                         {% if expenses %}
-                            {% for expense in expenses %}
-                                {% set splits = expense_splits[expense.id] %}
+                        {% for expense in expenses %}
+                            {% set splits = expense_splits[expense.id] %}
                                 <tr data-expense-id="{{ expense.id }}" 
                                     data-transaction-type="{{ expense.transaction_type|default('expense') }}"
-                                    data-category-id="{% if expense.category_id %}{{ expense.category_id }}{% else %}none{% endif %}">
+                                    data-category-id="{% if expense.category_id %}{{ expense.category_id }}{% else %}none{% endif %}"
+                                    data-group-id="{% if expense.group_id %}{{ expense.group_id }}{% else %}{% endif %}">
                                     <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
                                     <td>
                                         {% if expense.is_income %}
@@ -321,7 +322,13 @@
                                         <div class="split-details mt-2" id="split-{{ expense.id }}" style="display: none;">
                                             <div class="card bg-dark border-secondary">
                                                 <div class="card-body p-2">
-                                                    <div class="mb-1">Split: {{ expense.split_method }}</div>
+                                                    <div class="mb-1">
+                                                        Split: {% if expense.split_method == 'group_default' and expense.group_id %}
+                                                                Group Default ({{ expense.group.default_split_method|capitalize if expense.group else 'Equal' }})
+                                                             {% else %}
+                                                                {{ expense.split_method|capitalize }}
+                                                             {% endif %}
+                                                    </div>
                                                     
                                                     {% if splits.payer.amount > 0 %}
                                                         <div class="mb-1">
@@ -401,43 +408,32 @@
     window.baseCurrencySymbol = "{{ base_currency.symbol }}";
 </script>
 
-<!-- Include utils.js and transactions.js for core functionality -->
+
 <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<!-- <script src="{{ url_for('static', filename='js/unified_transaction_module.js') }}"></script>-->
+<script src="{{ url_for('static', filename='js/transactions/add_transaction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions/edit_transaction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions/ui_helpers.js') }}"></script>
 <script src="{{ url_for('static', filename='js/transactions.js') }}"></script>
-<script src="{{ url_for('static', filename='js/transaction_module.js') }}"></script>
-<!-- Add this script at the end of your HTML, after all other scripts -->
+
+
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-      // Log what functions are available in TransactionModule
-      if (window.TransactionModule) {
-        console.log("TransactionModule functions available:", Object.keys(TransactionModule));
-      } else {
-        console.log("TransactionModule not found");
-      }
+  // Update edit buttons to use the new module
+  document.querySelectorAll('.edit-expense-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const expenseId = this.getAttribute('data-expense-id');
       
-      // Create direct link between edit buttons and panel opening
-      document.querySelectorAll('.edit-expense-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          const expenseId = this.getAttribute('data-expense-id');
-          
-          
-          // Try accessing through TransactionModule
-          if (window.TransactionModule) {
-            if (typeof TransactionModule.openEditTransactionPanel === 'function') {
-             
-              TransactionModule.openEditTransactionPanel(expenseId);
-            } else if (typeof TransactionModule.openEditForm === 'function') {
-        
-              TransactionModule.openEditForm(expenseId);
-            } else {
-              console.log("Function names available:", Object.keys(TransactionModule));
-            }
-          } else {
-            console.error("TransactionModule not available");
-          }
-        });
-      });
+      // Use the new EditTransactionModule instead of TransactionModule
+      if (window.EditTransactionModule) {
+        EditTransactionModule.openEditPanel(expenseId);
+      } else {
+        console.error("EditTransactionModule not available");
+      }
     });
-  </script>
+  });
+});
+</script>
 
 {% endblock %}

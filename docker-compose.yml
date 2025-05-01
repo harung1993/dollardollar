@@ -22,6 +22,7 @@ services:
       - MAIL_PASSWORD=${MAIL_PASSWORD}
       - MAIL_DEFAULT_SENDER=${MAIL_DEFAULT_SENDER}
       - SIMPLEFIN_ENABLED=${SIMPLEFIN_ENABLED}
+      - INVESTMENT_TRACKING_ENABLED=True
     depends_on:
       db:
         condition: service_healthy

@@ -1,7 +1,419 @@
 {% extends "base.html" %}
-
-    <!-- dev-signature: 29a41de6a866d56c36aba5159f45257c -->
 {% block content %}
+<style>
+    /* Modern card styling with hover effect */
+.modern-card {
+    background-color: rgba(17, 24, 39, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.modern-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+}
+
+.modern-card .card-header {
+    background-color: rgba(21, 128, 61, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px 16px 0 0;
+    padding: 1.25rem 1.5rem;
+}
+
+/* Brighten card titles and content */
+.modern-card .card-header h4, 
+.modern-card .card-header h5, 
+.modern-card .card-title {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.modern-card .card-body {
+    color: rgba(255, 255, 255, 0.85);
+    padding: 1.5rem;
+}
+
+
+
+/* Multi-category styles */
+.multi-category-indicator {
+    width: 100%;
+    text-align: center;
+    background-color: rgba(14, 165, 233, 0.7);
+    margin-bottom: 4px;
+    font-size: 0.8rem;
+    padding: 0.25rem;
+    border-radius: 4px;
+}
+
+.category-badge {
+    display: inline-block;
+    margin-right: 0.25rem;
+    margin-bottom: 4px;
+}
+
+.categories-cell {
+    max-width: 250px;
+}
+
+.category-amount {
+    margin-left: 4px;
+    opacity: 0.8;
+    font-size: 0.8rem;
+}
+
+/* Inline Group Settings Styles */
+.group-settings-form {
+    background-color: rgba(30, 41, 59, 0.5);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease-in-out;
+}
+
+.group-settings-form h5 {
+    color: rgba(255, 255, 255, 0.95);
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+}
+
+/* Form section styling */
+.form-section {
+    margin-bottom: 20px;
+    background: rgba(17, 24, 39, 0.4);
+    border-radius: 8px;
+    padding: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.form-section-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.form-section-header h5 {
+    margin-bottom: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* Default split settings styles */
+.default-split-settings {
+    background-color: rgba(30, 41, 59, 0.5);
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.default-split-settings h6 {
+    color: #e2e8f0;
+    margin-bottom: 12px;
+}
+
+.default-split-badge {
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.default-split-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.default-split-item:last-child {
+    margin-bottom: 0;
+}
+
+.default-split-item i {
+    margin-right: 8px;
+    width: 16px;
+    text-align: center;
+}
+
+.split-distribution {
+    margin-top: 10px;
+}
+
+.split-distribution-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.split-distribution-item:last-child {
+    border-bottom: none;
+}
+
+/* Custom split container styling */
+#default_split_container {
+    transition: height 0.3s ease, opacity 0.3s ease;
+    overflow: hidden;
+    height: auto;
+}
+
+#default_split_container.hidden {
+    height: 0;
+    opacity: 0;
+}
+
+/* Form buttons */
+.form-action-buttons {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.form-action-buttons .btn {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+}
+
+.form-action-buttons .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Split input styles */
+.default-split-input {
+    transition: background-color 0.2s ease;
+}
+
+.default-split-input:focus {
+    background-color: #374151 !important;
+    border-color: rgba(59, 130, 246, 0.5) !important;
+    box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Fix for category split display */
+.list-group-item .text-white,
+.list-group-item span[style*="color"],
+.list-group-item .debug-category-name {
+    color: white !important;
+    -webkit-text-fill-color: white !important;
+    display: inline-block;
+}
+
+.category-name-text {
+    color: white !important;
+}
+
+/* Group members list */
+.members-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border-radius: 8px;
+}
+
+.member-item {
+    background-color: rgba(23, 32, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.member-item:hover {
+    background-color: rgba(32, 45, 58, 0.8);
+    transform: translateX(3px);
+}
+
+.member-info {
+    display: flex;
+    align-items: center;
+}
+
+.member-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0.75rem;
+    font-weight: 600;
+}
+
+.member-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.member-name {
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.member-email {
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+/* Empty state styling */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    text-align: center;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    opacity: 0.5;
+    margin-bottom: 1.5rem;
+}
+
+.empty-state-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+.empty-state-desc {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 1.5rem;
+    max-width: 500px;
+}
+
+/* Add button animation */
+.add-btn-pulse {
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    }
+}
+
+/* Expense month row styling */
+.expense-month-row {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.expense-month-row:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.expense-month-row.active {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-left: 3px solid rgba(59, 130, 246, 0.8);
+}
+
+/* Detail row styling */
+.expense-detail {
+    background-color: rgba(30, 41, 59, 0.3);
+}
+
+.expense-detail-container {
+    padding: 1rem;
+    border-radius: 8px;
+}
+
+/* Pills for categories and members */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 50px;
+    padding: 0.35rem 0.8rem;
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.pill-icon {
+    margin-right: 0.4rem;
+}
+
+.pill-amount {
+    margin-left: 0.4rem;
+    opacity: 0.8;
+    font-size: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 0.15rem 0.4rem;
+    border-radius: 50px;
+}
+
+/* Slide panel and overlay */
+.slide-panel {
+    position: fixed;
+    top: 0;
+    right: -400px; /* Start off-screen */
+    width: 90%;
+    max-width: 500px;
+    height: 100vh;
+    background-color: #1a202c;
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.3);
+    z-index: 1050;
+    transition: right 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.slide-panel.active {
+    right: 0; /* Slide in */
+}
+
+.slide-panel-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.slide-panel-content {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.slide-panel-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.slide-panel-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+</style>
+
+
+
 <div class="container">
     <div class="row mb-4">
         <div class="col-md-12">
@@ -15,12 +427,16 @@
     </div>
 
     <div class="row mb-4">
+        <!-- Group information card with inline form -->
         <div class="col-md-8">
-            <div class="card">
+            <div class="card modern-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">{{ group.name }}</h4>
-                    {% if current_user.id == group.created_by %}
                     <div>
+                        {% if current_user.id == group.created_by %}
+                        <button type="button" class="btn btn-sm btn-outline-light me-2" id="editGroupSettingsBtn">
+                            <i class="fas fa-cog"></i> Settings
+                        </button>
                         {% if session.get('delete_group_id') == group.id %}
                         <!-- Show compact confirmation controls -->
                         <form action="{{ url_for('delete_group', group_id=group.id) }}" method="POST" class="d-inline">
@@ -33,25 +449,180 @@
                             <i class="fas fa-trash-alt"></i>
                         </a>
                         {% endif %}
+                        {% endif %}
                     </div>
-                    {% endif %}
                 </div>
+                
+                <!-- Group information content -->
                 <div class="card-body">
-                    {% if group.description %}
-                    <p>{{ group.description }}</p>
-                    {% endif %}
-                    <p class="text-muted">
-                        Created by: {{ group.creator.name }}<br>
-                        Created on: {{ group.created_at.strftime('%Y-%m-%d') }}
-                    </p>
+                    <div id="group-info-display">
+                        {% if group.description %}
+                        <p>{{ group.description }}</p>
+                        {% endif %}
+                        <p class="text-muted">
+                            Created by: {{ group.creator.name }}<br>
+                            Created on: {{ group.created_at.strftime('%Y-%m-%d') }}
+                        </p>
+                        
+                        <!-- Default Split Settings Display -->
+                        {% if current_user == group.creator %}
+                        <div class="default-split-settings">
+                            <h6><i class="fas fa-sliders-h me-2"></i>Default Split Settings</h6>
+                            <div id="defaultSplitDisplay">
+                                <div class="default-split-item">
+                                    <i class="fas fa-money-bill-wave"></i>
+                                    <span>Split Method:</span>
+                                    <span class="badge bg-primary default-split-badge ms-2">{{ group.default_split_method|default('Equal') }}</span>
+                                </div>
+                                
+                                <div class="default-split-item">
+                                    <i class="fas fa-user-check"></i>
+                                    <span>Default Payer:</span>
+                                    {% if group.default_payer %}
+                                    <span class="badge bg-info default-split-badge ms-2">
+                                        {{ get_user_by_id(group.default_payer).name }}
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary default-split-badge ms-2">Not set</span>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="default-split-item">
+                                    <i class="fas fa-users"></i>
+                                    <span>Auto-include all members:</span>
+                                    <div class="form-check form-switch ms-2">
+                                        <input class="form-check-input" type="checkbox" disabled 
+                                            {% if group.auto_include_all|default(true) %}checked{% endif %}>
+                                    </div>
+                                </div>
+                                
+                                {% if group.default_split_method and group.default_split_method != 'equal' %}
+                                <div class="split-distribution mt-3" data-split-values="{{ group.default_split_values|tojson|safe }}">
+                                    <h6 class="small text-muted mb-2">Default Split Distribution:</h6>
+                                    {% if group.default_split_values %}
+                                        {% for member in group.members %}
+                                            <div class="split-distribution-item">
+                                                <span>{{ member.name }}</span>
+                                                <span class="badge bg-light text-dark">
+                                                    {% if group.default_split_method == 'percentage' %}
+                                                    {{ group.default_split_values[member.id]|default(0) }}%
+                                                    {% else %}
+                                                    {{ base_currency.symbol }}{{ group.default_split_values[member.id]|default(0) }}
+                                                    {% endif %}
+                                                </span>
+                                            </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <div class="text-muted small">No custom distribution set</div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                                
+                                <button id="editSplitSettingsBtn" class="btn btn-sm btn-outline-light mt-3">
+                                    <i class="fas fa-edit me-1"></i> Edit Settings
+                                </button>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
                     
+                    <!-- Group Settings Form (hidden by default) -->
+                    <div id="group-settings-form" style="display: none;">
+                        <form id="groupSettingsForm" action="/update_group_settings/{{ group.id }}" method="POST">
+                            <div class="mb-3">
+                                <label for="group_name" class="form-label">Group Name</label>
+                                <input type="text" class="form-control bg-dark text-light" id="group_name" name="group_name" value="{{ group.name }}">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="group_description" class="form-label">Description</label>
+                                <textarea class="form-control bg-dark text-light" id="group_description" name="group_description" rows="3">{{ group.description }}</textarea>
+                            </div>
+                            
+                            <hr>
+                            
+                            <h5 class="mb-3">Default Split Settings</h5>
+                            
+                            <div class="mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="auto_include_all" name="auto_include_all" 
+                                           {% if group.auto_include_all|default(true) %}checked{% endif %}>
+                                    <label class="form-check-label" for="auto_include_all">
+                                        Automatically include all members in splits
+                                    </label>
+                                </div>
+                                <small class="text-muted">When enabled, all group members will be automatically selected for expense splits</small>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="default_payer" class="form-label">Default Payer</label>
+                                    <select class="form-select bg-dark text-light" id="default_payer" name="default_payer">
+                                        <option value="">No default (ask each time)</option>
+                                        {% for member in group.members %}
+                                        <option value="{{ member.id }}" {% if member.id == group.default_payer %}selected{% endif %}>
+                                            {{ member.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <small class="text-muted">This member will be pre-selected as the payer for new expenses</small>
+                                </div>
+                                
+                                <div class="col-md-6 mb-3">
+                                    <label for="default_split_method" class="form-label">Default Split Method</label>
+                                    <select class="form-select bg-dark text-light" id="default_split_method" name="default_split_method">
+                                        <option value="equal" {% if group.default_split_method == "equal" or not group.default_split_method %}selected{% endif %}>Equal Split</option>
+                                        <option value="percentage" {% if group.default_split_method == "percentage" %}selected{% endif %}>Percentage Split</option>
+                                        <option value="custom" {% if group.default_split_method == "custom" %}selected{% endif %}>Custom Amount Split</option>
+                                    </select>
+                                    <small class="text-muted">How expenses will be divided by default</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Custom split distribution setup -->
+                            <div id="default_split_container" class="mt-3" style="display: {% if group.default_split_method != 'equal' %}block{% else %}none{% endif %};">
+                                <div class="card bg-dark border-secondary">
+                                    <div class="card-header">
+                                        <h6 class="mb-0">Default Split Distribution</h6>
+                                        <small class="text-muted" id="default_split_instruction">
+                                            {% if group.default_split_method == 'percentage' %}
+                                            Define what percentage each member pays by default
+                                            {% elif group.default_split_method == 'custom' %}
+                                            Define custom amounts each member pays by default
+                                            {% else %}
+                                            Define how expenses are split by default
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="default_split_values_container">
+                                            <!-- Will be populated by JavaScript -->
+                                        </div>
+                                        <div class="d-flex justify-content-between mt-3">
+                                            <span class="badge bg-success" id="default_split_status">Balanced</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="default_split_values" name="default_split_values" value="{% if group.default_split_values %}{{ group.default_split_values|tojson }}{% endif %}">
+                            </div>
+                            
+                            <div class="d-flex justify-content-end mt-3">
+                                <button type="button" class="btn btn-secondary me-2" id="cancelSettingsBtn">Cancel</button>
+                                <button type="submit" class="btn btn-success" id="saveGroupSettingsBtn">
+                                    <i class="fas fa-save me-1"></i>Save Changes
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <!-- Members card -->
         <div class="col-md-4">
-            <div class="card">
+            <div class="card modern-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Members</h5>
+                    <h5 class="mb-0"><i class="fas fa-users me-2"></i>Members</h5>
                     {% if current_user == group.creator %}
                     <button id="toggleMemberForm" class="btn btn-sm btn-primary">
                         <i class="fas fa-plus"></i>
@@ -83,779 +654,363 @@
                 {% endif %}
                 
                 <div class="card-body">
-                    <ul class="list-group list-group-flush bg-dark">
+                    <div class="members-list">
                         {% for member in group.members %}
-                        <li class="list-group-item bg-dark d-flex justify-content-between align-items-center">
-                            <div>
-                                {{ member.name }} 
-                                <small class="text-muted">({{ member.id }})</small>
+                        <div class="member-item">
+                            <div class="member-info">
+                                <div class="member-avatar" style="background-color: {{ member.user_color }};">
+                                    {{ member.name[0]|upper }}
+                                </div>
+                                <div class="member-details">
+                                    <div class="member-name">
+                                        {{ member.name }}
+                                        {% if member == group.creator %}
+                                        <span class="badge bg-info ms-1">Creator</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="member-email">{{ member.id }}</div>
+                                </div>
                             </div>
+                            
                             {% if current_user == group.creator and member != group.creator %}
                             <form action="{{ url_for('remove_group_member', group_id=group.id, member_id=member.id) }}" method="POST" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-danger">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
                                     <i class="fas fa-times"></i>
                                 </button>
                             </form>
                             {% endif %}
-                        </li>
+                        </div>
                         {% endfor %}
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Group Expenses</h5>
-                    <button id="toggleExpenseForm" class="btn btn-sm btn-primary">
-                        <i class="fas fa-plus me-1"></i> Add Group Expense
-                    </button>
-                </div>
-                
-                <!-- Add Expense Form (Hidden by default) - UPDATED to match dashboard.html -->
-                <div id="expenseFormContainer" class="card-body border-bottom" style="display: none;">
-                    <form method="POST" action="{{ url_for('add_expense') }}">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="description" class="form-label">Description</label>
-                                <input type="text" class="form-control bg-dark text-light" id="description" name="description" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="amount" class="form-label">Amount ({{ base_currency.symbol }})</label>
-                                <input type="number" step="0.01" class="form-control bg-dark text-light" id="amount" name="amount" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="currency_code" class="form-label">Currency</label>
-                                <select class="form-control bg-dark text-light" id="currency_code" name="currency_code">
-                                    {% for currency in currencies %}
-                                        <option value="{{ currency.code }}" 
-                                                {% if currency.code == current_user.default_currency_code %}selected{% endif %}>
-                                            {{ currency.code }} ({{ currency.symbol }})
-                                        </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="date" class="form-label">Date</label>
-                                <input type="date" class="form-control bg-dark text-light" id="date" name="date" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="account_id" class="form-label">Account</label>
-                                <select class="form-control bg-dark text-light" id="account_id" name="account_id" required>
-                                    <option value="">Select an account</option>
-                                    {% for account in current_user.accounts %}
-                                        <option value="{{ account.id }}">{{ account.name }} ({{ account.type }})</option>
-                                    {% endfor %}
-                                    
-                                    {% if current_user.accounts|length == 0 %}
-                                        <option value="default">Default Account</option>
-                                    {% endif %}
-                                </select>
-                                
-                                <small class="text-muted d-block mt-1">
-                                    {% if current_user.accounts|length == 0 %}
-                                        No accounts created yet. <a href="{{ url_for('accounts') }}" class="text-warning">Create accounts</a> to better track your finances.
-                                    {% endif %}
-                                </small>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="paid_by" class="form-label">Paid By</label>
-                                <select class="form-control bg-dark text-light" id="paid_by" name="paid_by" required>
-                                    {% for user in users %}
-                                        <option value="{{ user.id }}" {% if user.id == current_user.id %}selected{% endif %}>{{ user.name }} ({{ user.id }})</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                                <div class="col-md-6 mb-3">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <label for="split_with" class="form-label">Split With (select multiple)</label>
-                                        <div class="form-check form-switch ms-2">
-                                            <input class="form-check-input" type="checkbox" id="personal_expense_check" name="personal_expense" onchange="togglePersonalExpense()">
-                                            <label class="form-check-label" for="personal_expense_check">Personal expense</label>
-                                        </div>
-                                    </div>
-                                    <select class="form-select bg-dark text-light" id="split_with" name="split_with" multiple>
-                                        {% for member in group.members %}
-                                            <option value="{{ member.id }}">{{ member.name }} ({{ member.id }})</option>
-                                        {% endfor %}
-                                    </select>
-                                <small class="text-muted d-block mt-1">Check "Personal expense" for transactions with no splits, or select people to split with</small>
-                            </div>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="split_method" class="form-label">Split Method</label>
-                                <select class="form-control bg-dark text-light" id="split_method" name="split_method" required onchange="toggleSplitOptions()">
-                                    <option value="equal">Equal Split Among All</option>
-                                    <option value="custom">Custom Amount for Each Person</option>
-                                    <option value="percentage">Percentage Split for Each Person</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3" id="split_value_container" style="display: none;">
-                                <label for="split_value" class="form-label">Split Value (Legacy - Deprecated)</label>
-                                <input type="number" step="0.01" class="form-control bg-dark text-light" id="split_value" name="split_value">
-                                <small class="text-muted">This field is only for backward compatibility.</small>
-                            </div>
-                        </div>
-                        
-                        <!-- Custom Split Values Container (Hidden by default) -->
-                        <div id="custom_split_container" class="mb-3" style="display: none;">
-                            <div class="card bg-dark">
-                                <div class="card-header">
-                                    <h5 class="mb-0">Customize Split Values</h5>
-                                    <small class="text-muted" id="split_instruction">Set how much each person pays</small>
-                                </div>
-                                <div class="card-body">
-                                    <div id="split_values_container">
-                                        <!-- Will be populated by JavaScript -->
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center mt-3">
-                                        <div>
-                                            <span class="text-muted">Total: {{ base_currency.symbol }}<span id="split_total">0.00</span></span>
-                                            <span class="ms-2 text-muted">Expense: {{ base_currency.symbol }}<span id="expense_amount">0.00</span></span>
-                                        </div>
-                                        <div>
-                                            <span class="badge bg-success" id="split_status">Balanced</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- Hidden input to store the split details as JSON -->
-                            <input type="hidden" id="split_details" name="split_details">
-                        </div>
-                        
-                        <!-- Hidden Group ID -->
-                        <input type="hidden" name="group_id" value="{{ group.id }}">
-                        <div class="mb-3">
-                            <label for="tags" class="form-label">Tags (Optional)</label>
-                            <div class="tag-selector">
-                                {% for tag in current_user.tags %}
-                                <div class="form-check form-check-inline">
-                                    <input class="form-check-input tag-checkbox" type="checkbox" id="tag{{ tag.id }}" name="tags" value="{{ tag.id }}" 
-                                           style="background-color: {{ tag.color }}; border-color: {{ tag.color }};">
-                                    <label class="form-check-label" for="tag{{ tag.id }}">{{ tag.name }}</label>
-                                </div>
-                                {% endfor %}
-                                
-                                {% if current_user.tags|length == 0 %}
-                                <p class="text-muted small">No tags created yet. <a href="{{ url_for('manage_tags') }}" class="text-warning">Create tags</a> to categorize expenses.</p>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="d-flex justify-content-end">
-                            <button type="button" class="btn btn-secondary me-2" onclick="toggleExpenseForm()">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Add Group Expense</button>
-                        </div>
-                    </form>
-                </div>
-                
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Description</th>
-                                    <th>Amount</th>
-                                    <th>Paid By</th>
-                                    <th>Account</th>
-                                    <th>Split Details</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% if expenses %}
-                                    {% for expense in expenses %}
-                                    {% set splits = expense.calculate_splits() %}
-                                    <tr>
-                                        <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
-                                        <td>{{ expense.description }}</td>
-                                        <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.amount) }}</td>
-                                        <td>{{ expense.user.name }}</td>
-                                        <td>
-                                            {% if expense.account %}
-                                                {{ expense.account.name }}
-                                            {% else %}
-                                                <span class="badge bg-secondary">{{ expense.card_used }}</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            <small class="d-block">Method: {{ expense.split_method }}</small>
-                                            
-                                            <!-- Payer's portion -->
-                                            {% if splits.payer.amount > 0 %}
-                                            <small class="d-block mb-1">{{ splits.payer.name }}: {{ base_currency.symbol }}{{ "%.2f"|format(splits.payer.amount) }}</small>
-                                            {% endif %}
-                                            
-                                            <!-- Everyone else's portion -->
-                                            {% for split in splits.splits %}
-                                            <small class="d-block mb-1">{{ split.name }}: {{ base_currency.symbol }}{{ "%.2f"|format(split.amount) }}</small>
-                                            {% endfor %}
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                {% else %}
-                                    <tr>
-                                        <td colspan="6" class="text-center">No expenses yet for this group</td>
-                                    </tr>
-                                {% endif %}
-                            </tbody>
-                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Group Expenses Section -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card modern-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-receipt me-2"></i>Group Expenses</h5>
+                    <button id="openAddTransactionBtn" class="btn btn-primary add-expense-btn" data-group-id="{{ group.id }}">
+                        <i class="fas fa-plus me-1"></i> Add Group Expense
+                    </button>
+                </div>
+                
+                <!-- Group Expenses Table -->
+                <div class="card-body">
+                    {% if expenses %}
+                    <div class="table-responsive">
+                        <table class="table table-modern">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Total</th>
+                                    <th>Categories</th>
+                                    <th>Contributors</th>
+                                    <th>Accounts</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% set months = {} %}
+                                {% for expense in expenses %}
+                                    {% set month = expense.date.strftime('%Y-%m') %}
+                                    {% if month not in months %}
+                                        {% set _ = months.update({month: {'total': 0, 'by_category': {}, 'by_user': {}, 'by_card': {}}}) %}
+                                    {% endif %}
+                                    
+                                    {% set _ = months[month].update({'total': months[month].total + expense.amount}) %}
+                                    
+                                    <!-- Calculate categories -->
+                                    {% if expense.category_splits %}
+                                        {% for split in expense.category_splits %}
+                                            {% if split.category %}
+                                                {% if split.category.name in months[month].by_category %}
+                                                    {% set _ = months[month].by_category.update({
+                                                        split.category.name: {
+                                                            'amount': months[month].by_category[split.category.name].amount + split.amount,
+                                                            'color': split.category.color,
+                                                            'icon': split.category.icon
+                                                        }
+                                                    }) %}
+                                                {% else %}
+                                                    {% set _ = months[month].by_category.update({
+                                                        split.category.name: {
+                                                            'amount': split.amount,
+                                                            'color': split.category.color,
+                                                            'icon': split.category.icon
+                                                        }
+                                                    }) %}
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    {% elif expense.category %}
+                                        {% if expense.category.name in months[month].by_category %}
+                                            {% set _ = months[month].by_category.update({
+                                                expense.category.name: {
+                                                    'amount': months[month].by_category[expense.category.name].amount + expense.amount,
+                                                    'color': expense.category.color,
+                                                    'icon': expense.category.icon
+                                                }
+                                            }) %}
+                                        {% else %}
+                                            {% set _ = months[month].by_category.update({
+                                                expense.category.name: {
+                                                    'amount': expense.amount,
+                                                    'color': expense.category.color,
+                                                    'icon': expense.category.icon
+                                                }
+                                            }) %}
+                                        {% endif %}
+                                    {% endif %}
+                                    
+                                    <!-- Calculate contributors -->
+                                    {% if expense.user_id in months[month].by_user %}
+                                        {% set _ = months[month].by_user.update({expense.user_id: months[month].by_user[expense.user_id] + expense.amount}) %}
+                                    {% else %}
+                                        {% set _ = months[month].by_user.update({expense.user_id: expense.amount}) %}
+                                    {% endif %}
+                                    
+                                    <!-- Calculate accounts -->
+                                    {% if expense.card_used %}
+                                        {% if expense.card_used in months[month].by_card %}
+                                            {% set _ = months[month].by_card.update({expense.card_used: months[month].by_card[expense.card_used] + expense.amount}) %}
+                                        {% else %}
+                                            {% set _ = months[month].by_card.update({expense.card_used: expense.amount}) %}
+                                        {% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% for month, data in months.items()|sort(reverse=true) %}
+                                <tr class="expense-month-row" data-month="{{ month }}">
+                                    <td>{{ month }}</td>
+                                    <td>{{ base_currency.symbol }}{{ "%.2f"|format(data.total) }}</td>
+                                    <td>
+                                        {% set sorted_categories = data.by_category.items()|sort(attribute='1.amount', reverse=true) %}
+                                        {% for category_name, category_data in sorted_categories[:3] %}
+                                            <div class="pill" style="background-color: {{ category_data.color }}">
+                                                <i class="fas {{ category_data.icon }} pill-icon"></i>
+                                                {{ category_name }}
+                                                <span class="pill-amount">{{ base_currency.symbol }}{{ "%.2f"|format(category_data.amount) }}</span>
+                                            </div>
+                                        {% endfor %}
+                                        
+                                        {% if sorted_categories|length > 3 %}
+                                            <span class="badge bg-secondary">+{{ sorted_categories|length - 3 }} more</span>
+                                        {% endif %}
+                                        
+                                        {% if not data.by_category %}
+                                            <span class="text-muted small">No categories</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% set sorted_users = data.by_user.items()|sort(attribute='1', reverse=true) %}
+                                        {% for user_id, amount in sorted_users[:2] %}
+                                            {% for user in users %}
+                                                {% if user.id == user_id %}
+                                                    <div class="pill" style="background-color: {{ user.user_color|default('#15803d') }};">
+                                                        {{ user.name }}
+                                                        <span class="pill-amount">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                                    </div>
+                                                {% endif %}
+                                            {% endfor %}
+                                        {% endfor %}
+                                        
+                                        {% if sorted_users|length > 2 %}
+                                            <span class="badge bg-secondary">+{{ sorted_users|length - 2 }} more</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% set sorted_cards = data.by_card.items()|sort(attribute='1', reverse=true) %}
+                                        {% for card, amount in sorted_cards[:2] %}
+                                            <div class="pill">
+                                                <i class="fas fa-credit-card pill-icon"></i>
+                                                {{ card }}
+                                                <span class="pill-amount">{{ base_currency.symbol }}{{ "%.2f"|format(amount) }}</span>
+                                            </div>
+                                        {% endfor %}
+                                        
+                                        {% if sorted_cards|length > 2 %}
+                                            <span class="badge bg-secondary">+{{ sorted_cards|length - 2 }} more</span>
+                                        {% endif %}
+                                        
+                                        {% if not data.by_card %}
+                                            <span class="text-muted small">No accounts</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-light toggle-details" type="button" 
+                                                data-bs-toggle="collapse" data-bs-target="#month{{ month|replace('-', '') }}" 
+                                                aria-expanded="false">
+                                            <i class="fas fa-chevron-down"></i> Details
+                                        </button>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Collapsible Details Row -->
+                                <tr class="expense-detail">
+                                    <td colspan="6" class="p-0">
+                                        <div class="collapse" id="month{{ month|replace('-', '') }}">
+                                            <div class="expense-detail-container">
+                                                <h6 class="mb-3">Expense Details for {{ month }}</h6>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-modern">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Date</th>
+                                                                <th>Description</th>
+                                                                <th>Category</th>
+                                                                <th>Amount</th>
+                                                                <th>Paid By</th>
+                                                                <th>Card</th>
+                                                                <th>Split</th>
+                                                                <th>Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for expense in expenses|sort(attribute='date', reverse=true) %}
+                                                                {% if expense.date.strftime('%Y-%m') == month %}
+                                                                    {% set splits = expense.calculate_splits() %}
+                                                                    <tr>
+                                                                        <td>{{ expense.date.strftime('%Y-%m-%d') }}</td>
+                                                                        <td>{{ expense.description }}</td>
+                                                                        <td class="categories-cell">
+                                                                            {% if expense.has_category_splits %}
+                                                                                <!-- Show multi-category indicator -->
+                                                                                <div class="multi-category-indicator badge">
+                                                                                    <i class="fas fa-tags me-1"></i> Categories Split
+                                                                                </div>
+                                                                                
+                                                                                <!-- Category splits toggle -->
+                                                                                <div class="category-split-container" data-has-splits="true" data-expense-id="{{ expense.id }}">
+                                                                                    <span class="split-toggle" data-expense-id="{{ expense.id }}">
+                                                                                        <i class="fas fa-chevron-down ms-1"></i>
+                                                                                    </span>
+                                                                                    <div class="split-categories-detail mt-2" id="split-categories-{{ expense.id }}" style="display: none;">
+                                                                                        <div class="loading">Loading splits...</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            {% elif expense.category %}
+                                                                                <span class="badge" style="background-color: {{ expense.category.color }};">
+                                                                                    <i class="fas {{ expense.category.icon }}"></i>
+                                                                                    {{ expense.category.name }}
+                                                                                </span>
+                                                                            {% else %}
+                                                                                <span class="text-muted">-</span>
+                                                                            {% endif %}
+                                                                        </td>
+                                                                        <td>{{ base_currency.symbol }}{{ "%.2f"|format(expense.amount) }}</td>
+                                                                        <td>
+                                                                            <span class="badge" style="background-color: {{ expense.user.user_color|default('#15803d') }};">
+                                                                                {{ expense.user.name }}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>{{ expense.card_used }}</td>
+                                                                        <td>
+                                                                            <!-- Payer's portion -->
+                                                                            {% if splits.payer.amount > 0 %}
+                                                                            <small class="d-block mb-1">
+                                                                                <span class="badge" style="background-color: {{ get_user_by_id(splits.payer.email).user_color|default('#15803d') }};">
+                                                                                    {{ splits.payer.name }}
+                                                                                </span>: 
+                                                                                {{ base_currency.symbol }}{{ "%.2f"|format(splits.payer.amount) }}
+                                                                            </small>
+                                                                            {% endif %}
+
+                                                                            <!-- Others' portions -->
+                                                                            {% for split in splits.splits %}
+                                                                            <small class="d-block mb-1">
+                                                                                <span class="badge" style="background-color: {{ get_user_by_id(split.email).user_color|default('#15803d') }};">
+                                                                                    {{ split.name }}
+                                                                                </span>: 
+                                                                                {{ base_currency.symbol }}{{ "%.2f"|format(split.amount) }}
+                                                                            </small>
+                                                                            {% endfor %}
+                                                                        </td>
+                                                                        <td>
+                                                                            <div class="btn-group btn-group-sm">
+                                                                                <button class="btn btn-outline-primary edit-expense-btn" data-expense-id="{{ expense.id }}">
+                                                                                    <i class="fas fa-edit"></i>
+                                                                                </button>
+                                                                                {% if current_user.id == expense.user_id %}
+                                                                                <button class="btn btn-outline-danger delete-expense-btn" data-expense-id="{{ expense.id }}">
+                                                                                    <i class="fas fa-trash"></i>
+                                                                                </button>
+                                                                                {% endif %}
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                {% endif %}
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-receipt text-muted"></i>
+                        </div>
+                        <h5 class="empty-state-title">No Expenses Yet</h5>
+                        <p class="empty-state-desc">Start adding expenses to track your group spending.</p>
+                        <button class="btn btn-primary add-expense-btn add-btn-pulse" data-group-id="{{ group.id }}">
+                            <i class="fas fa-plus me-1"></i> Add First Expense
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Deletion</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this expense? This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide panel overlay for the add transaction panel -->
+<div id="slide-panel-overlay" class="slide-panel-overlay"></div>
 {% endblock %}
 
-
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
-const baseCurrencySymbol = "{{ base_currency.symbol }}";  
-// Toggle personal expense mode
-function togglePersonalExpense() {
-    const personalExpenseCheck = document.getElementById('personal_expense_check');
-    const splitWithContainer = document.querySelector('.multiselect-wrapper');
-    const splitWithSelect = document.getElementById('split_with');
-    const splitMethodSelect = document.getElementById('split_method');
-    const splitMethodContainer = document.getElementById('split_method').parentNode;
-    const customSplitContainer = document.getElementById('custom_split_container');
-    
-    if (personalExpenseCheck.checked) {
-        // This is a personal expense - simplify the form
-        if (splitWithContainer) splitWithContainer.style.opacity = '0.5';
-        if (splitMethodContainer) splitMethodContainer.style.opacity = '0.5';
-        if (customSplitContainer) customSplitContainer.style.display = 'none';
-        
-        // Clear any existing split_with selections
-        if (splitWithSelect) {
-            for (let i = 0; i < splitWithSelect.options.length; i++) {
-                splitWithSelect.options[i].selected = false;
-            }
-            
-            // Update the visual of multiselect if it exists
-            const customSelect = document.querySelector('.multiselect-wrapper .form-control');
-            if (customSelect) {
-                customSelect.innerHTML = '<span class="text-muted">Personal expense - no split</span>';
-            }
-        }
-    } else {
-        // This is a shared expense - enable the split options
-        if (splitWithContainer) splitWithContainer.style.opacity = '1';
-        if (splitMethodContainer) splitMethodContainer.style.opacity = '1';
-        
-        // Reset the multiselect display
-        const customSelect = document.querySelector('.multiselect-wrapper .form-control');
-        if (customSelect) {
-            customSelect.innerHTML = '<span class="text-muted">Select people to split with</span>';
-        }
-        
-        // Show custom split container if needed
-        if (splitMethodSelect && splitMethodSelect.value !== 'equal') {
-            if (customSplitContainer) customSplitContainer.style.display = 'block';
-        }
-    }
-    
-    // Update split values if needed
-    if (typeof updateSplitValues === 'function') {
-        updateSplitValues();
-    }
-}
-function initializeTagCheckboxes() {
-    const tagCheckboxes = document.querySelectorAll('.tag-checkbox');
-    
-    tagCheckboxes.forEach(checkbox => {
-        const originalColor = checkbox.style.backgroundColor;
-        
-        // Adjust checked style
-        checkbox.addEventListener('change', function() {
-            if (this.checked) {
-                this.style.backgroundColor = originalColor;
-            } else {
-                this.style.backgroundColor = 'transparent';
-            }
-        });
-    });
-}
-function updateSplitWithOptions() {
-    const paidById = document.getElementById('paid_by').value;
-    const splitWithSelect = document.getElementById('split_with');
-    
-    // Store currently selected options
-    const selectedOptions = Array.from(splitWithSelect.selectedOptions).map(opt => opt.value);
-    
-    // Reload custom multiselect if it exists
-    if (typeof initializeMultiSelect === 'function') {
-        // Get the existing wrapper
-        const wrapper = document.querySelector('.multiselect-wrapper');
-        if (wrapper) {
-            // Remove old multiselect UI
-            wrapper.outerHTML = splitWithSelect.outerHTML;
-            
-            // Re-initialize multiselect
-            initializeMultiSelect();
-            
-            // Re-select previously selected options (except the new payer)
-            const newSplitWith = document.getElementById('split_with');
-            for (let i = 0; i < newSplitWith.options.length; i++) {
-                const option = newSplitWith.options[i];
-                if (selectedOptions.includes(option.value) && option.value !== paidById) {
-                    option.selected = true;
-                }
-            }
-            
-            // Trigger change event to update UI
-            newSplitWith.dispatchEvent(new Event('change'));
-        }
-    }
-}
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize today's date
-        const today = new Date().toISOString().split('T')[0];
-        const dateInput = document.querySelector('#date');
-        if (dateInput) {
-            dateInput.value = today;
-        }
-         // Initialize tag checkboxes (add this line)
-         initializeTagCheckboxes();
-        // Add event listeners for toggle buttons
-        const toggleMemberBtn = document.getElementById('toggleMemberForm');
-        if (toggleMemberBtn) {
-            toggleMemberBtn.addEventListener('click', toggleMemberForm);
-        }
-        
-        const toggleExpenseBtn = document.getElementById('toggleExpenseForm');
-        if (toggleExpenseBtn) {
-            toggleExpenseBtn.addEventListener('click', toggleExpenseForm);
-        }
-        
-        // Initialize multiselect dropdown for split_with
-        initializeMultiSelect();
-        
-        // Handle amount field changes
-        document.getElementById('amount').addEventListener('input', updateSplitValues);
-        
-        // Handle paid_by changes
-        document.getElementById('paid_by').addEventListener('change', updateSplitValues);
-        
-        // Listen for split_with changes from the multiselect
-        // Handle paid_by changes
-        document.getElementById('paid_by').addEventListener('change', function() {
-            // Update split_with options
-            updateSplitWithOptions();
-            
-            // Update split values if custom split method is selected
-            updateSplitValues();
-        });
-        
-        // Initialize split value visibility
-        const splitMethodSelect = document.querySelector('#split_method');
-        if (splitMethodSelect) {
-            toggleSplitOptions();
-            splitMethodSelect.addEventListener('change', toggleSplitOptions);
-        }
-        
-        // Handle form submission to ensure split values are calculated and included
-document.querySelector('form[action*="add_expense"]').addEventListener('submit', function(e) {
-    const splitWithSelect = document.getElementById('split_with');
-    const personalExpenseCheck = document.getElementById('personal_expense_check');
-    
-    // If personal expense is checked, we don't need to validate split_with
-    if (personalExpenseCheck && personalExpenseCheck.checked) {
-        // No validation needed for split_with
-        return true;
-    }
-    
-    // For shared expenses, ensure at least one person is selected in split_with
-    if (splitWithSelect && splitWithSelect.selectedOptions.length === 0) {
-        e.preventDefault();
-        alert('Please select at least one person to split with or check "Personal expense"');
-        return false;
-    }
-    
-    // For non-personal expenses, ensure the split details are valid
-    const splitMethod = document.getElementById('split_method').value;
-    if (splitMethod !== 'equal') {
-        // Trigger input event on the first split value input to update the hidden field
-        const firstInput = document.querySelector('.split-value-input');
-        if (firstInput) {
-            firstInput.dispatchEvent(new Event('input'));
-        }
-        
-        // Validate totals
-        const splitStatus = document.getElementById('split_status').textContent;
-        if (splitStatus !== 'Balanced') {
-            e.preventDefault();
-            alert('Your split values must balance with the expense amount before saving.');
-            return false;
-        }
-    }
-    return true;
-});
-    });
-    
-    function toggleMemberForm() {
-        const form = document.getElementById('memberFormContainer');
-        const button = document.getElementById('toggleMemberForm');
-        
-        if (form.style.display === 'none') {
-            form.style.display = 'block';
-            button.innerHTML = '<i class="fas fa-times"></i>';
-            button.classList.replace('btn-primary', 'btn-secondary');
-        } else {
-            form.style.display = 'none';
-            button.innerHTML = '<i class="fas fa-plus"></i>';
-            button.classList.replace('btn-secondary', 'btn-primary');
-        }
-    }
-    
-    function toggleExpenseForm() {
-        const form = document.getElementById('expenseFormContainer');
-        const button = document.getElementById('toggleExpenseForm');
-        
-        if (form.style.display === 'none') {
-            form.style.display = 'block';
-            button.innerHTML = '<i class="fas fa-times me-1"></i> Cancel';
-            button.classList.replace('btn-primary', 'btn-secondary');
-        } else {
-            form.style.display = 'none';
-            button.innerHTML = '<i class="fas fa-plus me-1"></i> Add Group Expense';
-            button.classList.replace('btn-secondary', 'btn-primary');
-        }
-    }
-    
-    // New function from dashboard.html
-    function toggleSplitOptions() {
-        const splitMethod = document.getElementById('split_method').value;
-        const splitValueContainer = document.getElementById('split_value_container');
-        const customSplitContainer = document.getElementById('custom_split_container');
-        const splitValue = document.getElementById('split_value');
-        const splitInstruction = document.getElementById('split_instruction');
-        
-        // Hide legacy split value field
-        splitValueContainer.style.display = 'none';
-        splitValue.removeAttribute('required');
-        
-        if (splitMethod === 'equal') {
-            customSplitContainer.style.display = 'none';
-        } else {
-            customSplitContainer.style.display = 'block';
-            
-            if (splitMethod === 'percentage') {
-                splitInstruction.textContent = 'Set what percentage each person pays (total must be 100%)';
-            } else { // custom amounts
-                splitInstruction.textContent = 'Set how much each person pays (total must match expense amount)';
-            }
-            
-            // Update the split values UI
-            updateSplitValues();
-        }
-    }
-    
-    // New function from dashboard.html
-    function updateSplitValues() {
-        const splitMethod = document.getElementById('split_method').value;
-        if (splitMethod === 'equal') return;
-        
-        const totalAmount = parseFloat(document.getElementById('amount').value) || 0;
-        const paidById = document.getElementById('paid_by').value;
-        const splitWithIds = Array.from(document.getElementById('split_with').selectedOptions).map(opt => opt.value);
-        
-        // Display current amount in the UI
-        document.getElementById('expense_amount').textContent = totalAmount.toFixed(2);
-        
-        // Get all participant IDs (payer + split_with)
-        let allParticipantIds = [...splitWithIds];
-        // Add payer if they're not already in the split_with list
-        if (!allParticipantIds.includes(paidById)) {
-            allParticipantIds.unshift(paidById);
-        }
-        
-        // Generate split values UI
-        const container = document.getElementById('split_values_container');
-        container.innerHTML = '';
-        
-        let splitValues = {};
-        
-        if (splitMethod === 'percentage') {
-            // Start with equal percentages
-            const equalPercentage = allParticipantIds.length ? (100 / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const user = Array.from(document.getElementById('paid_by').options)
-                    .find(opt => opt.value === userId);
-                
-                if (user) {
-                    const userName = user.text.split(' (')[0];
-                    const isPayerId = userId === paidById;
-                    
-                    // Create row for this user
-                    const row = document.createElement('div');
-                    row.className = 'row mb-2 align-items-center';
-                    row.innerHTML = `
-                        <div class="col-md-6">
-                            <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                                ${isPayerId ? '💰' : ''} ${userName}
-                            </span>
-                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <input type="number" class="form-control bg-dark text-light split-value-input"
-                                    data-user-id="${userId}" step="0.1" min="0" max="100" 
-                                    value="${equalPercentage.toFixed(1)}">
-                                <span class="input-group-text bg-dark text-light">%</span>
-                            </div>
-                        </div>
-                    `;
-                    container.appendChild(row);
-                    
-                    // Save the initial value
-                    splitValues[userId] = equalPercentage;
-                }
-            });
-            
-            // Add event listeners to percentage inputs
-            container.querySelectorAll('.split-value-input').forEach(input => {
-                input.addEventListener('input', function() {
-                    const userId = this.getAttribute('data-user-id');
-                    const percentage = parseFloat(this.value) || 0;
-                    splitValues[userId] = percentage;
-                    
-                    // Calculate total percentage
-                    const totalPercentage = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                    document.getElementById('split_total').textContent = totalPercentage.toFixed(1) + '%';
-                    
-                    // Update status
-                    const statusBadge = document.getElementById('split_status');
-                    if (Math.abs(totalPercentage - 100) < 0.1) {
-                        statusBadge.textContent = 'Balanced';
-                        statusBadge.className = 'badge bg-success';
-                    } else if (totalPercentage < 100) {
-                        statusBadge.textContent = 'Underfunded';
-                        statusBadge.className = 'badge bg-warning';
-                    } else {
-                        statusBadge.textContent = 'Overfunded';
-                        statusBadge.className = 'badge bg-danger';
-                    }
-                    
-                    // Update hidden split details field
-                    document.getElementById('split_details').value = JSON.stringify({
-                        type: 'percentage',
-                        values: splitValues
-                    });
-                });
-                
-                // Trigger input event to initialize values
-                input.dispatchEvent(new Event('input'));
-            });
-            
-        } else { // Custom amount
-            // Start with equal amounts
-            const equalAmount = allParticipantIds.length ? (totalAmount / allParticipantIds.length) : 0;
-            
-            allParticipantIds.forEach(userId => {
-                const user = Array.from(document.getElementById('paid_by').options)
-                    .find(opt => opt.value === userId);
-                
-                if (user) {
-                    const userName = user.text.split(' (')[0];
-                    const isPayerId = userId === paidById;
-                    
-                    // Create row for this user
-                    const row = document.createElement('div');
-                    row.className = 'row mb-2 align-items-center';
-                    row.innerHTML = `
-                        <div class="col-md-6">
-                            <span class="badge ${isPayerId ? 'bg-primary' : 'bg-secondary'} me-1">
-                                ${isPayerId ? '💰' : ''} ${userName}
-                            </span>
-                            ${isPayerId ? '<small class="text-muted">(Paid)</small>' : ''}
-                        </div>
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark text-light">$</span>
-                                <input type="number" class="form-control bg-dark text-light split-value-input"
-                                    data-user-id="${userId}" step="0.01" min="0" 
-                                    value="${equalAmount.toFixed(2)}">
-                            </div>
-                        </div>
-                    `;
-                    container.appendChild(row);
-                    
-                    // Save the initial value
-                    splitValues[userId] = equalAmount;
-                }
-            });
-            
-            // Add event listeners to amount inputs
-            container.querySelectorAll('.split-value-input').forEach(input => {
-                input.addEventListener('input', function() {
-                    const userId = this.getAttribute('data-user-id');
-                    const amount = parseFloat(this.value) || 0;
-                    splitValues[userId] = amount;
-                    
-                    // Calculate total amount
-                    const totalSplit = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
-                    document.getElementById('split_total').textContent = totalSplit.toFixed(2);
-                    
-                    // Update status
-                    const statusBadge = document.getElementById('split_status');
-                    if (Math.abs(totalSplit - totalAmount) < 0.01) {
-                        statusBadge.textContent = 'Balanced';
-                        statusBadge.className = 'badge bg-success';
-                    } else if (totalSplit < totalAmount) {
-                        statusBadge.textContent = 'Underfunded';
-                        statusBadge.className = 'badge bg-warning';
-                    } else {
-                        statusBadge.textContent = 'Overfunded';
-                        statusBadge.className = 'badge bg-danger';
-                    }
-                    
-                    // Update hidden split details field
-                    document.getElementById('split_details').value = JSON.stringify({
-                        type: 'amount',
-                        values: splitValues
-                    });
-                });
-                
-                // Trigger input event to initialize values
-                input.dispatchEvent(new Event('input'));
-            });
-        }
-    }
-    
-    // New function from dashboard.html
-    function initializeMultiSelect() {
-        // Get the select element
-        const selectElement = document.getElementById('split_with');
-        
-        // Create a wrapper div
-        const wrapper = document.createElement('div');
-        wrapper.className = 'multiselect-wrapper position-relative';
-        selectElement.parentNode.insertBefore(wrapper, selectElement);
-        wrapper.appendChild(selectElement);
-        
-        // Create the custom dropdown
-        const customSelect = document.createElement('div');
-        customSelect.className = 'form-control bg-dark text-light d-flex flex-wrap align-items-center';
-        customSelect.style.minHeight = '38px';
-        customSelect.style.cursor = 'pointer';
-        wrapper.appendChild(customSelect);
-        
-        // Create dropdown content
-        const dropdownContent = document.createElement('div');
-        dropdownContent.className = 'position-absolute w-100 bg-dark border border-secondary rounded mt-1 p-2';
-        dropdownContent.style.zIndex = '100';
-        dropdownContent.style.maxHeight = '200px';
-        dropdownContent.style.overflowY = 'auto';
-        dropdownContent.style.display = 'none';
-        wrapper.appendChild(dropdownContent);
-        
-        // Hide the original select
-        selectElement.style.display = 'none';
-        
-        // Populate dropdown options
-        for (let i = 0; i < selectElement.options.length; i++) {
-            const option = selectElement.options[i];
-            
-            const checkboxContainer = document.createElement('div');
-            checkboxContainer.className = 'form-check mb-2';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'form-check-input';
-            checkbox.value = option.value;
-            checkbox.id = 'multiselect-' + option.value;
-            checkbox.checked = option.selected;
-            
-            const label = document.createElement('label');
-            label.htmlFor = 'multiselect-' + option.value;
-            label.className = 'form-check-label text-light ms-2';
-            label.textContent = option.textContent;
-            
-            checkboxContainer.appendChild(checkbox);
-            checkboxContainer.appendChild(label);
-            dropdownContent.appendChild(checkboxContainer);
-            
-            // Handle checkbox change
-            checkbox.addEventListener('change', function() {
-                option.selected = checkbox.checked;
-                updateCustomSelectDisplay();
-                
-                // Trigger change event on original select
-                const event = new Event('change', { bubbles: true });
-                selectElement.dispatchEvent(event);
-            });
-        }
-        
-        // Toggle dropdown on click
-        customSelect.addEventListener('click', function(e) {
-            dropdownContent.style.display = dropdownContent.style.display === 'none' ? 'block' : 'none';
-            e.stopPropagation();
-        });
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', function() {
-            dropdownContent.style.display = 'none';
-        });
-        
-        // Prevent dropdown from closing when clicking inside it
-        dropdownContent.addEventListener('click', function(e) {
-            e.stopPropagation();
-        });
-        
-        // Update the custom select display
-        function updateCustomSelectDisplay() {
-            customSelect.innerHTML = '';
-            let selectedCount = 0;
-            
-            for (let i = 0; i < selectElement.options.length; i++) {
-                if (selectElement.options[i].selected) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge bg-primary me-1 mb-1';
-                    badge.textContent = selectElement.options[i].text.split(' (')[0]; // Just show the name
-                    
-                    const removeBtn = document.createElement('span');
-                    removeBtn.className = 'ms-1';
-                    removeBtn.innerHTML = '&times;';
-                    removeBtn.style.cursor = 'pointer';
-                    
-                    badge.appendChild(removeBtn);
-                    customSelect.appendChild(badge);
-                    selectedCount++;
-                    
-                    // Handle remove button
-                    removeBtn.addEventListener('click', function(e) {
-                        selectElement.options[i].selected = false;
-                        document.getElementById('multiselect-' + selectElement.options[i].value).checked = false;
-                        updateCustomSelectDisplay();
-                        e.stopPropagation();
-                    });
-                }
-            }
-            
-            // If nothing selected, show placeholder
-            if (selectedCount === 0) {
-                const placeholder = document.createElement('span');
-                placeholder.className = 'text-muted';
-                placeholder.textContent = 'Select people to split with';
-                customSelect.appendChild(placeholder);
-            }
-        }
-        
-        // Initial display update
-        updateCustomSelectDisplay();
-    }
+    window.baseCurrencySymbol = "{{ base_currency.symbol }}";  
 </script>
+
+<!-- Common utility scripts -->
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+
+<!-- Add the transaction modules -->
+<script src="{{ url_for('static', filename='js/transactions/add_transaction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions/edit_transaction.js') }}"></script>
+<script src="{{ url_for('static', filename='js/transactions/ui_helpers.js') }}"></script>
+
+<!-- Group-specific JavaScript -->
+<script src="{{ url_for('static', filename='js/groups/group_details.js') }}"></script>
 {% endblock %}

@@ -1,0 +1,292 @@
+<!-- templates/partials/create_group_form.html -->
+<div class="card modern-card">
+    <div class="card-header">
+        <h4 class="mb-0">Create New Group</h4>
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('create_group') }}" method="POST" id="createGroupForm">
+            <!-- Basic Info Section -->
+            <div class="form-section mb-4">
+                <div class="form-section-header">
+                    <i class="fas fa-info-circle text-primary me-2"></i>
+                    <h5>Group Details</h5>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="name" class="form-label">Group Name</label>
+                    <input type="text" class="form-control bg-dark text-light" id="name" name="name" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="description" class="form-label">Description (Optional)</label>
+                    <textarea class="form-control bg-dark text-light" id="description" name="description" rows="3" 
+                            placeholder="What is this group for? e.g., Roommates, Travel Group, Family"></textarea>
+                </div>
+            </div>
+            
+            <!-- Members Selection -->
+            <div class="form-section mb-4">
+                <div class="form-section-header">
+                    <i class="fas fa-users text-primary me-2"></i>
+                    <h5>Add Members</h5>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Select Members</label>
+                    <select class="form-select bg-dark text-light" name="members" id="members" multiple>
+                        {% for user in users %}
+                            {% if user != current_user %}
+                                <option value="{{ user.id }}">{{ user.name }} ({{ user.id }})</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Hold Ctrl/Cmd to select multiple members</small>
+                </div>
+            </div>
+            
+            <!-- Split Settings Section -->
+            <div class="form-section">
+                <div class="form-section-header">
+                    <i class="fas fa-sliders-h text-primary me-2"></i>
+                    <h5>Default Split Settings</h5>
+                </div>
+                
+                <p class="text-muted mb-3">
+                    Configure how expenses are split by default in this group.
+                    These settings will be automatically applied when creating new expenses.
+                </p>
+                
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="default_split_method" class="form-label">Default Split Method</label>
+                        <select class="form-select bg-dark text-light" id="default_split_method" name="default_split_method">
+                            <option value="equal" selected>Equal Split Among All</option>
+                            <option value="percentage">Percentage Split</option>
+                            <option value="custom">Custom Amount Split</option>
+                        </select>
+                        <small class="text-muted">How expenses will be divided by default</small>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="default_payer" class="form-label">Default Payer</label>
+                        <select class="form-select bg-dark text-light" id="default_payer" name="default_payer">
+                            <option value="">No default (ask each time)</option>
+                            <option value="{{ current_user.id }}" selected>{{ current_user.name }} (You)</option>
+                        </select>
+                        <small class="text-muted">Who usually pays for group expenses</small>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="auto_include_all" name="auto_include_all" checked>
+                        <label class="form-check-label" for="auto_include_all">
+                            Automatically include all members in splits
+                        </label>
+                    </div>
+                    <small class="text-muted">When enabled, all group members will be automatically selected for expense splits</small>
+                </div>
+                
+                <!-- Custom split options (hidden by default) -->
+                <div id="default_split_container" class="mt-4" style="display: none;">
+                    <div class="card bg-dark border-secondary">
+                        <div class="card-header">
+                            <h6 class="mb-0">Default Split Distribution</h6>
+                            <small class="text-muted" id="default_split_instruction">
+                                Define how expenses are split by default
+                            </small>
+                        </div>
+                        <div class="card-body">
+                            <div class="text-center text-muted mb-3">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Select members first to configure custom split values
+                            </div>
+                            <div id="default_split_values_container">
+                                <!-- Will be populated by JavaScript after members are selected -->
+                            </div>
+                            <div class="d-flex justify-content-end mt-3">
+                                <span class="badge bg-success" id="default_split_status">Balanced</span>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="default_split_values" name="default_split_values">
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-end mt-4">
+                <button type="button" class="btn btn-secondary me-2" onclick="toggleGroupForm()">Cancel</button>
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-plus me-1"></i>Create Group
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add JavaScript for split settings -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Listen for default split method changes
+    document.getElementById('default_split_method')?.addEventListener('change', function() {
+        const splitMethod = this.value;
+        const splitContainer = document.getElementById('default_split_container');
+        
+        if (splitMethod === 'equal') {
+            splitContainer.style.display = 'none';
+        } else {
+            splitContainer.style.display = 'block';
+            
+            // Update instruction text
+            const instruction = document.getElementById('default_split_instruction');
+            if (instruction) {
+                if (splitMethod === 'percentage') {
+                    instruction.textContent = 'Define what percentage each member pays by default';
+                } else {
+                    instruction.textContent = 'Define custom amounts each member pays by default';
+                }
+            }
+            
+            // Update the split values UI based on selected members
+            updateDefaultSplitValues();
+        }
+    });
+
+    // Listen for member selection changes
+    document.getElementById('members')?.addEventListener('change', function() {
+        const splitMethod = document.getElementById('default_split_method').value;
+        if (splitMethod !== 'equal') {
+            updateDefaultSplitValues();
+        }
+    });
+    
+    // Function to update default split values
+    function updateDefaultSplitValues() {
+        const splitMethod = document.getElementById('default_split_method').value;
+        const membersSelect = document.getElementById('members');
+        const container = document.getElementById('default_split_values_container');
+        const valuesInput = document.getElementById('default_split_values');
+        
+        if (!membersSelect || !container || !valuesInput) return;
+        
+        // Clear container
+        container.innerHTML = '';
+        
+        // Get selected members
+        const selectedMembers = Array.from(membersSelect.selectedOptions).map(option => {
+            return {
+                id: option.value,
+                name: option.textContent
+            };
+        });
+        
+        // Add current user (you) to the members list
+        const allMembers = [
+            {
+                id: '{{ current_user.id }}',
+                name: '{{ current_user.name }} (You)'
+            },
+            ...selectedMembers.filter(m => m.id !== '{{ current_user.id }}')
+        ];
+        
+        // If no members are selected, show a message
+        if (allMembers.length <= 1) {
+            container.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Select members first to configure custom split values
+                </div>
+            `;
+            return;
+        }
+        
+        // Initialize split values
+        let splitValues = {};
+        
+        if (splitMethod === 'percentage') {
+            // Equal percentage for each member
+            const equalPercentage = 100 / allMembers.length;
+            
+            allMembers.forEach(member => {
+                // Create row for this member
+                const row = document.createElement('div');
+                row.className = 'row mb-2 align-items-center';
+                row.innerHTML = `
+                    <div class="col-md-6">
+                        <span class="badge bg-secondary me-1">${member.name}</span>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <input type="number" class="form-control bg-dark text-light default-split-input"
+                                data-user-id="${member.id}" step="0.1" min="0" max="100" 
+                                value="${equalPercentage.toFixed(1)}">
+                            <span class="input-group-text bg-dark text-light">%</span>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(row);
+                
+                // Store the initial value
+                splitValues[member.id] = equalPercentage;
+            });
+        } else { // Custom amount
+            // Default amount for each member (e.g. 10.00)
+            const defaultAmount = 10.00;
+            
+            allMembers.forEach(member => {
+                // Create row for this member
+                const row = document.createElement('div');
+                row.className = 'row mb-2 align-items-center';
+                row.innerHTML = `
+                    <div class="col-md-6">
+                        <span class="badge bg-secondary me-1">${member.name}</span>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark text-light">{{ base_currency.symbol }}</span>
+                            <input type="number" class="form-control bg-dark text-light default-split-input"
+                                data-user-id="${member.id}" step="0.01" min="0" 
+                                value="${defaultAmount.toFixed(2)}">
+                        </div>
+                    </div>
+                `;
+                container.appendChild(row);
+                
+                // Store the initial value
+                splitValues[member.id] = defaultAmount;
+            });
+        }
+        
+        // Add listeners to inputs
+        container.querySelectorAll('.default-split-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const userId = this.getAttribute('data-user-id');
+                const value = parseFloat(this.value) || 0;
+                splitValues[userId] = value;
+                
+                // Update hidden input
+                valuesInput.value = JSON.stringify(splitValues);
+                
+                // For percentage splits, validate the total
+                if (splitMethod === 'percentage') {
+                    const total = Object.values(splitValues).reduce((sum, val) => sum + val, 0);
+                    const statusEl = document.getElementById('default_split_status');
+                    
+                    if (Math.abs(total - 100) < 0.1) {
+                        statusEl.textContent = 'Balanced (100%)';
+                        statusEl.className = 'badge bg-success';
+                    } else if (total < 100) {
+                        statusEl.textContent = `Underfunded (${total.toFixed(1)}%)`;
+                        statusEl.className = 'badge bg-warning';
+                    } else {
+                        statusEl.textContent = `Overfunded (${total.toFixed(1)}%)`;
+                        statusEl.className = 'badge bg-danger';
+                    }
+                }
+            });
+            
+            // Trigger input event to initialize values
+            input.dispatchEvent(new Event('input'));
+        });
+    }
+});
+</script>

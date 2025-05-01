@@ -12,7 +12,6 @@ function openSlidePanel(panelId, options = {}) {
     // Check if panel already exists
     let panel = document.getElementById(panelId);
     
-    
     // Create panel if it doesn't exist
     if (!panel) {
         panel = document.createElement('div');
@@ -90,75 +89,6 @@ function closeSlidePanel(panelId) {
 }
 
 /**
- * Function to initialize a select without requiring Ctrl+click for multiple selection
- * @param {string} selectId - The ID of the select element
- */
-function initializeSelectWithoutCtrl(selectId) {
-    const select = document.getElementById(selectId);
-    if (!select || !select.multiple) return;
-    
-    // Replace the standard multiple select with a custom one
-    const wrapper = document.createElement('div');
-    wrapper.className = 'custom-multiselect-wrapper';
-    wrapper.style.maxHeight = '200px';
-    wrapper.style.overflowY = 'auto';
-    wrapper.style.border = '1px solid #444';
-    wrapper.style.borderRadius = '0.25rem';
-    wrapper.style.backgroundColor = '#2d2d2d';
-    
-    // Hide the original select
-    select.style.display = 'none';
-    select.parentNode.insertBefore(wrapper, select.nextSibling);
-    
-    // Create checkbox options for each option in the select
-    Array.from(select.options).forEach(option => {
-        if (option.disabled) return;
-        
-        const item = document.createElement('div');
-        item.className = 'custom-multiselect-item';
-        item.style.padding = '0.5rem 1rem';
-        item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
-        item.style.cursor = 'pointer';
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'form-check-input me-2';
-        checkbox.checked = option.selected;
-        checkbox.value = option.value;
-        
-        const label = document.createElement('label');
-        label.className = 'form-check-label';
-        label.style.cursor = 'pointer';
-        label.style.userSelect = 'none';
-        label.style.marginLeft = '8px';
-        label.textContent = option.textContent;
-        
-        item.appendChild(checkbox);
-        item.appendChild(label);
-        wrapper.appendChild(item);
-        
-        // Add event listener to update the original select when checkbox is clicked
-        checkbox.addEventListener('change', function() {
-            option.selected = checkbox.checked;
-            // Trigger change event on original select
-            const event = new Event('change', { bubbles: true });
-            select.dispatchEvent(event);
-        });
-        
-        // Also make the whole item clickable
-        item.addEventListener('click', function(e) {
-            if (e.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
-                option.selected = checkbox.checked;
-                // Trigger change event on original select
-                const event = new Event('change', { bubbles: true });
-                select.dispatchEvent(event);
-            }
-        });
-    });
-}
-
-/**
  * Show a message toast
  * @param {string} message - The message to display
  * @param {string} type - Message type (success, error, warning, info)
@@ -190,8 +120,8 @@ function showMessage(message, type = 'success', options = {}) {
         // Create toast
         const toastId = `toast-${Date.now()}`;
         const iconClass = type === 'error' ? 'fa-exclamation-circle' : 
-                          type === 'warning' ? 'fa-exclamation-triangle' : 
-                          type === 'info' ? 'fa-info-circle' : 'fa-check-circle';
+                        type === 'warning' ? 'fa-exclamation-triangle' : 
+                        type === 'info' ? 'fa-info-circle' : 'fa-check-circle';
         const bgColor = type === 'error' ? 'bg-danger' : 
                         type === 'warning' ? 'bg-warning text-dark' : 
                         type === 'info' ? 'bg-info text-dark' : 'bg-success';
@@ -277,6 +207,468 @@ function showMessage(message, type = 'success', options = {}) {
 }
 
 /**
+ * Enhanced Multi-Select Dropdown Implementation
+ * Creates a user-friendly dropdown for selecting multiple options
+ */
+
+/**
+ * Initialize multi-select dropdowns for the given selector
+ * @param {string} selector - CSS selector for multi-select elements
+ */
+function initializeMultiSelect(selector) {
+    // Find all matching elements
+    const elements = document.querySelectorAll(selector);
+    console.log(`Found ${elements.length} elements matching selector: ${selector}`);
+    
+    // Process each element
+    elements.forEach(select => {
+        // Skip if not a select element or doesn't have multiple attribute
+        if (select.tagName !== 'SELECT' || !select.multiple) {
+            console.warn(`Element ${select.id || 'unknown'} is not a multiple select, skipping`);
+            return;
+        }
+        
+        // Skip if already enhanced
+        if (select.getAttribute('data-enhanced') === 'true') {
+            console.log(`Select ${select.id || 'unknown'} already enhanced, skipping`);
+            return;
+        }
+        
+        // Mark as enhanced
+        select.setAttribute('data-enhanced', 'true');
+        
+        // Create the enhanced UI
+        createEnhancedUI(select);
+    });
+}
+
+/**
+ * Create the enhanced UI for a select element
+ * @param {HTMLSelectElement} select - The select element to enhance
+ */
+function createEnhancedUI(select) {
+    console.log(`Creating enhanced UI for select: ${select.id || 'unnamed'}`);
+    
+    // Ensure styles are added
+    addMultiSelectStyles();
+    
+    // Create wrapper container
+    const container = document.createElement('div');
+    container.className = 'enhanced-multiselect-container';
+    select.parentNode.insertBefore(container, select);
+    container.appendChild(select);
+    
+    // Create display box
+    const displayBox = document.createElement('div');
+    displayBox.className = 'enhanced-multiselect-display';
+    displayBox.setAttribute('tabindex', '0'); // Make it focusable
+    displayBox.innerHTML = '<span class="placeholder">Select options...</span>';
+    container.insertBefore(displayBox, select);
+    
+    // Create dropdown container
+    const dropdown = document.createElement('div');
+    dropdown.className = 'enhanced-multiselect-dropdown';
+    dropdown.style.display = 'none';
+    container.appendChild(dropdown);
+    
+    // Add search input
+    const searchBox = document.createElement('div');
+    searchBox.className = 'enhanced-multiselect-search-container';
+    
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'enhanced-multiselect-search';
+    searchInput.placeholder = 'Search...';
+    
+    searchBox.appendChild(searchInput);
+    dropdown.appendChild(searchBox);
+    
+    // Add options list
+    const optionsList = document.createElement('div');
+    optionsList.className = 'enhanced-multiselect-options';
+    dropdown.appendChild(optionsList);
+    
+    // Populate options
+    populateOptions(select, optionsList);
+    
+    // Update display to show current selections
+    updateDisplay(select, displayBox);
+    
+    // Add event listeners
+    addEventListeners(select, displayBox, dropdown, searchInput, optionsList);
+    
+    console.log(`Enhanced UI created for select: ${select.id || 'unnamed'}`);
+}
+
+/**
+ * Populate options in the dropdown
+ * @param {HTMLSelectElement} select - The original select element
+ * @param {HTMLElement} optionsList - The container for options
+ */
+function populateOptions(select, optionsList) {
+    // Clear existing options
+    optionsList.innerHTML = '';
+    
+    // Add each option
+    Array.from(select.options).forEach(option => {
+        // Skip if disabled
+        if (option.disabled) return;
+        
+        // Create option element
+        const optionItem = document.createElement('div');
+        optionItem.className = 'enhanced-multiselect-option';
+        optionItem.setAttribute('data-value', option.value);
+        
+        // Create checkbox
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'enhanced-multiselect-checkbox';
+        checkbox.checked = option.selected;
+        
+        // Create label
+        const label = document.createElement('label');
+        label.className = 'enhanced-multiselect-label';
+        label.textContent = option.textContent;
+        
+        // Add elements to option item
+        optionItem.appendChild(checkbox);
+        optionItem.appendChild(label);
+        optionsList.appendChild(optionItem);
+        
+        // Handle option click
+        optionItem.addEventListener('click', e => {
+            e.stopPropagation();
+            
+            // Toggle checkbox
+            checkbox.checked = !checkbox.checked;
+            
+            // Update original select
+            option.selected = checkbox.checked;
+            
+            // Trigger change event on the original select
+            const event = new Event('change', { bubbles: true });
+            select.dispatchEvent(event);
+        });
+    });
+}
+
+/**
+ * Update the display box to show selected options
+ * @param {HTMLSelectElement} select - The original select element
+ * @param {HTMLElement} displayBox - The display box element
+ */
+function updateDisplay(select, displayBox) {
+    // Get selected options
+    const selectedOptions = Array.from(select.selectedOptions);
+    
+    // Show placeholder if nothing selected
+    if (selectedOptions.length === 0) {
+        displayBox.innerHTML = '<span class="placeholder">Select options...</span>';
+        return;
+    }
+    
+    // Create badges for selected options
+    displayBox.innerHTML = '';
+    selectedOptions.forEach(option => {
+        const badge = document.createElement('span');
+        badge.className = 'enhanced-multiselect-badge';
+        badge.textContent = option.textContent;
+        
+        // Add remove button
+        const removeBtn = document.createElement('span');
+        removeBtn.className = 'enhanced-multiselect-remove';
+        removeBtn.innerHTML = '&times;';
+        
+        // Handle remove click
+        removeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            
+            // Deselect the option
+            option.selected = false;
+            
+            // Trigger change event
+            const event = new Event('change', { bubbles: true });
+            select.dispatchEvent(event);
+        });
+        
+        badge.appendChild(removeBtn);
+        displayBox.appendChild(badge);
+    });
+}
+
+/**
+ * Add event listeners to the enhanced select components
+ * @param {HTMLSelectElement} select - The original select element
+ * @param {HTMLElement} displayBox - The display box element
+ * @param {HTMLElement} dropdown - The dropdown element
+ * @param {HTMLInputElement} searchInput - The search input element
+ * @param {HTMLElement} optionsList - The options list element
+ */
+function addEventListeners(select, displayBox, dropdown, searchInput, optionsList) {
+    // Toggle dropdown when clicking on display box
+    displayBox.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleDropdown(dropdown, searchInput);
+    });
+    
+    // Toggle with keyboard
+    displayBox.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleDropdown(dropdown, searchInput);
+        }
+    });
+    
+    // Handle search input
+    searchInput.addEventListener('input', () => {
+        const searchText = searchInput.value.toLowerCase();
+        filterOptions(optionsList, searchText);
+    });
+    
+    // Prevent search clicks from closing dropdown
+    searchInput.addEventListener('click', e => {
+        e.stopPropagation();
+    });
+    
+    // Update display when original select changes
+    select.addEventListener('change', () => {
+        // Update checkboxes
+        Array.from(optionsList.querySelectorAll('.enhanced-multiselect-option')).forEach(optionEl => {
+            const value = optionEl.getAttribute('data-value');
+            const checkbox = optionEl.querySelector('.enhanced-multiselect-checkbox');
+            const option = Array.from(select.options).find(opt => opt.value === value);
+            
+            if (option && checkbox) {
+                checkbox.checked = option.selected;
+            }
+        });
+        
+        // Update display
+        updateDisplay(select, displayBox);
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+        dropdown.style.display = 'none';
+    });
+}
+
+/**
+ * Toggle dropdown visibility
+ * @param {HTMLElement} dropdown - The dropdown element
+ * @param {HTMLInputElement} searchInput - The search input element
+ */
+function toggleDropdown(dropdown, searchInput) {
+    const isVisible = dropdown.style.display === 'block';
+    
+    // Toggle visibility
+    dropdown.style.display = isVisible ? 'none' : 'block';
+    
+    // Focus search input if showing dropdown
+    if (!isVisible) {
+        searchInput.focus();
+        searchInput.value = '';
+        
+        // Trigger input event to reset filtering
+        const event = new Event('input', { bubbles: true });
+        searchInput.dispatchEvent(event);
+    }
+}
+
+/**
+ * Filter options based on search text
+ * @param {HTMLElement} optionsList - The options list element
+ * @param {string} searchText - The text to search for
+ */
+function filterOptions(optionsList, searchText) {
+    // Get all options
+    const options = optionsList.querySelectorAll('.enhanced-multiselect-option');
+    
+    // Show/hide based on match
+    options.forEach(option => {
+        const label = option.querySelector('.enhanced-multiselect-label');
+        const text = label.textContent.toLowerCase();
+        
+        option.style.display = text.includes(searchText) ? 'flex' : 'none';
+    });
+}
+
+/**
+ * Add necessary styles for the enhanced multi-select
+ */
+function addMultiSelectStyles() {
+    // Skip if already added
+    if (document.getElementById('enhanced-multiselect-styles')) return;
+    
+    // Create style element
+    const style = document.createElement('style');
+    style.id = 'enhanced-multiselect-styles';
+    
+    // Add CSS
+    style.textContent = `
+        /* Container for the enhanced select */
+        .enhanced-multiselect-container {
+            position: relative;
+            width: 100%;
+        }
+        
+        /* Hide original select */
+        .enhanced-multiselect-container select {
+            display: none;
+        }
+        
+        /* Display box styling */
+        .enhanced-multiselect-display {
+            min-height: 38px;
+            padding: 6px 12px;
+            background-color: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            color: #fff;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+        
+        .enhanced-multiselect-display:hover,
+        .enhanced-multiselect-display:focus {
+            border-color: rgba(14, 165, 233, 0.5);
+            outline: none;
+            box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.25);
+        }
+        
+        /* Placeholder styling */
+        .enhanced-multiselect-display .placeholder {
+            color: #6c757d;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Badge styling */
+        .enhanced-multiselect-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            line-height: 1;
+            color: #fff;
+            background-color: #0ea5e9;
+            border-radius: 9999px;
+            white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* Remove button styling */
+        .enhanced-multiselect-remove {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 4px;
+            font-size: 1.25rem;
+            line-height: 0.5;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+        }
+        
+        .enhanced-multiselect-remove:hover {
+            color: #fff;
+        }
+        
+        /* Dropdown styling */
+        .enhanced-multiselect-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            width: 100%;
+            max-height: 250px;
+            margin-top: 4px;
+            padding: 8px;
+            background-color: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+            z-index: 9999;
+            overflow-y: auto;
+        }
+        
+        /* Search input styling */
+        .enhanced-multiselect-search-container {
+            margin-bottom: 8px;
+            position: sticky;
+            top: 0;
+            background-color: #1e293b;
+            padding: 2px 0;
+            z-index: 1;
+        }
+        
+        .enhanced-multiselect-search {
+            width: 100%;
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: #fff;
+            background-color: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.25rem;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+        
+        .enhanced-multiselect-search:focus {
+            border-color: rgba(14, 165, 233, 0.5);
+            outline: none;
+            box-shadow: 0 0 0 0.2rem rgba(14, 165, 233, 0.25);
+        }
+        
+        /* Options list styling */
+        .enhanced-multiselect-options {
+            overflow-y: auto;
+        }
+        
+        /* Option styling */
+        .enhanced-multiselect-option {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            border-radius: 0.25rem;
+            transition: background-color 0.15s ease;
+            margin-bottom: 2px;
+        }
+        
+        .enhanced-multiselect-option:hover {
+            background-color: rgba(30, 41, 59, 0.8);
+        }
+        
+        /* Checkbox styling */
+        .enhanced-multiselect-checkbox {
+            margin-right: 8px;
+        }
+        
+        /* Label styling */
+        .enhanced-multiselect-label {
+            color: #fff;
+            margin-bottom: 0;
+            cursor: pointer;
+            user-select: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+    `;
+    
+    // Add to document head
+    document.head.appendChild(style);
+    console.log("Enhanced multi-select styles added");
+}
+
+/**
  * Opens the Add Transaction panel
  * Function moved from add_transaction.js to ensure global availability
  */
@@ -305,225 +697,58 @@ function openAddTransactionPanel() {
                     dateInput.value = new Date().toISOString().split('T')[0];
                 }
                 
-                // INLINE IMPLEMENTATION OF CRITICAL FUNCTIONS
-                // Add multi-select styles
-                const addStyles = function() {
-                    if (document.getElementById('enhanced-multi-select-styles')) return;
-                    
-                    const styleEl = document.createElement('style');
-                    styleEl.id = 'enhanced-multi-select-styles';
-                    styleEl.textContent = `
-                        .custom-multi-select-container {
-                            position: relative;
-                        }
+                // Setup transaction type change handler
+                const transactionTypeSelect = document.getElementById('transaction_type');
+                if (transactionTypeSelect) {
+                    transactionTypeSelect.addEventListener('change', function() {
+                        const transactionType = this.value;
+                        const expenseOnlyFields = document.querySelectorAll('.expense-only-fields');
+                        const toAccountContainer = document.getElementById('to_account_container');
+                        const accountLabel = document.getElementById('account_label');
+                        const personalExpenseCheck = document.getElementById('personal_expense');
                         
-                        .custom-multi-select-display {
-                            cursor: pointer;
-                            min-height: 38px;
-                            white-space: normal;
-                            display: flex;
-                            flex-wrap: wrap;
-                            align-items: center;
-                            gap: 4px;
-                            padding: 6px 10px;
-                        }
-                        
-                        .custom-multi-select-display .placeholder {
-                            color: #6c757d;
-                        }
-                        
-                        .custom-multi-select-dropdown {
-                            position: absolute;
-                            width: 100%;
-                            max-height: 250px;
-                            overflow-y: auto;
-                            z-index: 1050;
-                            border: 1px solid #444;
-                            border-radius: 0.25rem;
-                            padding: 8px;
-                            margin-top: 2px;
-                            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
-                        }
-                        
-                        .custom-multi-select-option {
-                            display: flex;
-                            align-items: center;
-                            padding: 6px 10px;
-                            cursor: pointer;
-                            color: #fff;
-                            border-radius: 0.25rem;
-                            transition: background-color 0.15s ease;
-                        }
-                        
-                        .custom-multi-select-option:hover {
-                            background-color: #2d3748;
-                        }
-                        
-                        .enhanced-multi-select {
-                            display: none;
-                        }
-                    `;
-                    document.head.appendChild(styleEl);
-                    console.log("Multi-select styles added inline");
-                };
-                
-                // Initialize enhanced multi-select
-                const initializeMultiSelect = function(selector) {
-                    const multiSelects = document.querySelectorAll(selector);
-                    console.log(`Found ${multiSelects.length} multi-select elements with selector: ${selector}`);
-                    
-                    multiSelects.forEach(select => {
-                        // Skip if already initialized
-                        if (select.getAttribute('data-enhanced') === 'true') return;
-                        
-                        // Mark as enhanced to prevent duplicate initialization
-                        select.setAttribute('data-enhanced', 'true');
-                        
-                        // Create wrapper container
-                        const container = document.createElement('div');
-                        container.className = 'custom-multi-select-container';
-                        select.parentNode.insertBefore(container, select);
-                        container.appendChild(select);
-                        
-                        // Create display element
-                        const displayBox = document.createElement('div');
-                        displayBox.className = 'form-control bg-dark text-light custom-multi-select-display';
-                        displayBox.innerHTML = '<span class="placeholder">Select options...</span>';
-                        container.insertBefore(displayBox, select);
-                        
-                        // Create dropdown menu container
-                        const dropdownMenu = document.createElement('div');
-                        dropdownMenu.className = 'custom-multi-select-dropdown bg-dark';
-                        dropdownMenu.style.display = 'none';
-                        container.appendChild(dropdownMenu);
-                        
-                        // Add search input
-                        const searchInput = document.createElement('input');
-                        searchInput.type = 'text';
-                        searchInput.className = 'form-control form-control-sm bg-dark text-light mb-2 custom-multi-select-search';
-                        searchInput.placeholder = 'Search...';
-                        dropdownMenu.appendChild(searchInput);
-                        
-                        // Create option list
-                        const optionList = document.createElement('div');
-                        optionList.className = 'custom-multi-select-options';
-                        dropdownMenu.appendChild(optionList);
-                        
-                        // Populate options
-                        Array.from(select.options).forEach(option => {
-                            const optionItem = document.createElement('div');
-                            optionItem.className = 'custom-multi-select-option';
-                            optionItem.setAttribute('data-value', option.value);
+                        // Show/hide fields based on transaction type
+                        if (transactionType === 'expense') {
+                            // Show splitting options for expenses
+                            expenseOnlyFields.forEach(el => el.style.display = 'block');
+                            if (toAccountContainer) toAccountContainer.style.display = 'none';
                             
-                            const checkbox = document.createElement('input');
-                            checkbox.type = 'checkbox';
-                            checkbox.className = 'form-check-input me-2';
-                            checkbox.checked = option.selected;
+                            // Update account label
+                            if (accountLabel) accountLabel.textContent = 'Payment Account';
                             
-                            const label = document.createElement('label');
-                            label.className = 'form-check-label';
-                            label.textContent = option.textContent;
-                            
-                            optionItem.appendChild(checkbox);
-                            optionItem.appendChild(label);
-                            optionList.appendChild(optionItem);
-                            
-                            // Handle option click
-                            optionItem.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                checkbox.checked = !checkbox.checked;
-                                
-                                // Update the original select element
-                                option.selected = checkbox.checked;
-                                
-                                // Dispatch change event on the original select
-                                const event = new Event('change', { bubbles: true });
-                                select.dispatchEvent(event);
-                                
-                                // Update display box
-                                updateDisplayBox();
-                            });
-                        });
-                        
-                        // Function to update display box
-                        function updateDisplayBox() {
-                            const selectedOptions = Array.from(select.selectedOptions);
-                            
-                            if (selectedOptions.length === 0) {
-                                displayBox.innerHTML = '<span class="placeholder">Select options...</span>';
-                            } else {
-                                displayBox.innerHTML = selectedOptions
-                                    .map(opt => `<span class="badge bg-primary me-1">${opt.textContent}</span>`)
-                                    .join(' ');
+                            // Enable personal expense toggle
+                            if (personalExpenseCheck) {
+                                personalExpenseCheck.disabled = false;
+                                const switchContainer = personalExpenseCheck.closest('.form-check');
+                                if (switchContainer) switchContainer.style.opacity = '1';
                             }
+                        } 
+                        else if (transactionType === 'income') {
+                            // Hide splitting options for income
+                            expenseOnlyFields.forEach(el => el.style.display = 'none');
+                            if (toAccountContainer) toAccountContainer.style.display = 'none';
+                            
+                            // Update account label
+                            if (accountLabel) accountLabel.textContent = 'Deposit Account';
                         }
-                        
-                        // Initial update of display box
-                        updateDisplayBox();
-                        
-                        // Toggle dropdown on display box click
-                        displayBox.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            const isVisible = dropdownMenu.style.display === 'block';
-                            dropdownMenu.style.display = isVisible ? 'none' : 'block';
+                        else if (transactionType === 'transfer') {
+                            // Hide splitting options for transfers
+                            expenseOnlyFields.forEach(el => el.style.display = 'none');
                             
-                            if (!isVisible) {
-                                searchInput.focus();
-                                
-                                // Position dropdown
-                                const rect = displayBox.getBoundingClientRect();
-                                dropdownMenu.style.width = rect.width + 'px';
-                                
-                                // Adjust top position if near bottom of screen
-                                const spaceBelow = window.innerHeight - rect.bottom;
-                                if (spaceBelow < 300) {
-                                    dropdownMenu.style.top = 'auto';
-                                    dropdownMenu.style.bottom = rect.height + 'px';
-                                } else {
-                                    dropdownMenu.style.top = rect.height + 'px';
-                                    dropdownMenu.style.bottom = 'auto';
-                                }
-                            }
-                        });
-                        
-                        // Handle search
-                        searchInput.addEventListener('input', (e) => {
-                            const searchText = e.target.value.toLowerCase();
+                            // Show destination account
+                            if (toAccountContainer) toAccountContainer.style.display = 'block';
                             
-                            Array.from(optionList.children).forEach(optionItem => {
-                                const optionText = optionItem.querySelector('label').textContent.toLowerCase();
-                                optionItem.style.display = optionText.includes(searchText) ? 'block' : 'none';
-                            });
-                        });
-                        
-                        // Close dropdown when clicking outside
-                        document.addEventListener('click', (e) => {
-                            if (!container.contains(e.target)) {
-                                dropdownMenu.style.display = 'none';
-                            }
-                        });
-                        
-                        // Sync original select with our custom one when it changes externally
-                        select.addEventListener('change', () => {
-                            Array.from(optionList.children).forEach(optionItem => {
-                                const value = optionItem.getAttribute('data-value');
-                                const option = select.querySelector(`option[value="${value}"]`);
-                                const checkbox = optionItem.querySelector('input[type="checkbox"]');
-                                
-                                if (option && checkbox) {
-                                    checkbox.checked = option.selected;
-                                }
-                            });
-                            
-                            updateDisplayBox();
-                        });
-                        
-                        console.log(`Enhanced multi-select initialized for element with ID: ${select.id}`);
+                            // Update account label
+                            if (accountLabel) accountLabel.textContent = 'From Account';
+                        }
                     });
-                };
+                    
+                    // Initialize UI based on default transaction type
+                    transactionTypeSelect.dispatchEvent(new Event('change'));
+                }
                 
                 // Function to auto-select the paid by user
-                const autoSelectPaidBy = function() {
+                function autoSelectPaidBy() {
                     const paidBySelect = document.getElementById('paid_by');
                     const splitWithSelect = document.getElementById('split_with');
                     
@@ -548,37 +773,10 @@ function openAddTransactionPanel() {
                             console.log("Paid by user auto-selected successfully");
                         }
                     }
-                };
-                
-                // Function to handle split options toggle
-                const toggleSplitOptions = function() {
-                    const splitMethodSelect = document.getElementById('split_method');
-                    if (!splitMethodSelect) return;
-                    
-                    const splitMethod = splitMethodSelect.value;
-                    const customSplitContainer = document.getElementById('custom_split_container');
-                    const personalExpenseCheck = document.getElementById('personal_expense');
-                    
-                    if (!customSplitContainer) return;
-                    
-                    // Don't show custom split container for personal expenses
-                    if (personalExpenseCheck && personalExpenseCheck.checked) {
-                        customSplitContainer.style.display = 'none';
-                        return;
-                    }
-                    
-                    if (splitMethod === 'equal') {
-                        customSplitContainer.style.display = 'none';
-                    } else {
-                        customSplitContainer.style.display = 'block';
-                        
-                        // Update the split values UI
-                        updateSplitValues();
-                    }
-                };
+                }
                 
                 // Function to update split values UI
-                const updateSplitValues = function() {
+                function updateSplitValues() {
                     // Get currency symbol
                     let baseCurrencySymbol = window.baseCurrencySymbol || '$';
                     
@@ -595,7 +793,7 @@ function openAddTransactionPanel() {
                     const amountInput = document.getElementById('amount');
                     const paidBySelect = document.getElementById('paid_by');
                     const splitWithSelect = document.getElementById('split_with');
-                    const splitTotalEl = document.getElementById('split_total');
+                    const splitTotalEl = document.getElementById('split_values_total');
                     const splitValuesContainer = document.getElementById('split_values_container');
                     const splitDetailsInput = document.getElementById('split_details');
                     
@@ -694,12 +892,12 @@ function openAddTransactionPanel() {
                     
                     // Add event listeners to inputs and update split details
                     setupSplitInputListeners(splitMethod, splitValues, totalAmount);
-                };
+                }
                 
                 // Setup input listeners for split values
-                const setupSplitInputListeners = function(splitMethod, splitValues, totalAmount) {
+                function setupSplitInputListeners(splitMethod, splitValues, totalAmount) {
                     const splitDetailsInput = document.getElementById('split_details');
-                    const splitTotalEl = document.getElementById('split_total');
+                    const splitTotalEl = document.getElementById('split_values_total');
                     const splitStatusEl = document.getElementById('split_status');
                     
                     document.querySelectorAll('.split-value-input').forEach(input => {
@@ -760,10 +958,37 @@ function openAddTransactionPanel() {
                         // Trigger input event to initialize values
                         input.dispatchEvent(new Event('input'));
                     });
-                };
+                }
+                
+                // Function to handle split options toggle
+                function toggleSplitOptions() {
+                    const splitMethodSelect = document.getElementById('split_method');
+                    if (!splitMethodSelect) return;
+                    
+                    const splitMethod = splitMethodSelect.value;
+                    const customSplitContainer = document.getElementById('custom_split_container');
+                    const personalExpenseCheck = document.getElementById('personal_expense');
+                    
+                    if (!customSplitContainer) return;
+                    
+                    // Don't show custom split container for personal expenses
+                    if (personalExpenseCheck && personalExpenseCheck.checked) {
+                        customSplitContainer.style.display = 'none';
+                        return;
+                    }
+                    
+                    if (splitMethod === 'equal') {
+                        customSplitContainer.style.display = 'none';
+                    } else {
+                        customSplitContainer.style.display = 'block';
+                        
+                        // Update the split values UI
+                        updateSplitValues();
+                    }
+                }
                 
                 // Toggle personal expense mode
-                const togglePersonalExpense = function() {
+                function togglePersonalExpense() {
                     const personalExpenseCheck = document.getElementById('personal_expense');
                     if (!personalExpenseCheck) return;
                     
@@ -786,7 +1011,7 @@ function openAddTransactionPanel() {
                             splitWithSelect.disabled = true;
                             
                             // Also disable the custom multi-select
-                            const customMultiSelect = splitWithSelect.closest('.custom-multi-select-container');
+                            const customMultiSelect = splitWithSelect.closest('.enhanced-multiselect-container');
                             if (customMultiSelect) {
                                 customMultiSelect.style.opacity = '0.5';
                                 customMultiSelect.style.pointerEvents = 'none';
@@ -802,7 +1027,7 @@ function openAddTransactionPanel() {
                             splitWithSelect.disabled = false;
                             
                             // Re-enable the custom multi-select
-                            const customMultiSelect = splitWithSelect.closest('.custom-multi-select-container');
+                            const customMultiSelect = splitWithSelect.closest('.enhanced-multiselect-container');
                             if (customMultiSelect) {
                                 customMultiSelect.style.opacity = '1';
                                 customMultiSelect.style.pointerEvents = 'auto';
@@ -828,63 +1053,9 @@ function openAddTransactionPanel() {
                     if (splitWithSelect) {
                         splitWithSelect.dispatchEvent(new Event('change'));
                     }
-                };
+                }
                 
-                // Execute our inline implementations
                 try {
-                    // Add styles
-                    addStyles();
-                    
-                    // Setup transaction type change handler
-                    const transactionTypeSelect = document.getElementById('transaction_type');
-                    if (transactionTypeSelect) {
-                        transactionTypeSelect.addEventListener('change', function() {
-                            const transactionType = this.value;
-                            const expenseOnlyFields = document.querySelectorAll('.expense-only-fields');
-                            const toAccountContainer = document.getElementById('to_account_container');
-                            const accountLabel = document.getElementById('account_label');
-                            const personalExpenseCheck = document.getElementById('personal_expense');
-                            
-                            // Show/hide fields based on transaction type
-                            if (transactionType === 'expense') {
-                                // Show splitting options for expenses
-                                expenseOnlyFields.forEach(el => el.style.display = 'block');
-                                if (toAccountContainer) toAccountContainer.style.display = 'none';
-                                
-                                // Update account label
-                                if (accountLabel) accountLabel.textContent = 'Payment Account';
-                                
-                                // Enable personal expense toggle
-                                if (personalExpenseCheck) {
-                                    personalExpenseCheck.disabled = false;
-                                    const switchContainer = personalExpenseCheck.closest('.form-check');
-                                    if (switchContainer) switchContainer.style.opacity = '1';
-                                }
-                            } 
-                            else if (transactionType === 'income') {
-                                // Hide splitting options for income
-                                expenseOnlyFields.forEach(el => el.style.display = 'none');
-                                if (toAccountContainer) toAccountContainer.style.display = 'none';
-                                
-                                // Update account label
-                                if (accountLabel) accountLabel.textContent = 'Deposit Account';
-                            }
-                            else if (transactionType === 'transfer') {
-                                // Hide splitting options for transfers
-                                expenseOnlyFields.forEach(el => el.style.display = 'none');
-                                
-                                // Show destination account
-                                if (toAccountContainer) toAccountContainer.style.display = 'block';
-                                
-                                // Update account label
-                                if (accountLabel) accountLabel.textContent = 'From Account';
-                            }
-                        });
-                        
-                        // Initialize UI based on default transaction type
-                        transactionTypeSelect.dispatchEvent(new Event('change'));
-                    }
-                    
                     // Setup personal expense toggle
                     const personalExpenseCheck = document.getElementById('personal_expense');
                     if (personalExpenseCheck) {
@@ -924,7 +1095,7 @@ function openAddTransactionPanel() {
                         });
                     }
                     
-                    // Initialize split with selector
+                    // Initialize multi-select for split_with
                     initializeMultiSelect('#split_with');
                     
                     // Setup split with change handler
@@ -953,3 +1124,10 @@ function openAddTransactionPanel() {
             showMessage('Error loading transaction form. Please try again.', 'error');
         });
 }
+
+// Make functions available globally
+window.openSlidePanel = openSlidePanel;
+window.closeSlidePanel = closeSlidePanel;
+window.showMessage = showMessage;
+window.initializeMultiSelect = initializeMultiSelect;
+window.openAddTransactionPanel = openAddTransactionPanel;

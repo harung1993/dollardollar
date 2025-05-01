@@ -16,39 +16,14 @@
     
     <!-- Create Group Form (Hidden by default) -->
     <div id="groupFormContainer" class="expense-form mb-4" style="display: none;">
-        <h4 class="mb-3">Create New Group</h4>
-        <form action="{{ url_for('create_group') }}" method="POST">
-            <div class="mb-3">
-                <label for="name" class="form-label">Group Name</label>
-                <input type="text" class="form-control bg-dark text-light" id="name" name="name" required>
-            </div>
-            <div class="mb-3">
-                <label for="description" class="form-label">Description (Optional)</label>
-                <textarea class="form-control bg-dark text-light" id="description" name="description" rows="3"></textarea>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Add Members</label>
-                <select class="form-select bg-dark text-light" name="members" multiple>
-                    {% for user in users %}
-                        {% if user != current_user %}
-                            <option value="{{ user.id }}">{{ user.name }} ({{ user.id }})</option>
-                        {% endif %}
-                    {% endfor %}
-                </select>
-                <small class="text-muted">Hold Ctrl/Cmd to select multiple members</small>
-            </div>
-            <div class="d-flex justify-content-end">
-                <button type="button" class="btn btn-secondary me-2" onclick="toggleGroupForm()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Create Group</button>
-            </div>
-        </form>
+        {% include 'partials/create_group_form.html' %}
     </div>
 
     <!-- Groups Grid -->
     <div class="row">
         {% for group in groups %}
         <div class="col-md-4 mb-4">
-            <div class="card h-100">
+            <div class="card h-100 modern-card">
                 <div class="card-header">
                     <h5 class="card-title mb-0">{{ group.name }}</h5>
                 </div>
@@ -59,6 +34,10 @@
                     <p class="text-muted">
                         <small>Created by: {{ group.creator.name }}</small><br>
                         <small>Members: {{ group.members|length }}</small>
+                        
+                        {% if group.default_split_method and group.default_split_method != 'equal' %}
+                        <br><small>Split Method: {{ group.default_split_method|capitalize }}</small>
+                        {% endif %}
                     </p>
                 </div>
                 <div class="card-footer bg-dark border-secondary">
@@ -78,7 +57,29 @@
     </div>
 </div>
 
-<!-- NO MODALS HERE ANYMORE, USING IN-PAGE FORMS INSTEAD -->
+<!-- Add the styles for modern cards -->
+<style>
+    /* Modern card styling with hover effect */
+    .modern-card {
+        background-color: rgba(17, 24, 39, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .modern-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+    }
+    
+    .modern-card .card-header {
+        background-color: rgba(21, 128, 61, 0.3);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px 16px 0 0;
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
