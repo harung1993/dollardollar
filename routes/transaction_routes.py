@@ -13,6 +13,7 @@ from models import (
     Expense,
     Group,
     Settlement,
+    Tag,
     User,
 )
 from services.helpers import get_base_currency

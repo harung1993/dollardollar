@@ -1,9 +1,20 @@
 from datetime import datetime, timedelta
 
+from flask import request
 from flask_login import current_user
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
-from models import Account, Budget, Currency, Expense, Settlement, User
+from extensions import db
+from models import (
+    Account,
+    Budget,
+    Category,
+    CategoryMapping,
+    Currency,
+    Expense,
+    Settlement,
+    User,
+)
 
 
 def get_category_spending(expenses, expense_splits):
@@ -128,7 +139,7 @@ def get_base_currency():
     }
 
 
-def calculate_balances(user_id): # noqa: C901 PLR0912
+def calculate_balances(user_id):  # noqa: C901 PLR0912
     """Calculate balances between the current user and all other users."""
     balances = {}
 
@@ -284,7 +295,7 @@ def get_budget_summary():
     return budget_summary
 
 
-def calculate_asset_debt_trends(current_user): # noqa: C901 PLR0912
+def calculate_asset_debt_trends(current_user):  # noqa: C901 PLR0912
     """Calculate asset and debt trends for a user's accounts."""
     # Initialize tracking
     monthly_assets = {}
@@ -340,7 +351,7 @@ def calculate_asset_debt_trends(current_user): # noqa: C901 PLR0912
         is_debt = account.type in ["credit"] or account.balance < 0
 
         # Skip accounts with zero or near-zero balance
-        if abs(account.balance or 0) < 0.01: # noqa: PLR2004
+        if abs(account.balance or 0) < 0.01:  # noqa: PLR2004
             continue
 
         # Get monthly transactions for this account
@@ -436,3 +447,218 @@ def calculate_asset_debt_trends(current_user): # noqa: C901 PLR0912
         "total_debts": total_debts,
         "net_worth": net_worth,
     }
+
+
+def detect_internal_transfer(description, amount, account_id=None):
+    """Detect if a transaction appears to be an internal transfer.
+
+    :returns: a tuple of (is_transfer, source_account_id, destination_account_id)
+    """
+    # Default return values
+    is_transfer = False
+    source_account_id = account_id
+    destination_account_id = None
+
+    # Skip if no description or account
+    if not description or not account_id:
+        return is_transfer, source_account_id, destination_account_id
+
+    # Normalize description for easier matching
+    desc_lower = description.lower()
+
+    # Common transfer-related keywords
+    transfer_keywords = [
+        "transfer",
+        "xfer",
+        "move",
+        "moved to",
+        "sent to",
+        "to account",
+        "from account",
+        "between accounts",
+        "internal",
+        "account to account",
+        "trx to",
+        "trx from",
+        "trans to",
+        "trans from",
+        "ACH Withdrawal",
+        "Robinhood",
+        "BK OF AMER VISA ONLINE PMT",
+        "Payment Thank You",
+    ]
+
+    # Check for transfer keywords in description
+    if any(keyword in desc_lower for keyword in transfer_keywords):
+        is_transfer = True
+
+        # Try to identify the destination account
+        # Get all user accounts
+        user_accounts = Account.query.filter_by(user_id=current_user.id).all()
+
+        # Look for account names in the description
+        for account in user_accounts:
+            # Skip the source account
+            if account.id == account_id:
+                continue
+
+            # Check if account name appears in the description
+            if account.name.lower() in desc_lower:
+                # This is likely the destination account
+                destination_account_id = account.id
+                break
+
+    return is_transfer, source_account_id, destination_account_id
+
+
+def get_category_id(category_name, description=None, user_id=None):  # noqa: PLR0911
+    """Find, create or auto-suggest a category based on name and description."""
+    # Clean the category name
+    category_name = category_name.strip() if category_name else ""
+
+    # If we have a user ID and no category name but have a description
+    if user_id and not category_name and description:
+        # Try to auto-categorize based on description
+        auto_category_id = auto_categorize_transaction(description, user_id)
+        if auto_category_id:
+            return auto_category_id
+
+    # If we have a category name, try to find it
+    if category_name:
+        # Try to find an exact match first
+        category = Category.query.filter(
+            Category.user_id == user_id if user_id else current_user.id,
+            func.lower(Category.name) == func.lower(category_name),
+        ).first()
+
+        if category:
+            return category.id
+
+        # Try to find a partial match in subcategories
+        subcategory = Category.query.filter(
+            Category.user_id == user_id if user_id else current_user.id,
+            Category.parent_id.isnot(None),
+            func.lower(Category.name).like(f"%{category_name.lower()}%"),
+        ).first()
+
+        if subcategory:
+            return subcategory.id
+
+        # Try to find a partial match in parent categories
+        parent_category = Category.query.filter(
+            Category.user_id == user_id if user_id else current_user.id,
+            Category.parent_id.is_(None),
+            func.lower(Category.name).like(f"%{category_name.lower()}%"),
+        ).first()
+
+        if parent_category:
+            return parent_category.id
+
+        # If auto-categorize is enabled, create a new category
+        if "auto_categorize" in request.form:
+            # Find "Other" category as parent
+            other_category = Category.query.filter_by(
+                name="Other",
+                user_id=user_id if user_id else current_user.id,
+                is_system=True,
+            ).first()
+
+            new_category = Category(
+                name=category_name[:50],  # Limit to 50 chars
+                icon="fa-tag",
+                color="#6c757d",
+                parent_id=other_category.id if other_category else None,
+                user_id=user_id if user_id else current_user.id,
+            )
+
+            db.session.add(new_category)
+            db.session.flush()  # Get ID without committing
+
+            return new_category.id
+
+    # If we still don't have a category, try auto-categorization again with the description
+    if description and user_id:
+        # Try to auto-categorize based on description
+        auto_category_id = auto_categorize_transaction(description, user_id)
+        if auto_category_id:
+            return auto_category_id
+
+    # Default to None if no match found and auto-categorize is off
+    return None
+
+
+def auto_categorize_transaction(description, user_id):  # noqa: C901
+    """Automatically categorize a transaction based on its description.
+
+    :return: the best matching category ID or None if no match found
+    """
+    if not description:
+        return None
+
+    # Standardize description - lowercase and remove extra spaces
+    description = description.strip().lower()
+
+    # Get all active category mappings for the user
+    mappings = (
+        CategoryMapping.query.filter_by(user_id=user_id, active=True)
+        .order_by(
+            CategoryMapping.priority.desc(), CategoryMapping.match_count.desc()
+        )
+        .all()
+    )
+
+    # Keep track of matches and their scores
+    matches = []
+
+    # Check each mapping
+    for mapping in mappings:
+        matched = False
+        if mapping.is_regex:
+            # Use regex pattern matching
+            try:
+                import re
+
+                pattern = re.compile(mapping.keyword, re.IGNORECASE)
+                if pattern.search(description):
+                    matched = True
+            except:
+                # If regex is invalid, fall back to simple substring search
+                matched = mapping.keyword.lower() in description
+        else:
+            # Simple substring matching
+            matched = mapping.keyword.lower() in description
+
+        if matched:
+            # Calculate match score based on:
+            # 1. Priority (user-defined importance)
+            # 2. Usage count (previous successful matches)
+            # 3. Keyword length (longer keywords are more specific)
+            # 4. Keyword position (earlier in the string is better)
+            score = (
+                (mapping.priority * 100)
+                + (mapping.match_count * 10)
+                + len(mapping.keyword)
+            )
+
+            # Adjust score based on position (if simple keyword)
+            if not mapping.is_regex:
+                position = description.find(mapping.keyword.lower())
+                if position == 0:  # Matches at the start
+                    score += 50
+                elif position > 0:  # Adjust based on how early it appears
+                    score += max(0, 30 - position)
+
+            matches.append((mapping, score))
+
+    # Sort matches by score, descending
+    matches.sort(key=lambda x: x[1], reverse=True)
+
+    # If we have any matches, increment the match count for the winner
+    # and return its category ID
+    if matches:
+        best_mapping = matches[0][0]
+        best_mapping.match_count += 1
+        db.session.commit()
+        return best_mapping.category_id
+
+    return None
