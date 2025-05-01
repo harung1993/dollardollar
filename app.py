@@ -7043,13 +7043,18 @@ def simplefin_add_accounts():
                 accounts_added += 1
                 account_obj = existing_account
             else:
+                # Get currency code from account or default, ensuring it's not empty
+                currency_code = sf_account.get('currency_code')
+                if not currency_code or currency_code.strip() == '':
+                    currency_code = default_currency
+                
                 # Create new account with custom values
                 new_account = Account(
                     name=sf_account.get('name'),  # Custom name from form
                     type=sf_account.get('type'),  # Custom type from form
                     institution=sf_account.get('institution'),
                     balance=sf_account.get('balance', 0),
-                    currency_code=sf_account.get('currency_code', default_currency),
+                    currency_code=currency_code,
                     user_id=current_user.id,
                     import_source='simplefin',
                     external_id=sf_account.get('id'),
