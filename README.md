@@ -30,6 +30,7 @@ Born from a desire to move beyond restrictive financial tracking platforms, this
 - 🔄 **Integration with Simplefin** (auto tracking accounts and transactions)
 - 💰 **Budgets with notifications**
 - 🖥️ **Seamless integration with Unraid** for easy installation and management via Unraid templates
+- 💼 **Track Portfolios and investments with auto update of sticker prices
 
   
 ## 🚀 Features
@@ -68,7 +69,12 @@ Born from a desire to move beyond restrictive financial tracking platforms, this
   - Enterprise-ready authentication with any OIDC provider
   - User management with password recovery
   - No third-party data sharing
-
+- **💼 Portfolio Management
+  - Create and manage multiple investment portfolios
+  - Link portfolios to accounts for automatic balance updates
+  - Track individual investments across different portfolios
+  - Visualize portfolio performance and distribution
+ 
 ## 🛠️ Getting Started
 
 ### Updating
@@ -110,6 +116,12 @@ python reset.py
 
 ## ⚙️ Configuration Options
 
+### Investment Tracking (Optional)
+To enable Investment Tracking :
+```
+INVESTMENT_TRACKING_ENABLED=True
+```
+
 ### OIDC Setup (Optional)
 To enable OpenID Connect authentication:
 
@@ -119,8 +131,10 @@ OIDC_CLIENT_ID=your_client_id
 OIDC_CLIENT_SECRET=your_client_secret
 OIDC_PROVIDER_NAME=Your Provider Name
 OIDC_DISCOVERY_URL=https://your-provider/.well-known/openid-configuration
-
+```
+### Other Optionals
 # Optional settings
+```
 LOCAL_LOGIN_DISABLE=True  # Disable password logins
 DISABLE_SIGNUPS=True      # Disable registration
 ```
@@ -136,6 +150,8 @@ For detailed configuration options, see the [.env.template](https://github.com/h
   <img width="45%" alt="Settling Splits" src="https://github.com/user-attachments/assets/1ca55758-5390-413b-b8e6-bb85e31263c0" />
   <img width="45%" alt="Budgets" src="https://github.com/user-attachments/assets/8db5c16b-37e4-4bf4-aa0e-396810e0380d" />
   <img width="45%" alt="Categories" src="https://github.com/user-attachments/assets/23d17592-b440-49f2-a0c5-dca9e8b57b2f" />
+  <img width="45%" alt="Portfolios" src="https://github.com/user-attachments/assets/d20c5142-9261-413e-ae45-7588b21917d4" />
+
 </div>
 
 ## 🤝 Development Approach
