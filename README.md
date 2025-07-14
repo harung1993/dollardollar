@@ -8,6 +8,21 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="license"></a>
 <a href="https://github.com/harung1993/dollardollar/actions"><img src="https://img.shields.io/github/actions/workflow/status/harung1993/dollardollar/ci.yml?branch=main" alt="GitHub Workflow Status"></a>
 </div>
+
+> **🚧 Important Development Notice**
+> 
+> **DollarDollar is currently undergoing a major architectural transformation!** We're migrating from a monolithic backend to a **modular microservices architecture** and transitioning the frontend from server-side rendering to a **modern React-based application**.
+> 
+> **What this means:**
+> - 🔄 **Backend**: Moving to modular, service-based architecture for better scalability and maintainability
+> - ⚛️ **Frontend**: Complete migration to React for improved user experience and modern UI capabilities
+> - 🛠️ **Current state**: The application remains fully functional during this transition
+> - 📅 **Timeline**: Active development in progress - expect exciting updates soon!
+> 
+> **For users**: The current version continues to work as expected. The modularization will bring enhanced performance, better maintainability, and improved development experience.
+> 
+
+
 <p align="center">An open-source, self-hosted money management platform with comprehensive expense tracking, budgeting, account synchronization, and bill-splitting features - designed for privacy, flexibility, and complete financial control.</p>
 <div align="center">
   <h3>
