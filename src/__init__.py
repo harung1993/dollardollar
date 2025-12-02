@@ -9,6 +9,8 @@ import pytz
 from flask import Flask
 from src.config import get_config
 from src.extensions import db, login_manager, mail, migrate, scheduler, init_extensions
+from flask_jwt_extended import JWTManager
+from flask_cors import CORS
 
 # Import models (needed for migrations and relationships)
 from src import models
@@ -41,8 +43,25 @@ def create_app(config_name=None):
     
     # Initialize Flask extensions
     init_extensions(app)
-    
-    # Configure login manager
+
+    # Configure JWT for API authentication
+    app.config['JWT_SECRET_KEY'] = app.config.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400  # 24 hours
+    app.config['JWT_REFRESH_TOKEN_EXPIRES'] = 2592000  # 30 days
+    jwt = JWTManager(app)
+
+    # Configure CORS for React Native frontend
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["*"],  # Configure this to your frontend URL in production
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
+
+    # Configure login manager (for template-based routes)
     @login_manager.user_loader
     def load_user(user_id):
         from src.models.user import User
@@ -145,6 +164,15 @@ def create_app(config_name=None):
 
     # Notification Service (internal - no blueprint)
     # NotificationService is imported directly when needed
+
+    # ===== REST API Blueprints (NEW) =====
+    # Register API v1 blueprint for React Native frontend
+    try:
+        from api import api_bp
+        app.register_blueprint(api_bp)
+        app.logger.info("REST API v1 registered at /api/v1")
+    except Exception as e:
+        app.logger.warning(f"REST API registration failed: {e}")
 
     # Register context processors
     from src.utils.context_processors import utility_processor
