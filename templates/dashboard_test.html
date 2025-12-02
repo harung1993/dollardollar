@@ -13,7 +13,7 @@
     <!-- Add Expense Form (Hidden by default) -->
     <div id="expenseFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Add New Expense</h4>
-        <form method="POST" action="{{ url_for('add_expense') }}">
+        <form method="POST" action="{{ url_for('transaction.add_expense') }}">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="description" class="form-label">Description</label>
@@ -164,7 +164,7 @@
                     {% endfor %}
                     
                     {% if current_user.tags|length == 0 %}
-                    <p class="text-muted small">No tags created yet. <a href="{{ url_for('manage_tags') }}" class="text-warning">Create tags</a> to categorize expenses.</p>
+                    <p class="text-muted small">No tags created yet. <a href="{{ url_for('tag.manage_tags') }}" class="text-warning">Create tags</a> to categorize expenses.</p>
                     {% endif %}
                 </div>
             </div>
@@ -222,7 +222,7 @@
                 {% else %}
                     <div class="d-flex align-items-center justify-content-between">
                         <h2 class="mb-0">{{ base_currency.symbol }}{{ "%.2f"|format(current_month_total) }}</h2>
-                        <a href="{{ url_for('budgets') }}" class="btn btn-sm btn-outline-light">
+                        <a href="{{ url_for('budget.budgets') }}" class="btn btn-sm btn-outline-light">
                             <i class="fas fa-plus me-1"></i>Set Budget
                         </a>
                     </div>
@@ -247,7 +247,7 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">💸 Money Owed</h5>
-                <a href="{{ url_for('settlements') }}" class="btn btn-sm btn-outline-light">
+                <a href="{{ url_for('settlement.settlements') }}" class="btn btn-sm btn-outline-light">
                     <i class="fas fa-exchange-alt me-1"></i>View All Settlements
                 </a>
             </div>
@@ -339,7 +339,7 @@
 <!-- Replace the modal with this hidden form section -->
 <div id="settlementFormContainer" class="expense-form mb-4" style="display: none;">
     <h4 class="mb-3">Record a Settlement</h4>
-    <form method="POST" action="{{ url_for('add_settlement') }}">
+    <form method="POST" action="{{ url_for('settlement.add_settlement') }}">
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="payer_id" class="form-label">Who Paid</label>

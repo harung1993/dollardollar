@@ -28,7 +28,7 @@
                     <h5 class="mb-0">Import Transactions from CSV</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('import_csv') }}" enctype="multipart/form-data">
+                    <form method="POST" action="{{ url_for('account.import_csv') }}" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="csv_file" class="form-label">CSV File</label>
                             <input type="file" class="form-control bg-dark text-light" id="csv_file" name="csv_file" accept=".csv" required>
@@ -225,12 +225,12 @@ Date,Amount,Description,Category,Type
                         </div>
                     {% else %}
                         <div class="d-flex justify-content-center mb-3">
-                            <a href="{{ url_for('connect_simplefin') }}" class="btn btn-primary btn-lg">
+                            <a href="{{ url_for('account.connect_simplefin') }}" class="btn btn-primary btn-lg">
                                 <i class="fas fa-key me-2"></i>Get SimpleFin Setup Token
                             </a>
                         </div>
                         
-                        <form method="POST" action="{{ url_for('process_simplefin_token') }}">
+                        <form method="POST" action="{{ url_for('simplefin.process_token') }}">
                             <div class="mb-3">
                                 <label for="setup_token" class="form-label">Enter your SimpleFin Setup Token</label>
                                 <input type="text" class="form-control bg-dark text-light" id="setup_token" name="setup_token" 

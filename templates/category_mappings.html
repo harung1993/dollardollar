@@ -26,7 +26,7 @@
                     <h5 class="mb-0" id="formTitle">Create New Rule</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('add_category_mapping') }}" id="mappingForm">
+                    <form method="POST" action="{{ url_for('category_mapping.add_mapping') }}" id="mappingForm">
                         <div class="mb-3">
                             <label for="keyword" class="form-label">Keyword or Pattern</label>
                             <input type="text" class="form-control bg-dark text-light" id="keyword" name="keyword" required>
@@ -86,7 +86,7 @@
                     <p>
                         Analyze your past transactions to automatically create mapping rules based on your categorization patterns.
                     </p>
-                    <form method="POST" action="{{ url_for('learn_from_transaction_history') }}" class="row g-3">
+                    <form method="POST" action="{{ url_for('category_mapping.learn_from_history') }}" class="row g-3">
                         <div class="col-md-6">
                             <label for="days" class="form-label">Analyze from last:</label>
                             <select class="form-select bg-dark text-light" id="days" name="days">
@@ -121,7 +121,7 @@
                                 Upload a CSV file with mappings. Required columns: "keyword" and "category".
                                 Optional columns: "is_regex" (true/false) and "priority" (0-10).
                             </p>
-                            <form method="POST" action="{{ url_for('upload_category_mappings') }}" enctype="multipart/form-data">
+                            <form method="POST" action="{{ url_for('category_mapping.upload_mappings') }}" enctype="multipart/form-data">
                                 <div class="mb-3">
                                     <label for="mapping_file" class="form-label">Select CSV File</label>
                                     <input class="form-control form-control-sm bg-dark text-light" type="file" id="mapping_file" name="mapping_file" accept=".csv">
@@ -140,7 +140,7 @@
                             <p class="small text-light">
                                 Export your current active mappings to a CSV file that you can edit and share.
                             </p>
-                            <a href="{{ url_for('export_category_mappings') }}" class="btn btn-info btn-sm w-100 mb-3">
+                            <a href="{{ url_for('category_mapping.export_mappings') }}" class="btn btn-info btn-sm w-100 mb-3">
                                 <i class="fas fa-file-export me-2"></i>Export Active Mappings
                             </a>
                             
@@ -210,12 +210,12 @@
                                                     onclick="editMapping({{ mapping.id }}, '{{ mapping.keyword|replace('\'', '\\\'') }}', {{ mapping.category_id }}, {{ mapping.priority }}, {{ 'true' if mapping.is_regex else 'false' }})">
                                                 <i class="fas fa-edit"></i>
                                             </button>
-                                            <form method="POST" action="{{ url_for('toggle_category_mapping', mapping_id=mapping.id) }}" class="d-inline">
+                                            <form method="POST" action="{{ url_for('category_mapping.toggle_mapping', mapping_id=mapping.id) }}" class="d-inline">
                                                 <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if mapping.active else 'success' }}">
                                                     <i class="fas {{ 'fa-pause' if mapping.active else 'fa-play' }}"></i>
                                                 </button>
                                             </form>
-                                            <form method="POST" action="{{ url_for('delete_category_mapping', mapping_id=mapping.id) }}" 
+                                            <form method="POST" action="{{ url_for('category_mapping.delete_mapping', mapping_id=mapping.id) }}" 
                                                 class="d-inline" onsubmit="return confirm('Are you sure you want to delete this mapping rule?');">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger">
                                                     <i class="fas fa-trash"></i>
@@ -268,7 +268,7 @@
     document.getElementById('resetBtn').addEventListener('click', function() {
         const form = document.getElementById('mappingForm');
         form.reset();
-        form.action = "{{ url_for('add_category_mapping') }}";
+        form.action = "{{ url_for('category_mapping.add_mapping') }}";
         document.getElementById('formTitle').textContent = 'Create New Rule';
         document.getElementById('submitBtn').textContent = 'Create Rule';
         this.style.display = 'none';

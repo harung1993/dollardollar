@@ -419,7 +419,7 @@
         <div class="col-md-12">
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb">
-                    <li class="breadcrumb-item"><a href="{{ url_for('groups') }}">Groups</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('group.groups') }}">Groups</a></li>
                     <li class="breadcrumb-item active">{{ group.name }}</li>
                 </ol>
             </nav>
@@ -439,13 +439,13 @@
                         </button>
                         {% if session.get('delete_group_id') == group.id %}
                         <!-- Show compact confirmation controls -->
-                        <form action="{{ url_for('delete_group', group_id=group.id) }}" method="POST" class="d-inline">
+                        <form action="{{ url_for('group.delete_group', group_id=group.id) }}" method="POST" class="d-inline">
                             <button type="submit" class="btn btn-sm btn-danger">Confirm Delete</button>
                         </form>
-                        <a href="{{ url_for('group_details', group_id=group.id) }}" class="btn btn-sm btn-secondary">Cancel</a>
+                        <a href="{{ url_for('group.group_details', group_id=group.id) }}" class="btn btn-sm btn-secondary">Cancel</a>
                         {% else %}
                         <!-- Show compact delete button -->
-                        <a href="{{ url_for('delete_group', group_id=group.id) }}" class="btn btn-sm btn-outline-danger">
+                        <a href="{{ url_for('group.delete_group', group_id=group.id) }}" class="btn btn-sm btn-outline-danger">
                             <i class="fas fa-trash-alt"></i>
                         </a>
                         {% endif %}
@@ -633,7 +633,7 @@
                 <!-- Add Member Form (Hidden by default) -->
                 {% if current_user == group.creator %}
                 <div id="memberFormContainer" class="card-body border-bottom" style="display: none;">
-                    <form action="{{ url_for('add_group_member', group_id=group.id) }}" method="POST">
+                    <form action="{{ url_for('group.add_group_member', group_id=group.id) }}" method="POST">
                         <div class="mb-3">
                             <label for="user_id" class="form-label">Select User</label>
                             <select class="form-select bg-dark text-light" id="user_id" name="user_id" required>
@@ -673,7 +673,7 @@
                             </div>
                             
                             {% if current_user == group.creator and member != group.creator %}
-                            <form action="{{ url_for('remove_group_member', group_id=group.id, member_id=member.id) }}" method="POST" class="d-inline">
+                            <form action="{{ url_for('group.remove_group_member', group_id=group.id, member_id=member.id) }}" method="POST" class="d-inline">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">
                                     <i class="fas fa-times"></i>
                                 </button>

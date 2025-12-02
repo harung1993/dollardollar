@@ -11,7 +11,7 @@
             <div class="card-body">
                 {% if oidc_enabled %}
                 <div class="d-grid mb-4">
-                    <a href="{{ url_for('login_oidc') }}" class="btn btn-lg btn-primary">
+                    <a href="{{ url_for('auth.login_oidc') }}" class="btn btn-lg btn-primary">
                         <i class="fas fa-sign-in-alt me-2"></i>Login with {{ config.get('OIDC_PROVIDER_NAME', 'SSO') }}
                     </a>
                 </div>
@@ -33,7 +33,7 @@
                         <label for="password" class="form-label">Password</label>
                         <input type="password" class="form-control" id="password" name="password" required>
                         <div class="mt-1 text-end">
-                            <a href="{{ url_for('reset_password_request') }}" class="text-warning small">Forgot Password?</a>
+                            <a href="{{ url_for('auth.reset_password_request') }}" class="text-warning small">Forgot Password?</a>
                         </div>
                     </div>
                     <div class="d-grid">
@@ -48,7 +48,7 @@
                 
                 <p class="text-center mt-3">
                     {% if not signups_disabled %}
-                        Don't have an account? <a href="{{ url_for('signup') }}" class="text-warning">Sign up</a>
+                        Don't have an account? <a href="{{ url_for('auth.signup') }}" class="text-warning">Sign up</a>
                     {% else %}
                         New registrations are currently disabled.
                     {% endif %}

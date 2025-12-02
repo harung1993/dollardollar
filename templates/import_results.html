@@ -4,7 +4,7 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Import Results</h1>
-        <a href="{{ url_for('advanced') }}" class="btn btn-primary">
+        <a href="{{ url_for('account.advanced') }}" class="btn btn-primary">
             <i class="fas fa-arrow-left me-2"></i>Back to Advanced
         </a>
     </div>
@@ -57,10 +57,10 @@
     {% endif %}
     
     <div class="d-flex justify-content-center">
-        <a href="{{ url_for('transactions') }}" class="btn btn-primary me-2">
+        <a href="{{ url_for('transaction.transactions') }}" class="btn btn-primary me-2">
             <i class="fas fa-list me-1"></i>View All Transactions
         </a>
-        <a href="{{ url_for('advanced') }}" class="btn btn-outline-secondary">
+        <a href="{{ url_for('account.advanced') }}" class="btn btn-outline-secondary">
             <i class="fas fa-upload me-1"></i>Import Another File
         </a>
     </div>

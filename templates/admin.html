@@ -11,7 +11,7 @@
             <h5 class="mb-0">Add New User</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('admin_add_user') }}">
+            <form method="POST" action="{{ url_for('auth.add_user') }}">
                 <div class="row">
                     <div class="col-md-3 mb-3">
                         <label for="name" class="form-label">Name</label>
@@ -60,7 +60,7 @@
                             <td class="text-white">{{ user.id }}</td>
                             <td>
                                 {% if user.id != current_user.id %}
-                                <form method="POST" action="{{ url_for('admin_toggle_admin_status', user_id=user.id) }}" style="display: inline;">
+                                <form method="POST" action="{{ url_for('auth.toggle_admin_status', user_id=user.id) }}" style="display: inline;">
                                     {% if user.is_admin %}
                                         <button type="submit" class="btn btn-sm btn-success">
                                             Admin <i class="fas fa-toggle-on"></i>
@@ -82,7 +82,7 @@
                                            onclick="togglePasswordReset('{{ user.id|replace('@', '-at-')|replace('.', '-dot-') }}')">
                                         Reset Password
                                     </button>
-                                    <form method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}" style="display: inline;">
+                                    <form method="POST" action="{{ url_for('auth.delete_user', user_id=user.id) }}" style="display: inline;">
                                         <button type="submit" class="btn btn-danger btn-sm ms-1" onclick="return confirm('Are you sure you want to delete this user?')">Delete</button>
                                     </form>
                                 </div>
@@ -93,7 +93,7 @@
                         {% if user.id != current_user.id %}
                         <tr id="password-reset-{{ user.id|replace('@', '-at-')|replace('.', '-dot-') }}" class="bg-dark" style="display: none;">
                             <td colspan="4">
-                                <form method="POST" action="{{ url_for('admin_reset_password') }}" class="p-3 border border-warning rounded">
+                                <form method="POST" action="{{ url_for('auth.reset_password_admin') }}" class="p-3 border border-warning rounded">
                                     <h5 class="mb-3">Reset Password for {{ user.name }}</h5>
                                     <input type="hidden" name="user_id" value="{{ user.id }}">
                                     
