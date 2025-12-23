@@ -143,7 +143,7 @@
                 <h6 class="text-muted mb-3 mt-1">Portfolios</h6>
                 <h3 class="mb-1" style="color: #f59e0b; font-weight: 700;" id="portfolioCount">{{ portfolios|default([])|length }}</h3>
                 <div class="d-flex align-items-center">
-                    <a href="{{ url_for('portfolios') }}" class="text-decoration-none d-flex align-items-center" style="color: #f59e0b;">
+                    <a href="{{ url_for('investment.portfolios') }}" class="text-decoration-none d-flex align-items-center" style="color: #f59e0b;">
                         <span>Manage portfolios</span>
                         <i class="fas fa-arrow-right ms-2"></i>
                     </a>
@@ -221,7 +221,7 @@
                         <i class="fas fa-table me-2" style="color: #f59e0b;"></i>
                         <span>Portfolio Breakdown</span>
                     </h5>
-                    <a href="{{ url_for('portfolios') }}" class="btn btn-sm btn-dark">
+                    <a href="{{ url_for('investment.portfolios') }}" class="btn btn-sm btn-dark">
                         <i class="fas fa-external-link-alt me-1"></i>
                         <span>Manage</span>
                     </a>
@@ -267,7 +267,7 @@
                                             <i class="fas fa-folder-open" style="color: #94a3b8;"></i>
                                         </div>
                                         <p class="mb-2">No portfolios found</p>
-                                        <a href="{{ url_for('portfolios') }}" class="btn btn-sm btn-primary">
+                                        <a href="{{ url_for('investment.portfolios') }}" class="btn btn-sm btn-primary">
                                             <i class="fas fa-plus me-1"></i>Create portfolio
                                         </a>
                                     </div>
@@ -430,7 +430,7 @@
                                                 <i class="fas fa-search-dollar" style="color: #94a3b8;"></i>
                                             </div>
                                             <p class="mb-2">No investment data available</p>
-                                            <a href="{{ url_for('portfolios') }}" class="btn btn-sm btn-primary">
+                                            <a href="{{ url_for('investment.portfolios') }}" class="btn btn-sm btn-primary">
                                                 <i class="fas fa-plus me-1"></i>Add investments
                                             </a>
                                         </div>
