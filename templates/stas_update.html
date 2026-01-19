@@ -821,7 +821,7 @@ function applyFilters() {
     const categoryId = document.getElementById('categoryFilter').value;
     
     // Construct URL with query parameters
-    const url = `{{ url_for('stats') }}?startDate=${startDate}&endDate=${endDate}&groupId=${groupId}&transactionType=${transactionType}&categoryId=${categoryId}`;
+    const url = `{{ url_for('analytics.stats') }}?startDate=${startDate}&endDate=${endDate}&groupId=${groupId}&transactionType=${transactionType}&categoryId=${categoryId}`;
     
     // Redirect to the constructed URL
     window.location.href = url;

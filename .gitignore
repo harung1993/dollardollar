@@ -74,4 +74,13 @@ simplefin_test.py
 .docker
 
 # Jupyter Notebooks
-.ipynb_checkpoints# 29a41de6a866d56c36aba5159f45257c
+.ipynb_checkpoints
+
+# Archive folder (old code reference)
+_archive/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib

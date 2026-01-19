@@ -8,8 +8,8 @@
             <h1 class="display-4 fw-bold mb-4">Simplify Your <span class="text-gradient">Expenses</span></h1>
             <p class="lead mb-4">Split bills, track expenses, and settle up with friends and roommates without the hassle.</p>
             <div class="d-flex gap-3 mt-5">
-                <a href="{{ url_for('signup') }}" class="btn btn-lg btn-primary">Get Started</a>
-                <a href="{{ url_for('login') }}" class="btn btn-lg btn-outline-light">Log In</a>
+                <a href="{{ url_for('auth.signup') }}" class="btn btn-lg btn-primary">Get Started</a>
+                <a href="{{ url_for('auth.login') }}" class="btn btn-lg btn-outline-light">Log In</a>
             </div>
         </div>
         <div class="col-lg-6 mt-5 mt-lg-0 text-center">
@@ -198,8 +198,8 @@
         <h2 class="mb-4">Ready to Simplify Your Shared Expenses?</h2>
         <p class="lead mb-4">Join Dollar Dollar Bill Y'all today and take the stress out of splitting bills.</p>
         <div class="d-flex justify-content-center gap-3">
-            <a href="{{ url_for('signup') }}" class="btn btn-lg btn-primary">Create Account</a>
-            <a href="{{ url_for('login') }}" class="btn btn-lg btn-outline-light">Log In</a>
+            <a href="{{ url_for('auth.signup') }}" class="btn btn-lg btn-primary">Create Account</a>
+            <a href="{{ url_for('auth.login') }}" class="btn btn-lg btn-outline-light">Log In</a>
         </div>
     </div>
 </div>

@@ -11,7 +11,7 @@
             <div class="card-body">
                 {% if oidc_enabled and local_login_disabled %}
                 <div class="alert alert-info text-center">
-                    Direct account creation is disabled. Please <a href="{{ url_for('login') }}" class="alert-link">login with SSO</a> instead.
+                    Direct account creation is disabled. Please <a href="{{ url_for('auth.login') }}" class="alert-link">login with SSO</a> instead.
                 </div>
                 {% else %}
                 <form method="POST">
@@ -34,7 +34,7 @@
                 {% endif %}
                 
                 <p class="text-center mt-3">
-                    Already have an account? <a href="{{ url_for('login') }}" class="text-warning auth-text-accent">Login</a>
+                    Already have an account? <a href="{{ url_for('auth.login') }}" class="text-warning auth-text-accent">Login</a>
                 </p>
             </div>
         </div>

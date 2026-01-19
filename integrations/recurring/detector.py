@@ -8,45 +8,38 @@ def detect_recurring_transactions(user_id, lookback_days=60, min_occurrences=2):
     """
     Detect potential recurring transactions for a user based on transaction history.
     """
-    # Get the current app and its database models
-    from flask import current_app
-    db = current_app.extensions['sqlalchemy'].db
-    Expense = db.session.get_bind().execute("SELECT 1").dialect.name
-    
-    # Use raw SQL query to avoid SQLAlchemy model dependencies
-    from sqlalchemy import text
-    
+    # Import database and models
+    from src.extensions import db
+    from src.models.transaction import Expense
+
     end_date = datetime.now()
     start_date = end_date - timedelta(days=lookback_days)
-    
-    # Execute a raw SQL query to get transactions
-    query = text("""
-        SELECT id, description, amount, date, currency_code, account_id, category_id, transaction_type
-        FROM expenses
-        WHERE user_id = :user_id
-          AND date >= :start_date
-          AND date <= :end_date
-          AND recurring_id IS NULL
-        ORDER BY date
-    """)
-    
-    result = db.session.execute(
-        query, 
-        {'user_id': user_id, 'start_date': start_date, 'end_date': end_date}
-    )
+
+    # Query transactions using SQLAlchemy ORM
+    transactions_query = Expense.query.filter(
+        and_(
+            Expense.user_id == user_id,
+            Expense.date >= start_date,
+            Expense.date <= end_date,
+            or_(Expense.recurring_id == None, Expense.recurring_id.is_(None))
+        )
+    ).order_by(Expense.date).all()
+
+    # Convert to list of dictionaries
+    result = transactions_query
     
     # Convert result to a list of dictionaries for easier processing
     transactions = []
-    for row in result:
+    for expense in result:
         transactions.append({
-            'id': row.id,
-            'description': row.description,
-            'amount': row.amount,
-            'date': row.date,
-            'currency_code': row.currency_code,
-            'account_id': row.account_id,
-            'category_id': row.category_id,
-            'transaction_type': row.transaction_type
+            'id': expense.id,
+            'description': expense.description,
+            'amount': expense.amount,
+            'date': expense.date,
+            'currency_code': expense.currency_code,
+            'account_id': expense.account_id,
+            'category_id': expense.category_id,
+            'transaction_type': getattr(expense, 'transaction_type', 'expense')
         })
     
     # Group transactions by name + amount (potential recurrence key)

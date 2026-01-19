@@ -30,7 +30,7 @@
                             </div>
                         </div>
                         <div class="col-auto">
-                            <a href="{{ url_for('logout') }}" class="btn btn-outline-light">
+                            <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light">
                                 <i class="fas fa-sign-out-alt me-2"></i>Logout
                             </a>
                         </div>
@@ -80,7 +80,7 @@
                     <h5 class="mb-0"><i class="fas fa-palette me-2" style="color: #10b981;"></i>Personal Color</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('update_color') }}" method="POST">
+                    <form action="{{ url_for('auth.update_color') }}" method="POST">
                         <div class="mb-3">
                             <label for="user_color" class="form-label">Choose your personal color</label>
                             <div class="row align-items-center">
@@ -131,7 +131,7 @@
                     <h5 class="mb-0"><i class="fas fa-key me-2" style="color: #10b981;"></i>Change Password</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('change_password') }}" method="POST">
+                    <form action="{{ url_for('auth.change_password') }}" method="POST">
                         <div class="mb-3">
                             <label for="current_password" class="form-label">Current Password</label>
                             <div class="input-group">
@@ -214,7 +214,7 @@
                     <h5 class="mb-0"><i class="fas fa-globe me-2" style="color: #10b981;"></i>Timezone</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('update_timezone') }}" method="POST">
+                    <form action="{{ url_for('auth.update_timezone') }}" method="POST">
                         <div class="mb-3">
                             <label for="timezone" class="form-label">Select Your Timezone</label>
                             <select class="form-select bg-dark text-light" name="timezone" id="timezone" required>
@@ -283,7 +283,7 @@
                     <h5 class="mb-0"><i class="fas fa-dollar-sign me-2" style="color: #10b981;"></i>Default Currency</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('set_default_currency') }}" method="POST">
+                    <form action="{{ url_for('currency.set_default_currency') }}" method="POST">
                         <div class="mb-3">
                             <label for="default_currency" class="form-label">Select Your Default Currency</label>
                             <select class="form-select bg-dark text-light" name="default_currency" id="default_currency" required>
@@ -312,7 +312,7 @@
                     <h5 class="mb-0"><i class="fas fa-envelope me-2" style="color: #10b981;"></i>Email Notifications</h5>
                 </div>
                 <div class="card-body">
-                    <form action="{{ url_for('update_notification_preferences') }}" method="POST">
+                    <form action="{{ url_for('auth.update_notification_preferences') }}" method="POST">
                         <div class="form-check form-switch mb-3">
                             <input type="checkbox" class="form-check-input" id="monthly_report_enabled" name="monthly_report_enabled" 
                                 {% if current_user.monthly_report_enabled %}checked{% endif %}>
@@ -373,7 +373,7 @@
                     </div>
                     
                     <!-- API Key Form -->
-                    <form method="POST" action="{{ url_for('update_investment_api') }}" id="apiKeyForm" class="mt-4">
+                    <form method="POST" action="{{ url_for('investment.update_investment_api') }}" id="apiKeyForm" class="mt-4">
                         <div class="mb-4">
                             <label for="api_key" class="form-label">Financial Modeling Prep API Key</label>
                             <div class="input-group">

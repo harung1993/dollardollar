@@ -14,7 +14,7 @@
                 <i class="fas fa-exclamation-triangle me-2"></i>
                 <strong>Note:</strong> Account names should be 150 characters or less. 
             </div>
-            <form method="POST" action="{{ url_for('simplefin_add_accounts') }}">
+            <form method="POST" action="{{ url_for('account.add_accounts') }}">
                 <div class="table-responsive">
                     <table class="table">
                         <thead>
@@ -66,7 +66,7 @@
                 </div>
                 
                 <div class="d-flex justify-content-between">
-                    <a href="{{ url_for('advanced') }}" class="btn btn-secondary">
+                    <a href="{{ url_for('account.advanced') }}" class="btn btn-secondary">
                         <i class="fas fa-arrow-left me-1"></i>Cancel
                     </a>
                     <button type="submit" class="btn btn-primary">
