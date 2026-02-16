@@ -9,37 +9,46 @@
 <a href="https://github.com/harung1993/dollardollar/actions"><img src="https://img.shields.io/github/actions/workflow/status/harung1993/dollardollar/ci.yml?branch=main" alt="GitHub Workflow Status"></a>
 </div>
 
-> **🎉 Exciting Evolution Ahead: Welcome to the PalStack Ecosystem!**
-> 
-> **DollarDollar is evolving into FinPal** - a more powerful, feature-rich financial management platform as part of the **PalStack ecosystem**! This transformation brings enhanced development support, modern architecture, and new deployment options to serve both self-hosted and cloud-hosted users.
-> 
-> **About PalStack:**
-> > *"That's what pals do – they show up and help with the everyday stuff."*
-> 
-> PalStack is our family of applications designed to simplify daily life management. Just like a good friend, each "Pal" in the ecosystem is there to help you manage the everyday tasks - whether it's your finances, your pantry, or other aspects of your daily routine. FinPal (formerly DollarDollar) is our financial companion, making money management effortless and intuitive.
-> 
-> **What's Happening:**
-> - 🏢 **New Identity**: DollarDollar becomes **FinPal** under the PalStack umbrella
-> - 🌐 **Dual Deployment**: Self-hosted freedom + optional managed hosting
-> - 🔓 **Open Source Commitment**: FinPal Core will be open-sourced for personal use
-> - 📦 **Current Repository**: This repo will be preserved as-is for historical reference
-> - 🎨 **Dynamic Branding**: FinPal adapts to your default currency - **DollarPal** (USD), **EuroPal** (EUR), **RupeePal** (INR), and more!
-> 
-> **Development Progress:**
-> - ✅ **Backend (100% Complete)**: Fully modular microservices architecture
-> - 🎨 **Web UI (95% Complete)**: Modern React-based frontend with enhanced UX
-> - 📱 **Mobile App (50% Complete)**: Native mobile experience in active development
-> 
-> **🚀 New Features Coming:**
-> - 💰 **Rollover Budgets** - Carry unused budget amounts to the next period
-> - 🔄 **Enhanced Sync Engine** - Faster, more reliable account synchronization
-> - 📊 **Advanced Analytics** - Deeper insights into your financial patterns
-> - 👥 **Default Group Splits** - Streamlined bill-splitting workflows
-> - 🎯 **And Much More** - Stay tuned for the full feature reveal!
-> 
-> **Next Steps:**
-> Watch this space for the **FinPal Core repository launch**! We're committed to maintaining the open-source spirit while building a sustainable ecosystem that benefits everyone.
+# FinPal is Now Live for Community Testing
 
+**DollarDollar has evolved into FinPal** as part of the PalStack ecosystem. This represents a complete architectural modernization with enhanced features and deployment flexibility for both self-hosted and managed hosting scenarios.
+
+## About PalStack
+
+> *"That's what pals do – they show up and help with the everyday stuff."*
+
+PalStack is a family of applications designed to simplify daily life management. FinPal (formerly DollarDollar) is our financial management component, focused on making personal finance tracking effortless and privacy-respecting.
+
+## Current Status
+
+- **Backend**: Production-ready microservices architecture
+- **Web UI**: Live and ready for testing at finpal.palstack.io
+- **Mobile Apps**: Beta testing in progress
+- **Licensing**: Dual licensed (AGPL-3.0 for personal use, commercial license available)
+
+## Key Improvements
+
+- Modular microservices backend for better scalability
+- Modern React-based frontend with improved UX
+- Native mobile applications in active development
+- Self-hosted first, with optional managed hosting
+- Dynamic branding based on default currency (DollarPal, EuroPal, RupeePal, etc.)
+
+## Roadmap Highlights
+
+- Rollover budgets for flexible period management
+- Enhanced sync engine with improved reliability
+- Advanced analytics and financial insights
+- Streamlined group bill-splitting workflows
+- Additional features in development pipeline
+
+## Testing and Feedback
+
+We're opening this up to the community first. The beta is available via Docker Hub, with full documentation at [finpal.palstack.io](https://finpal.palstack.io). Bug reports, feature requests, and feedback are critical as we work toward our February 2026 public launch.
+
+## Repository Status
+
+This repository is preserved for historical reference. Active development continues in the FinPal Core repository under the PalStack organization.
 
 <p align="center">An open-source, self-hosted money management platform with comprehensive expense tracking, budgeting, account synchronization, and bill-splitting features - designed for privacy, flexibility, and complete financial control.</p>
 <div align="center">
