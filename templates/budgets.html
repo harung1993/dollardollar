@@ -111,7 +111,7 @@
                                                             </a>
                                                         </li>
                                                         <li>
-                                                            <form action="{{ url_for('toggle_budget', budget_id=budget.id) }}" method="POST" class="d-inline">
+                                                            <form action="{{ url_for('budget.toggle_budget', budget_id=budget.id) }}" method="POST" class="d-inline">
                                                                 <button type="submit" class="dropdown-item {% if budget.active %}text-warning{% else %}text-success{% endif %}">
                                                                     <i class="fas {% if budget.active %}fa-pause{% else %}fa-play{% endif %} me-2"></i>
                                                                     {% if budget.active %}Deactivate{% else %}Activate{% endif %}
@@ -192,7 +192,7 @@
         <h4 class="mb-0">Add New Budget</h4>
     </div>
     <div class="card-body">
-        <form action="{{ url_for('add_budget') }}" method="POST">
+        <form action="{{ url_for('budget.add_budget') }}" method="POST">
             <div class="row">
                 <div class="col-md-4 mb-3">
                     <label for="name" class="form-label">Budget Name (Optional)</label>

@@ -28,7 +28,7 @@
                         </ol>
                     </div>
                     
-                    <form method="POST" action="{{ url_for('setup_investment_api') }}">
+                    <form method="POST" action="{{ url_for('investment.setup_investment_api') }}">
                         <div class="mb-3">
                             <label for="api_key" class="form-label">FMP API Key</label>
                             <input type="text" class="form-control" id="api_key" name="api_key" required placeholder="Enter your Financial Modeling Prep API key">
@@ -36,7 +36,7 @@
                         </div>
                         
                         <div class="d-flex justify-content-between">
-                            <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <a href="{{ url_for('analytics.dashboard') }}" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
                             </a>
                             <button type="submit" class="btn btn-primary">

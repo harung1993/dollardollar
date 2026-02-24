@@ -4,7 +4,7 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>API Cache Management</h1>
-        <a href="{{ url_for('investments') }}" class="btn btn-outline-light">
+        <a href="{{ url_for('investment.investments') }}" class="btn btn-outline-light">
             <i class="fas fa-chart-line me-1"></i>Back to Investments
         </a>
     </div>
@@ -82,7 +82,7 @@
                         <div class="card-body">
                             <h5 class="card-title">Clear Expired Cache</h5>
                             <p class="card-text">Remove cache entries that have passed their expiry time.</p>
-                            <form method="POST" action="{{ url_for('clear_expired_cache') }}">
+                            <form method="POST" action="{{ url_for('admin.clear_expired_cache') }}">
                                 <button type="submit" class="btn btn-warning">
                                     <i class="fas fa-broom me-1"></i>Clear Expired
                                 </button>
@@ -95,7 +95,7 @@
                         <div class="card-body">
                             <h5 class="card-title">Clear All Cache</h5>
                             <p class="card-text">Remove all cached data. Use this if you need fresh data from the API.</p>
-                            <form method="POST" action="{{ url_for('clear_all_cache') }}">
+                            <form method="POST" action="{{ url_for('admin.clear_all_cache') }}">
                                 <button type="submit" class="btn btn-danger">
                                     <i class="fas fa-trash me-1"></i>Clear All
                                 </button>

@@ -18,7 +18,7 @@
                     {% endfor %}
                     
                     {% if default_count < 4 %}
-                    <form action="{{ url_for('user_create_default_categories') }}" method="POST" class="d-inline me-2">
+                    <form action="{{ url_for('category.create_defaults') }}" method="POST" class="d-inline me-2">
                       <button type="submit" class="btn btn-outline-success">
                         <i class="fas fa-tags me-1"></i> Add Default Categories
                       </button>
@@ -36,7 +36,7 @@
     <!-- Add Category Form (Hidden by default) -->
     <div id="categoryFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Create New Category</h4>
-        <form action="{{ url_for('add_category') }}" method="POST">
+        <form action="{{ url_for('category.add_category') }}" method="POST">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="name" class="form-label">Category Name</label>
@@ -107,7 +107,7 @@
                             </a></li>
                             <li><hr class="dropdown-divider border-secondary"></li>
                             <li>
-                                <form action="{{ url_for('delete_category', category_id=category.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this category?');">
+                                <form action="{{ url_for('category.delete_category', category_id=category.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this category?');">
                                     <button type="submit" class="dropdown-item text-danger">
                                         <i class="fas fa-trash-alt me-2"></i>Delete
                                     </button>
@@ -121,7 +121,7 @@
                 <!-- Inline Edit Form (Hidden by default) -->
                 <div id="editCategoryForm{{ category.id }}" class="card-body border-bottom" style="display: none;">
                     <h6 class="mb-3">Edit Category</h6>
-                    <form action="{{ url_for('edit_category', category_id=category.id) }}" method="POST">
+                    <form action="{{ url_for('category.edit_category', category_id=category.id) }}" method="POST">
                         <div class="mb-3">
                             <label for="edit_name{{ category.id }}" class="form-label">Category Name</label>
                             <input type="text" class="form-control bg-dark text-light" id="edit_name{{ category.id }}" name="name" value="{{ category.name }}" required>
@@ -176,7 +176,7 @@
                                             </a></li>
                                             <li><hr class="dropdown-divider border-secondary"></li>
                                             <li>
-                                                <form action="{{ url_for('delete_category', category_id=subcategory.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
+                                                <form action="{{ url_for('category.delete_category', category_id=subcategory.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this subcategory?');">
                                                     <button type="submit" class="dropdown-item text-danger">
                                                         <i class="fas fa-trash-alt me-2"></i>Delete
                                                     </button>
@@ -189,7 +189,7 @@
                                 
                                 <!-- Inline Edit Form for Subcategory (Hidden by default) -->
                                 <div id="editSubcategoryForm{{ subcategory.id }}" class="list-group-item bg-dark border-secondary" style="display: none;">
-                                    <form action="{{ url_for('edit_category', category_id=subcategory.id) }}" method="POST">
+                                    <form action="{{ url_for('category.edit_category', category_id=subcategory.id) }}" method="POST">
                                         <div class="mb-3">
                                             <label for="edit_subname{{ subcategory.id }}" class="form-label">Name</label>
                                             <input type="text" class="form-control bg-dark text-light" id="edit_subname{{ subcategory.id }}" name="name" value="{{ subcategory.name }}" required>
@@ -237,7 +237,7 @@
                     <!-- Add Subcategory Form (Hidden by default) -->
                     <div id="subcategoryForm{{ category.id }}" class="subcategory-form mt-3 border-top pt-3" style="display: none;">
                         <h6 class="mb-3">Add Subcategory to {{ category.name }}</h6>
-                        <form action="{{ url_for('add_category') }}" method="POST">
+                        <form action="{{ url_for('category.add_category') }}" method="POST">
                             <input type="hidden" name="parent_id" value="{{ category.id }}">
                             <div class="mb-3">
                                 <label for="subcategory_name{{ category.id }}" class="form-label">Subcategory Name</label>
@@ -281,7 +281,7 @@
                 <hr>
                 <div class="d-flex justify-content-between align-items-center">
                     <p class="mb-0">You can add categories manually or create a set of default categories to get started.</p>
-                    <form action="{{ url_for('user_create_default_categories') }}" method="POST">
+                    <form action="{{ url_for('category.create_defaults') }}" method="POST">
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-tags me-1"></i> Create Default Categories
                         </button>

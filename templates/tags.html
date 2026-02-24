@@ -17,7 +17,7 @@
     <!-- Add Tag Form (Hidden by default) -->
     <div id="tagFormContainer" class="expense-form mb-4" style="display: none;">
         <h4 class="mb-3">Create New Tag</h4>
-        <form action="{{ url_for('add_tag') }}" method="POST">
+        <form action="{{ url_for('tag.add_tag') }}" method="POST">
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="name" class="form-label">Tag Name</label>
@@ -47,7 +47,7 @@
                     <h5 class="card-title mb-0">
                         <span class="badge" style="background-color: {{ tag.color }};">{{ tag.name }}</span>
                     </h5>
-                    <form action="{{ url_for('delete_tag', tag_id=tag.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this tag?');">
+                    <form action="{{ url_for('tag.delete_tag', tag_id=tag.id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this tag?');">
                         <button type="submit" class="btn btn-sm btn-danger">
                             <i class="fas fa-trash-alt"></i>
                         </button>

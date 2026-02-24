@@ -1433,7 +1433,7 @@ tr.bg-dark .collapse .p-3 {
         <ul class="sidebar-nav">
             <!-- Main Dashboard -->
             <li class="nav-item">
-                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.path == url_for('dashboard') %}active{% endif %}">
+                <a href="{{ url_for('analytics.dashboard') }}" class="nav-link {% if request.path == url_for('analytics.dashboard') %}active{% endif %}">
                     <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span>
                     <span class="nav-text">Dashboard</span>
                 </a>
@@ -1448,20 +1448,20 @@ tr.bg-dark .collapse .p-3 {
                 </a>
                 <ul class="collapse nav-submenu {% if 'transactions' in request.path or 'recurring' in request.path %}show{% endif %}" id="expensesSubmenu">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == '/accounts' %}active{% endif %}" href="{{ url_for('accounts') }}">
+                        <a class="nav-link {% if request.path == '/accounts' %}active{% endif %}" href="{{ url_for('account.accounts') }}">
                             <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
                             <i class="fas fa-university me-2"></i>Accounts
                         </a>
                     </li>
                     
                     <li class="nav-item">
-                        <a href="{{ url_for('transactions') }}" class="nav-link {% if request.path == url_for('transactions') %}active{% endif %}">
+                        <a href="{{ url_for('transaction.transactions') }}" class="nav-link {% if request.path == url_for('transaction.transactions') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
                             <span class="nav-text">Transactions</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('recurring') }}" class="nav-link {% if request.path == url_for('recurring') %}active{% endif %}">
+                        <a href="{{ url_for('recurring.recurring') }}" class="nav-link {% if request.path == url_for('recurring.recurring') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-calendar-alt"></i></span>
                             <span class="nav-text">Recurring</span>
                         </a>
@@ -1480,25 +1480,25 @@ tr.bg-dark .collapse .p-3 {
                 </a>
                 <ul class="collapse nav-submenu {% if 'investments' in request.path %}show{% endif %}" id="investmentsSubmenu">
                     <li class="nav-item">
-                        <a href="{{ url_for('investments') }}" class="nav-link {% if request.path == url_for('investments') %}active{% endif %}">
+                        <a href="{{ url_for('investment.investments') }}" class="nav-link {% if request.path == url_for('investment.investments') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-tachometer-alt"></i></span>
                             <span class="nav-text">Dashboard</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('portfolios') }}" class="nav-link {% if request.path == url_for('portfolios') %}active{% endif %}">
+                        <a href="{{ url_for('investment.portfolios') }}" class="nav-link {% if request.path == url_for('investment.portfolios') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-briefcase"></i></span>
                             <span class="nav-text">Portfolios</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('investment_transactions') }}" class="nav-link {% if request.path == url_for('investment_transactions') %}active{% endif %}">
+                        <a href="{{ url_for('investment.investment_transactions') }}" class="nav-link {% if request.path == url_for('investment.investment_transactions') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-exchange-alt"></i></span>
                             <span class="nav-text">Transactions</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('api_cache') }}" class="nav-link {% if request.path == url_for('api_cache') %}active{% endif %}">
+                        <a href="{{ url_for('admin.api_cache') }}" class="nav-link {% if request.path == url_for('admin.api_cache') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-database"></i></span>
                             <span class="nav-text">API Cache</span>
                         </a>
@@ -1515,13 +1515,13 @@ tr.bg-dark .collapse .p-3 {
                 </a>
                 <ul class="collapse nav-submenu {% if 'groups' in request.path or 'settlements' in request.path %}show{% endif %}" id="socialSubmenu">
                     <li class="nav-item">
-                        <a href="{{ url_for('groups') }}" class="nav-link {% if 'groups' in request.path %}active{% endif %}">
+                        <a href="{{ url_for('group.groups') }}" class="nav-link {% if 'groups' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-user-friends"></i></span>
                             <span class="nav-text">Groups</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('settlements') }}" class="nav-link {% if request.path == url_for('settlements') %}active{% endif %}">
+                        <a href="{{ url_for('settlement.settlements') }}" class="nav-link {% if request.path == url_for('settlement.settlements') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-money-bill-wave"></i></span>
                             <span class="nav-text">Settle Up</span>
                         </a>
@@ -1531,13 +1531,13 @@ tr.bg-dark .collapse .p-3 {
             
             <!-- Analysis -->
             <li class="nav-item">
-                <a href="{{ url_for('stats') }}" class="nav-link {% if request.path == url_for('stats') %}active{% endif %}">
+                <a href="{{ url_for('analytics.stats') }}" class="nav-link {% if request.path == url_for('analytics.stats') %}active{% endif %}">
                     <span class="nav-icon"><i class="fas fa-chart-bar"></i></span>
                     <span class="nav-text">Statistics</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a href="{{ url_for('budgets') }}" class="nav-link {% if request.path == url_for('budgets') %}active{% endif %}">
+                <a href="{{ url_for('budget.budgets') }}" class="nav-link {% if request.path == url_for('budget.budgets') %}active{% endif %}">
                     <span class="nav-icon"><i class="fas fa-chart-pie"></i></span>
                     <span class="nav-text">Budgets</span>
                 </a>
@@ -1554,44 +1554,44 @@ tr.bg-dark .collapse .p-3 {
                 </a>
                 <ul class="collapse nav-submenu {% if 'categories' in request.path or 'tags' in request.path or 'currencies' in request.path or 'profile' in request.path or 'admin' in request.path %}show{% endif %}" id="settingsSubmenu">
                     <li class="nav-item">
-                        <a href="{{ url_for('manage_categories') }}" class="nav-link {% if 'categories' in request.path %}active{% endif %}">
+                        <a href="{{ url_for('category.manage_categories') }}" class="nav-link {% if 'categories' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-sitemap"></i></span>
                             <span class="nav-text">Categories</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('manage_category_mappings') }}" class="nav-link {% if 'category_mappings' in request.path %}active{% endif %}">
+                        <a href="{{ url_for('category_mapping.manage_mappings') }}" class="nav-link {% if 'category_mappings' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-magic"></i></span>
                             <span class="nav-text">Auto-Categories</span>
                         </a>
                     </li>
                     <!-- <li class="nav-item">
-                        <a href="{{ url_for('manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
+                        <a href="{{ url_for('tag.manage_tags') }}" class="nav-link {% if 'tags' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-tags"></i></span>
                             <span class="nav-text">Tags</span>
                         </a>
                     </li> -->
                     <li class="nav-item">
-                        <a href="{{ url_for('manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
+                        <a href="{{ url_for('currency.manage_currencies') }}" class="nav-link {% if 'currencies' in request.path %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-dollar-sign"></i></span>
                             <span class="nav-text">Currencies</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('advanced') }}" class="nav-link">
+                        <a href="{{ url_for('account.advanced') }}" class="nav-link">
                             <span class="nav-icon"><i class="fas fa-tags"></i></span>
                             <span class="nav-text">Advanced</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a href="{{ url_for('profile') }}" class="nav-link {% if request.path == url_for('profile') %}active{% endif %}">
+                        <a href="{{ url_for('auth.profile') }}" class="nav-link {% if request.path == url_for('auth.profile') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-user-circle"></i></span>
                             <span class="nav-text">Profile</span>
                         </a>
                     </li>
                     {% if current_user.is_admin %}
                     <li class="nav-item">
-                        <a href="{{ url_for('admin') }}" class="nav-link {% if request.path == url_for('admin') %}active{% endif %}">
+                        <a href="{{ url_for('auth.admin') }}" class="nav-link {% if request.path == url_for('auth.admin') %}active{% endif %}">
                             <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
                             <span class="nav-text">Admin</span>
                         </a>
@@ -1617,7 +1617,7 @@ tr.bg-dark .collapse .p-3 {
                     </button>
                 </div>
                 <li class="nav-item">
-                    <a href="{{ url_for('logout') }}" class="nav-link">
+                    <a href="{{ url_for('auth.logout') }}" class="nav-link">
                         <span class="nav-icon"><i class="fas fa-sign-out-alt"></i></span>
                         <span class="nav-text">Logout</span>
                     </a>
@@ -1663,7 +1663,7 @@ tr.bg-dark .collapse .p-3 {
                     if (remainingSeconds <= 0) {
                         clearInterval(timerInterval);
                         // Redirect to logout or show expired message
-                        window.location.href = "{{ url_for('logout') }}?demo_expired=true";
+                        window.location.href = "{{ url_for('auth.logout') }}?demo_expired=true";
                         return;
                     }
                     

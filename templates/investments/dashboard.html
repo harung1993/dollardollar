@@ -5,7 +5,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Investment Dashboard</h1>
         <div>
-            <a href="{{ url_for('portfolios') }}" class="btn btn-outline-light me-2">
+            <a href="{{ url_for('investment.portfolios') }}" class="btn btn-outline-light me-2">
                 <i class="fas fa-briefcase me-1"></i>Manage Portfolios
             </a>
             <form method="POST" action="{{ url_for('update_prices') }}" class="d-inline">
@@ -152,7 +152,7 @@
                                     <i class="fas fa-briefcase fa-3x text-muted"></i>
                                 </div>
                                 <p>No portfolios found. Get started by creating your first portfolio.</p>
-                                <a href="{{ url_for('portfolios') }}" class="btn btn-primary">
+                                <a href="{{ url_for('investment.portfolios') }}" class="btn btn-primary">
                                     <i class="fas fa-plus me-1"></i> Create Portfolio
                                 </a>
                             </td>
